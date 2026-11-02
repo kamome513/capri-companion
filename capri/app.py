@@ -123,6 +123,28 @@ def start_preview(controller: CompanionController) -> QTimer:
     return timer
 
 
+RUNNING_MUTEX = "CapriCompanionRunning"     # packaging/capri.iss waits for it when updating
+
+
+def _running_mutex():
+    """A Windows named mutex that exists while Capri runs (released by Windows when she exits)."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        return ctypes.windll.kernel32.CreateMutexW(None, False, RUNNING_MUTEX)
+    except Exception:
+        return None
+
+
+def restart_command() -> tuple[str, list[str], str]:
+    """(program, arguments, folder) that start Capri again: Capri.exe, or python -m capri from the code."""
+    if getattr(sys, "frozen", False):
+        return sys.executable, [], str(Path(sys.executable).parent)
+    root = Path(__file__).resolve().parent.parent
+    return sys.executable, ["-m", "capri"], str(root)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="capri", description="Capri desktop companion")
     parser.add_argument("--preview", action="store_true",
@@ -153,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
         print("[capri] already running - brought her back to the front.")
         return 0
 
+    app.running_mark = _running_mutex()   # the installer waits for this to go before it updates her
     first_run = not Settings.path().exists()
     settings = Settings.load()
     if not args.preview and apply_waiting_update(settings):   # a downloaded update: install it, then she restarts
@@ -411,7 +434,8 @@ def main(argv: list[str] | None = None) -> int:
                                                   (PcTab(settings, assistant.settings_changed.emit,
                                                          lambda: greet(preview=True), game_hype=hype,
                                                          join_now=lambda: router.handle("join call"),
-                                                         updates=services.updates), "PC && chat")])
+                                                         updates=services.updates,
+                                                         restart=services.restart), "PC && chat")])
         win = windows["settings"]
         win.load_rows()
         win.show()
@@ -430,6 +454,28 @@ def main(argv: list[str] | None = None) -> int:
     updates = UpdateManager(settings, controller, assistant, menu.tray)    # new versions from GitHub
     services.updates = updates
     menu.add_updates(updates)
+
+    def restart_capri() -> None:
+        """Start a fresh Capri, then quit this one. A downloaded update installs as she starts."""
+        from PySide6.QtCore import QProcess
+        program, arguments, folder = restart_command()
+        log.info("restarting Capri")
+        lock.unlock()                                  # the new Capri mustn't think one's already running
+        server.close()
+        if not QProcess.startDetached(program, arguments, folder):
+            lock.tryLock(100)
+            controller.log("Error", "couldn't restart - start me again yourself")
+            return
+        app.quit()
+    services.restart = restart_capri
+    menu.add_restart(restart_capri)
+    if settings.last_version != __version__:          # "Updated to 1.36.3" once, after an update
+        if settings.last_version and not first_run:
+            controller.log("Update", f"updated to Capri {__version__}")
+            QTimer.singleShot(4000, lambda: assistant.show_result(
+                State.SUCCESS, f"I've updated myself to Capri {__version__}.", speak=False, emotion="happy"))
+        settings.last_version = __version__
+        settings.save()
     updates.start()
 
     # Global shortcuts: work even while a game has focus.

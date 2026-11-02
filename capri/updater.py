@@ -23,6 +23,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,12 @@ log = logging.getLogger("capri")
 
 REPO = "kamome513/capri-companion"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
+# A tiny file attached to every release (the release workflow makes it). It comes from GitHub's normal
+# download servers, which - unlike the API above (60 questions an hour per internet connection) - don't
+# say no when you check a lot. The API is only the backup.
+LATEST_JSON = f"https://github.com/{REPO}/releases/latest/download/latest.json"
+MAX_TRIES = 2              # the same update not taking twice at start-up: stop and say so (no loop)
+INSTALLING_SECONDS = 120   # an installer started this recently is still running: don't start another
 PAGE = f"https://github.com/{REPO}/releases/latest"
 DOWNLOADS = f"https://github.com/{REPO}/releases/download/"
 ASSET = re.compile(r"^Capri-Setup-[\w.\-]+\.exe$", re.I)
@@ -71,12 +78,41 @@ def _get_json(url: str, timeout: float = 15.0) -> dict:
     req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
                                                "User-Agent": f"Capri/{__version__}"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode())
+        return json.loads(r.read().decode("utf-8-sig"))
+
+
+def _from_latest_json(info: dict, current: str) -> Update | None | bool:
+    """latest.json -> an Update / None (up to date) / False (not a latest.json - ask the API)."""
+    if not isinstance(info, dict) or "version" not in info or "file" not in info:
+        return False
+    version = ".".join(map(str, parse_version(str(info["version"]))))
+    if not version:
+        return False
+    if not newer(version, current):
+        return None
+    name = str(info["file"])
+    if not ASSET.match(name):
+        return False
+    return Update(version, f"{DOWNLOADS}v{version}/{name}", name, int(info.get("size") or 0),
+                  str(info.get("sha256") or "").lower(), f"https://github.com/{REPO}/releases/tag/v{version}")
 
 
 def check(fetch: Callable[[str], dict] = _get_json, current: str = __version__) -> Update | None:
-    """The newest release if it's newer than this Capri, else None. Blocking (network)."""
-    info = fetch(API)
+    """The newest release if it's newer than this Capri, else None. Blocking (network).
+    Raises the first problem if neither latest.json nor the API answered."""
+    problem: Exception | None = None
+    try:
+        found = _from_latest_json(fetch(LATEST_JSON), current)
+        if found is not False:
+            return found
+    except Exception as exc:                  # (releases before 1.36.3 have no latest.json)
+        problem = exc
+        log.info("update: latest.json unavailable (%s) - asking GitHub's API", exc)
+    try:
+        info = fetch(API)
+    except Exception as exc:
+        log.info("update: GitHub's API didn't answer either (%s; latest.json: %s)", exc, problem)
+        raise
     if not isinstance(info, dict) or info.get("draft") or info.get("prerelease"):
         return None
     version = ".".join(map(str, parse_version(info.get("tag_name", "") or info.get("name", ""))))
@@ -170,14 +206,57 @@ def clear(folder: Path | None = None) -> None:
                 pass
 
 
-def install(installer: Path, run: Callable = subprocess.Popen) -> bool:
-    """Start the installer quietly; it closes this Capri, updates her and starts her again.
-    The caller quits Capri straight after. False if it couldn't start."""
+def _state_file(folder: Path | None = None) -> Path:
+    return (folder or updates_dir()) / "ready.json"
+
+
+def tries(folder: Path | None = None) -> tuple[int, float]:
+    """(times the waiting update was started, when the last one started)."""
+    try:
+        info = json.loads(_state_file(folder).read_text(encoding="utf-8"))
+        return int(info.get("tries", 0)), float(info.get("started", 0.0))
+    except (OSError, ValueError, TypeError):
+        return 0, 0.0
+
+
+def _note_try(folder: Path | None = None, now: float | None = None) -> None:
+    path = _state_file(folder)
+    try:
+        info = json.loads(path.read_text(encoding="utf-8"))
+        info["tries"] = int(info.get("tries", 0)) + 1
+        info["started"] = time.time() if now is None else now
+        path.write_text(json.dumps(info), encoding="utf-8")
+    except (OSError, ValueError, TypeError):
+        pass
+
+
+def installer_running() -> bool:
+    """Is a Capri-Setup installer running right now? (Inno Setup runs as Capri-Setup-x.exe / .tmp)"""
+    try:
+        import psutil
+    except ImportError:
+        return False
+    for proc in psutil.process_iter(["name"]):
+        try:
+            if (proc.info.get("name") or "").lower().startswith("capri-setup"):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def install(installer: Path, run: Callable = subprocess.Popen, folder: Path | None = None,
+            app_dir: str | None = None) -> bool:
+    """Start the installer quietly; it waits for this Capri to close, updates the copy you're running
+    (her own folder, wherever that is) and starts her again. The caller quits Capri straight after.
+    False if it couldn't start."""
     if not frozen():
         return False
+    app_dir = app_dir or os.path.dirname(sys.executable)
+    _note_try(folder or installer.parent)
     try:
-        run([str(installer), "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/update=1"],
-            close_fds=True, creationflags=0x00000008)           # DETACHED_PROCESS: outlives Capri
+        run([str(installer), "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/update=1",
+             f"/DIR={app_dir}"], close_fds=True, creationflags=0x00000008)   # DETACHED_PROCESS: outlives Capri
         return True
     except OSError as exc:
         log.warning("update: couldn't start the installer: %s", exc)

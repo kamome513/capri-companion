@@ -55,6 +55,7 @@ class LocalBrain:
         self._last = -1e9
 
     chosen = ""                       # the model Ollama actually has that she uses (see available)
+    no_tools = False                  # this model can't do tools (she just chats with it)
 
     def available(self) -> tuple[bool, str]:
         """(ok, message) - is Ollama answering, and has it got a model she can talk with?"""
@@ -111,14 +112,23 @@ class LocalBrain:
         last = next((m.get("content", "") for m in reversed(self.messages) if m.get("role") == "user"), "")
         # Small local models (llama 3.2...) chat far better without her whole list of PC actions in front of
         # them: hand them the tools only when you're asking for something to be done.
-        tools = OLLAMA_TOOLS if wants_action(str(last)) else None
+        tools = OLLAMA_TOOLS if wants_action(str(last)) and not self.no_tools else None
         for _ in range(4):
             body = {"model": self._use_model(),
                     "messages": [{"role": "system", "content": system}] + self.messages,
                     "stream": False, "options": {"temperature": 0.8}, "keep_alive": "3m"}   # RAM freed 3 min after
             if tools:
                 body["tools"] = tools
-            data = self._fetch("POST", self._base() + "/api/chat", timeout=TIMEOUT, json_body=body) or {}
+            try:
+                data = self._fetch("POST", self._base() + "/api/chat", timeout=TIMEOUT, json_body=body) or {}
+            except http.HttpError as exc:
+                if tools and exc.status in (400, 404, 500) and "tool" in (exc.body or "").lower():
+                    self.no_tools = True               # "llama2 does not support tools": just chat with it
+                    tools = None
+                    body.pop("tools", None)
+                    data = self._fetch("POST", self._base() + "/api/chat", timeout=TIMEOUT, json_body=body) or {}
+                else:
+                    raise
             message = data.get("message") or {}
             said = (message.get("content") or "").strip()
             calls = message.get("tool_calls") or []

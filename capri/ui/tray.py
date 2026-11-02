@@ -135,6 +135,17 @@ class CompanionMenu(QObject):
             self.menu.addAction(self.a_update)
         self.menu.aboutToShow.connect(lambda: self.a_update.setText(updates.label()))
 
+    def add_restart(self, restart) -> None:
+        """'Restart Capri' - just above Exit. Installs a downloaded update on the way."""
+        action = QAction("Restart Capri", self.menu)
+        action.triggered.connect(restart)
+        exit_action = next((a for a in self.menu.actions() if a.text() == "Exit Capri"), None)
+        if exit_action is not None:
+            self.menu.insertAction(exit_action, action)
+        else:
+            self.menu.addAction(action)
+        self.a_restart = action
+
     @staticmethod
     def _sub(parent: QMenu, title: str) -> QMenu:
         sub = parent.addMenu(title)

@@ -138,6 +138,7 @@ class Services:
     in_game: Callable[[], bool] | None = None   # are you in a game right now (then: never tab you out of it)
     open_settings: Callable[[], None] | None = None   # "open your settings": her Settings window
     updates: Any = None             # ui.updates.UpdateManager: "check for updates" / "update yourself"
+    restart: Callable[[], None] | None = None   # "restart yourself": a fresh Capri (installs a waiting update)
     doctor: Any = None              # ai.doctor.AIDoctor: "set up your brain"
 
 
@@ -396,7 +397,7 @@ class CommandRouter(QObject):
             Kind.PC_INFO: self._pc_info, Kind.SCREENSHOT: self._screenshot, Kind.PERSONALITY: self._personality,
             Kind.SCREEN: self._screen, Kind.REPEAT: self._repeat, Kind.MOVE: self._move, Kind.AI_SETUP: self._ai_setup,
             Kind.SHORTCUT: self._shortcut, Kind.FORGET: self._forget, Kind.MUSIC_SERVICE: self._music_service,
-            Kind.LEARN_BUTTON: self._learn_button, Kind.FORGET_BUTTON: self._forget_button, Kind.TYPE: self._type, Kind.HAIR: self._hair, Kind.SETTINGS: self._settings, Kind.UPDATE: self._update,
+            Kind.LEARN_BUTTON: self._learn_button, Kind.FORGET_BUTTON: self._forget_button, Kind.TYPE: self._type, Kind.HAIR: self._hair, Kind.SETTINGS: self._settings, Kind.UPDATE: self._update, Kind.RESTART_APP: self._restart_app,
             Kind.QUIET: self._quiet, Kind.VOICE: self._voice, Kind.TIMER: self._timer,
             Kind.PERCH_ON: lambda i: self._perch(True), Kind.PERCH_OFF: lambda i: self._perch(False),
             Kind.HYPE_ON: lambda i: self._hype(True), Kind.HYPE_OFF: lambda i: self._hype(False),
@@ -2044,6 +2045,13 @@ class CommandRouter(QObject):
             return self.assistant.show_result(State.ERROR, "My settings aren't available here.")
         opener()
         self.assistant.show_result(State.SUCCESS, "Here are my settings.", emotion="happy")
+
+    def _restart_app(self, intent: Intent) -> None:
+        """'Restart yourself': close and start again (a downloaded update installs on the way)."""
+        if self.services.restart is None:
+            return self.assistant.show_result(State.ERROR, "I can't restart myself here.")
+        self.assistant.show_result(State.SUCCESS, "Restarting. Back in a sec.", speak=False)
+        QTimer.singleShot(800, self.services.restart)
 
     def _update(self, intent: Intent) -> None:
         """'Check for updates' / 'update yourself': a downloaded update installs (after a yes),

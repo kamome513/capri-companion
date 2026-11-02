@@ -48,6 +48,7 @@ class Kind(Enum):
     MUSIC_SERVICE = "music_service"   # "use soundcloud for music": targets = (service,)
     SETTINGS = "settings"         # "open your settings": her own Settings window
     UPDATE = "update"             # "check for updates" / "update yourself": a newer Capri from GitHub
+    RESTART_APP = "restart_app"   # "restart yourself": Capri closes and starts again (not the PC!)
     SHORTCUT = "shortcut"         # "when I say gaming time, open steam and discord": targets = (phrase, command)
     FORGET = "forget"             # "forget the shortcut gaming time": targets = (phrase,)
     TAB = "tab"                   # "switch tabs on opera": targets = (browser,) or (); query = the tab ("" = ask)
@@ -712,12 +713,23 @@ UPDATE_WORDS = (r"(?:(?:can you |could you |would you |please |hey |yo )*)"
                 r"|is there a new(?:er)? (?:version of )?(?:you|capri)|are you up to date)(?: please| for me)*")
 
 
+RESTART_SELF = (r"(?:(?:can you |could you |please |hey |yo )*)(?:restart|reboot|reload|relaunch|refresh) "
+                r"(?:yourself|capri|you|the app|your app|your program)(?: please| for me| now)*")
+
+
+RESTART_HER = re.compile(r"\b(?:restart|reboot|relaunch|reload)\s+(?:yourself|capri|the app|your app|your program)\b")
+
+
 def parse(text: str) -> Intent:
+    if RESTART_HER.search((text or "").lower()):
+        return Intent(Kind.RESTART_APP)          # "restart capri" - her, not the PC (before her name is dropped)
     t = normalise(text)
     if not t:
         return Intent(Kind.UNKNOWN)
     if re.match(rf"{TYPE_VERB} ", t) and (words := typed_words(text)) is not None:
         return Intent(Kind.TYPE, query=words)
+    if re.fullmatch(RESTART_SELF, t):
+        return Intent(Kind.RESTART_APP)                            # "restart yourself": her, not the PC
     if re.fullmatch(UPDATE_WORDS, t):
         return Intent(Kind.UPDATE)                                 # "check for updates": a newer Capri on GitHub
     if re.fullmatch(OPEN_SETTINGS, t) or re.fullmatch(rf"(?:capri )?{SETTINGS_WORDS}(?: please)?", t):

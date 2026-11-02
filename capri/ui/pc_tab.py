@@ -29,7 +29,8 @@ def _hint(text: str) -> QLabel:
 
 class PcTab(QWidget):
     def __init__(self, settings: Settings, on_saved: Callable[[], None], preview_greeting: Callable[[], None],
-                 game_hype=None, join_now: Callable[[], None] | None = None, updates=None) -> None:
+                 game_hype=None, join_now: Callable[[], None] | None = None, updates=None,
+                 restart: Callable[[], None] | None = None) -> None:
         super().__init__()
         self._join_now = join_now
         self.updates = updates
@@ -142,6 +143,13 @@ class PcTab(QWidget):
         else:
             self.update_btn.setEnabled(False)
         form.addRow(self.update_btn, self.update_status)
+        self.restart_btn = QPushButton("Restart Capri")
+        self.restart_btn.setToolTip("Close and start her again - a downloaded update installs on the way")
+        if restart is not None:
+            self.restart_btn.clicked.connect(restart)
+        else:
+            self.restart_btn.setEnabled(False)
+        form.addRow(self.restart_btn, _hint("Close and start her again. A downloaded update installs on the way."))
         root.addWidget(upd)
 
         power = QGroupBox("PC power and windows")

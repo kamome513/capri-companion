@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Callable
 
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -30,10 +31,12 @@ class UpdateManager(QObject):
                  check: Callable = updater.check, download: Callable = updater.download,
                  ready: Callable = updater.ready, install: Callable = updater.install,
                  frozen: Callable[[], bool] = updater.frozen, open_page: Callable[[str], None] | None = None,
-                 quit_app: Callable[[], None] | None = None, confirm: Callable[[str], bool] | None = None) -> None:
+                 quit_app: Callable[[], None] | None = None, confirm: Callable[[str], bool] | None = None,
+                 tries: Callable = updater.tries) -> None:
         super().__init__()
         self.settings, self.controller, self.assistant, self.tray = settings, controller, assistant, tray
         self._check, self._download, self._ready, self._install = check, download, ready, install
+        self._tries = tries
         self._frozen = frozen
         self._open_page = open_page or _open_url
         self._quit = quit_app or QApplication.quit
@@ -76,7 +79,7 @@ class UpdateManager(QObject):
             return
         ready = self._ready() if self._frozen() else None
         if ready is not None:                        # already downloaded and checked
-            return self._offer(ready[0])
+            return self._stuck(ready[0]) if self.stuck() else self._offer(ready[0])
         self.busy = True
         if not quiet:
             self._say("Checking GitHub for a newer me...")
@@ -87,7 +90,7 @@ class UpdateManager(QObject):
         if isinstance(result, Exception):
             log.info("update check failed: %s", result)
             if not quiet:
-                self._say("Couldn't reach GitHub to check for updates. Try again later.", error=True)
+                self._say(f"Couldn't check GitHub for updates: {friendly(result)}.", error=True)
             return
         if result is None:
             if not quiet:
@@ -116,17 +119,25 @@ class UpdateManager(QObject):
             return
         self._offer(self.found.version if self.found else "")
 
+    def stuck(self) -> bool:
+        """The waiting update already didn't take twice at start-up (so she won't keep trying by herself)."""
+        return self._tries()[0] >= updater.MAX_TRIES
+
+    def _stuck(self, version: str) -> None:
+        self._say(f"Capri {version} didn't install by itself. Right-click me, Restart to update - or get it "
+                  f"from my GitHub page.", error=True)
+
     def _offer(self, version: str) -> None:
         if getattr(self.settings, "auto_update", True):
-            self._say(f"Capri {version} is downloaded. I'll update next time I start - or right-click me, "
-                      f"Update now.")
+            self._say(f"Capri {version} is downloaded. Right-click me, Restart to update - or it installs "
+                      f"next time I start.")
         else:
-            self._say(f"Capri {version} is downloaded. Right-click me, Update now, whenever you like.")
+            self._say(f"Capri {version} is downloaded. Right-click me, Restart to update, whenever you like.")
         if self.tray is not None:
             try:
                 from PySide6.QtWidgets import QSystemTrayIcon
-                self.tray.showMessage("Capri update ready", f"Capri {version} installs next time she starts. "
-                                      "Right-click her for Update now.", QSystemTrayIcon.MessageIcon.Information, 6000)
+                self.tray.showMessage("Capri update ready", f"Capri {version} is ready. Right-click her and pick "
+                                      "Restart to update.", QSystemTrayIcon.MessageIcon.Information, 6000)
             except Exception:
                 pass
 
@@ -135,7 +146,7 @@ class UpdateManager(QObject):
         """The menu item's words."""
         ready = self._ready() if self._frozen() else None
         if ready is not None:
-            return f"Update now (Capri {ready[0]})"
+            return f"Restart to update (Capri {ready[0]})"
         if self.found is not None:
             return f"Update to Capri {self.found.version}..."
         return "Check for updates"
@@ -154,8 +165,8 @@ class UpdateManager(QObject):
             self.check_now()
             return False
         version, installer = ready
-        if not self._confirm(f"Update to Capri {version} now? She'll close, update and start again "
-                             f"(about half a minute)."):
+        if not self._confirm(f"Restart Capri and update to {version} now? She'll close, update and start "
+                             f"again (about half a minute)."):
             return False
         if not self._install(installer):
             self._say("Couldn't start the update. I'll try again when I next start.", error=True)
@@ -166,15 +177,28 @@ class UpdateManager(QObject):
 
 
 def apply_waiting_update(settings, ready: Callable = updater.ready, install: Callable = updater.install,
-                         frozen: Callable[[], bool] = updater.frozen) -> bool:
+                         frozen: Callable[[], bool] = updater.frozen, tries: Callable = updater.tries,
+                         now: Callable[[], float] = time.time,
+                         installing: Callable[[], bool] = updater.installer_running) -> bool:
     """At start-up: a downloaded update is waiting -> start its installer (Capri then exits).
-    True if the installer was started."""
+    True = Capri should exit now (the installer is running and starts her again).
+
+    Never a loop: if the same update already didn't take twice, she starts normally and tells you
+    (UpdateManager.stuck); if one was started moments ago (you opened her again while it runs),
+    she leaves it to finish."""
     if not frozen() or not getattr(settings, "auto_update", True):
         return False
     waiting = ready()
     if waiting is None:
         return False
-    log.info("update: installing waiting Capri %s at start-up", waiting[0])
+    count, started = tries()
+    if started and 0 <= now() - started < updater.INSTALLING_SECONDS and installing():
+        log.info("update: Capri %s is being installed right now - leaving it to finish", waiting[0])
+        return True
+    if count >= updater.MAX_TRIES:
+        log.warning("update: Capri %s didn't install after %d tries - starting normally", waiting[0], count)
+        return False
+    log.info("update: installing waiting Capri %s at start-up (try %d)", waiting[0], count + 1)
     return install(waiting[1])
 
 

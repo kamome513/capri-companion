@@ -250,12 +250,12 @@ def test_auto_update_off_only_tells_you():
     m.check_now(quiet=True)                          # the daily timer: off
     assert got == []
     m.check_now()                                    # you asked: she fetches it, installs only on your yes
-    assert got == [new] and "Update now" in m.status and "next time" not in m.status
+    assert got == [new] and "Restart to update" in m.status and "next time" not in m.status
 
 
 def test_update_now_asks_installs_and_quits():
     m, calls = _manager(ready=lambda: ("9.9.9", Path("Capri-Setup-9.9.9.exe")))
-    assert m.label() == "Update now (Capri 9.9.9)"
+    assert m.label() == "Restart to update (Capri 9.9.9)"
     m.menu_clicked()
     assert calls["installed"] == [Path("Capri-Setup-9.9.9.exe")] and calls["quit"] == 1
     m2, calls2 = _manager(ready=lambda: ("9.9.9", Path("Capri-Setup-9.9.9.exe")), confirm=lambda q: False)
@@ -279,7 +279,7 @@ def test_offline_is_fine():
     m.check_now(quiet=True)
     assert not m.busy
     m.check_now()
-    assert "Couldn't reach GitHub" in m.status
+    assert "Couldn't check GitHub" in m.status
 
 
 def test_waiting_update_installs_at_startup():

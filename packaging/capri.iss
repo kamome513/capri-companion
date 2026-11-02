@@ -8,7 +8,7 @@
 
 #define AppName "Capri"
 #ifndef AppVersion
-  #define AppVersion "1.36.2"
+  #define AppVersion "1.36.3"
 #endif
 
 [Setup]
@@ -60,6 +60,22 @@ Type: dirifempty; Name: "{app}"
 function IsCapriUpdate: Boolean;
 begin
   Result := ExpandConstant('{param:update|0}') = '1';
+end;
+
+// Capri updating herself: she quits right after starting this installer. Wait (up to 30 s) until
+// she has really gone, so her files aren't in use and nothing is half-replaced.
+function InitializeSetup: Boolean;
+var
+  Waited: Integer;
+begin
+  Waited := 0;
+  if IsCapriUpdate then
+    while CheckForMutexes('CapriCompanionRunning') and (Waited < 30000) do
+    begin
+      Sleep(250);
+      Waited := Waited + 250;
+    end;
+  Result := True;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

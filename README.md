@@ -172,6 +172,7 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 | "repeat what I said" / "say that again" | Repeats you, or herself |
 | "open your settings" | Opens her Settings |
 | "check for updates" / "update yourself" | Looks for a newer Capri / installs a downloaded one (asks first) |
+| "restart yourself" / "restart Capri" | Closes and starts her again (a downloaded update installs on the way) |
 
 ### Right-click menu (or the tray icon by the clock)
 
@@ -201,9 +202,10 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 | **Window → Click-through** | Clicks go straight through her (Ctrl+Alt+Shift+C toggles it) |
 | **Window → Reset position** | Back to the bottom-right corner |
 | **Start with Windows** | Starts Capri when you sign in |
-| **Check for updates** / **Update now** | Looks for a newer Capri. Once one is downloaded, installs it (asks first) and restarts her |
+| **Check for updates** / **Restart to update** | Looks for a newer Capri. Once one is downloaded, restarts her to install it (asks first) |
 | **Settings...** | Opens Settings (below) |
 | **Open log folder** | Opens `capri.log`, handy if something goes wrong |
+| **Restart Capri** | Closes and starts her again. A downloaded update installs on the way |
 | **Exit Capri** | Quits |
 
 You can **drag** Capri or her panel anywhere, on any monitor.
@@ -289,6 +291,7 @@ install something.
 | **Greet me when I sign in** / **Big, in the middle** / **Preview greeting** | Her hello when you sign in or wake the PC |
 | **Start Capri with Windows** | Same as the menu item |
 | **Update automatically** / **Check for updates now** | Daily check for a new Capri: downloads it and installs it on her next start. Off = she only tells you |
+| **Restart Capri** | Closes and starts her again (installs a downloaded update) |
 | **Game hype** (cheer for kills, say something when I die, watch my screen, encourage me) / **Preview** | Hype while you play: CS2, Dota 2 and League directly, any game by reading your screen |
 | **Toggle Mute / Deafen keybind** | Your Discord keybinds, if you changed Discord's defaults |
 | **Your voice channel** / **Leave call keybind** / **Join it now** | For "join call" and "leave call". Right-click the channel in Discord → Copy Link |

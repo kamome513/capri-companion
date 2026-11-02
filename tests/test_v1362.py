@@ -64,26 +64,15 @@ def test_commands_starting_with_the(heard, clean):
     assert clean_command(heard) == clean
 
 
-def test_downloads_check_certificates_like_windows(monkeypatch):
+def test_downloads_get_certificate_fallbacks():
+    import urllib.request
     net._done = ""
-    injected = []
-    import truststore
-    monkeypatch.setattr(truststore, "inject_into_ssl", lambda: injected.append(1))
-    assert net.use_system_certificates() == "system" and injected == [1]
-    assert net.use_system_certificates() == "system" and injected == [1]       # once
-    net._done = ""
-
-
-def test_without_truststore_mozillas_list_is_added(monkeypatch):
-    net._done = ""
-    monkeypatch.setitem(sys.modules, "truststore", None)                        # import fails
-    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
-    assert net.use_system_certificates() == "certifi"
-    import os
-    import certifi
-    assert os.environ["SSL_CERT_FILE"] == certifi.where()
-    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
-    net._done = ""
+    try:
+        assert net.use_system_certificates().startswith("fallbacks:")
+        assert any(isinstance(h, net.FallbackHTTPSHandler) for h in urllib.request._opener.handlers)
+    finally:
+        urllib.request.install_opener(None)
+        net._done = ""
 
 
 def test_download_errors_in_plain_words():

@@ -44,6 +44,42 @@ OPENAI_TOOLS = [{"type": "function",
                 for t in TOOLS]
 
 
+def _portable(schema: dict) -> dict:
+    """A tool's inputs in the plainest JSON schema every service accepts: Gemini rejects
+    "additionalProperties" and "strict"; nobody minds them missing."""
+    out = {}
+    for key, value in schema.items():
+        if key in ("additionalProperties", "strict"):
+            continue
+        out[key] = {k: _portable(v) if isinstance(v, dict) else v for k, v in value.items()} \
+            if key == "properties" and isinstance(value, dict) else value
+    return out
+
+
+def portable_tools() -> list[dict]:
+    """Her tools for any service: no strict-mode extras, and no empty input list (Gemini: "properties
+    should be non-empty for OBJECT type") - a tool that takes nothing just has no parameters."""
+    tools = []
+    for t in TOOLS:
+        fn = {"name": t["name"], "description": t["description"]}
+        params = _portable(t["input_schema"])
+        if params.get("properties"):
+            fn["parameters"] = params
+        tools.append({"type": "function", "function": fn})
+    return tools
+
+
+PORTABLE_TOOLS = portable_tools()
+TOOL_TROUBLE = ("tool", "function", "additionalproperties", "unknown name", "invalid json payload", "schema",
+                "parameters", "strict")
+
+
+def tool_trouble(status: int, text: str) -> bool:
+    """The service didn't like her tools (or doesn't do tools with this model) - not a missing model."""
+    t = text.lower()
+    return status in (400, 404, 422) and any(word in t for word in TOOL_TROUBLE)
+
+
 # Models that can't hold a conversation (pictures, speech, search vectors...): never picked as a stand-in.
 NOT_CHAT = ("embed", "image", "imagen", "veo", "tts", "audio", "transcribe", "whisper", "dall-e", "moderation",
             "realtime", "live", "aqa", "search", "computer-use", "robotics", "guard", "rerank", "native-audio")
@@ -74,6 +110,13 @@ def pick_stand_in(available: list[str], wanted: str) -> str:
         if best_key is None or key > best_key:
             best, best_key = name, key
     return best
+
+
+def _text(content) -> str:
+    """A reply's words: a plain string, or (some services) a list of parts."""
+    if isinstance(content, list):
+        content = "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in content)
+    return (content or "").strip() if isinstance(content, str) else ""
 
 
 def reasoning_model(model: str) -> bool:
@@ -201,15 +244,26 @@ class OpenAIBrain:
         said = self._detail(exc).strip().rstrip(".")
         return f"{self.label()} refused: {said[:120]}." if said else f"{self.label()} glitched out ({exc.status})."
 
+    def _tools(self) -> list[dict] | None:
+        """OpenAI itself: her strict tools. Everyone else: the portable ones. A service that refused
+        both: none (she just chats - commands still work, you say them to her directly)."""
+        if "tools" in self._skip:
+            return None
+        if "api.openai.com" in self.base() and "portable" not in self._skip:
+            return OPENAI_TOOLS
+        return PORTABLE_TOOLS
+
     def _body(self, system: str) -> dict:
         model = self.model()
-        body = {"model": model, "messages": [{"role": "system", "content": system}] + self.messages,
-                "tools": OPENAI_TOOLS}
+        body = {"model": model, "messages": [{"role": "system", "content": system}] + self.messages}
+        tools = self._tools()
+        if tools:
+            body["tools"] = tools
         official = "api.openai.com" in self.base()
         if official and "max_completion_tokens" not in self._skip:
             body["max_completion_tokens"] = 1500 if reasoning_model(model) else 400
         elif "max_tokens" not in self._skip:
-            body["max_tokens"] = 400
+            body["max_tokens"] = 1024             # room for "thinking" models (Gemini 2.5...) to still answer
         if reasoning_model(model) and "reasoning_effort" not in self._skip:
             body["reasoning_effort"] = "minimal"
         return body
@@ -217,13 +271,22 @@ class OpenAIBrain:
     def _post(self, system: str) -> dict:
         key = self._key().strip()
         headers = {"Authorization": f"Bearer {key}"} if key else {}
-        for _ in range(3):                    # a service that rejects an option: drop it and ask again
+        for _ in range(6):                    # a service that rejects something: adapt and ask again
             try:
                 return self._fetch("POST", self.base() + "/chat/completions", json_body=self._body(system),
                                    headers=headers, timeout=TIMEOUT) or {}
             except http.HttpError as exc:
                 body = exc.body.lower()
-                if model_missing(exc.status, self._detail(exc) or body) and self._swap_model():
+                detail = self._detail(exc) or body
+                if self._tools() is not None and tool_trouble(exc.status, detail):
+                    if self._tools() is OPENAI_TOOLS:
+                        self._skip.add("portable")        # plainer tools
+                    else:
+                        self._skip.add("tools")           # this model doesn't do tools: just chat
+                    log.info("ai: %s refused her tools (%s) - %s", self.label(), detail[:120],
+                             "plainer ones" if "tools" not in self._skip else "chatting without them")
+                    continue
+                if model_missing(exc.status, detail) and self._swap_model():
                     continue                              # retired / renamed model: ask again with the new one
                 dropped = next((o for o in ("reasoning_effort", "max_completion_tokens", "max_tokens")
                                 if o in body and o not in self._skip and exc.status == 400), None)
@@ -239,8 +302,14 @@ class OpenAIBrain:
             data = self._post(system)
             choice = (data.get("choices") or [{}])[0]
             message = choice.get("message") or {}
-            said = (message.get("content") or "").strip()
+            said = _text(message.get("content"))
             calls = message.get("tool_calls") or []
+            if not said and not calls and choice.get("finish_reason") in ("length", "max_tokens") \
+                    and "max_tokens" not in self._skip:
+                # A "thinking" model spent the whole allowance thinking: ask again without a limit.
+                self._skip.update({"max_tokens", "max_completion_tokens"})
+                log.info("ai: %s used every token thinking - asking again without a limit", self.label())
+                continue
             self.messages.append({"role": "assistant", "content": said or None,
                                   **({"tool_calls": calls} if calls else {})})
             feeling, said = emotions.split_tag(said)

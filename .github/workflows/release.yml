@@ -66,6 +66,18 @@ jobs:
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=${{ steps.v.outputs.version }}" packaging\capri.iss
           Get-Item "dist\Capri-Setup-${{ steps.v.outputs.version }}.exe"
 
+      - name: Describe it for Capri's updater (latest.json)
+        if: steps.exists.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $v = "${{ steps.v.outputs.version }}"
+          $file = "Capri-Setup-$v.exe"
+          $item = Get-Item "dist\$file"
+          $hash = (Get-FileHash $item.FullName -Algorithm SHA256).Hash.ToLower()
+          @{ version = $v; file = $file; size = $item.Length; sha256 = $hash } |
+            ConvertTo-Json | Set-Content -Encoding utf8NoBOM dist\latest.json
+          Get-Content dist\latest.json
+
       - name: Publish the release
         if: steps.exists.outputs.skip != 'true'
         shell: bash
@@ -73,5 +85,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${{ steps.v.outputs.version }}"
-          gh release create "v$v" "dist/Capri-Setup-$v.exe" --target "$GITHUB_SHA" \
+          gh release create "v$v" "dist/Capri-Setup-$v.exe" dist/latest.json --target "$GITHUB_SHA" \
             --title "Capri $v" --notes-file packaging/release_notes.md
