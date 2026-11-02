@@ -377,4 +377,6 @@ class VoiceService(QObject):
 
 def _short(exc: Exception) -> str:
     text = str(exc).strip() or type(exc).__name__
+    if "PortAudio library not found" in text:            # Linux without the sound library
+        return "install PortAudio: sudo apt install libportaudio2"
     return text if len(text) < 60 else text[:57] + "..."

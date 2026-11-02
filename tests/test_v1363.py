@@ -23,6 +23,11 @@ app = QApplication.instance() or QApplication([])
 from test_v11 import FakeDesktop, rig  # noqa: E402
 
 from capri import net, updater  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _windows_updates(monkeypatch):
+    monkeypatch.setattr(updater, "LINUX", False)      # these test the Windows installer flow (test_linux: AppImage)
 from capri.ai import openai_compat as oc  # noqa: E402
 from capri.commands.parser import Kind, parse  # noqa: E402
 from capri.integrations import http  # noqa: E402

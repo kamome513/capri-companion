@@ -10,6 +10,7 @@ Every key has an emotion too, so her face and voice match the line.
 
 from __future__ import annotations
 
+from .words import FILE_MANAGER
 import random
 
 # key: (emotion, plain line, [slang variants])
@@ -141,7 +142,7 @@ LINES: dict[str, tuple[str, str, list[str]]] = {
     "restored": ("happy", "Windows are back.", ["Everything's back, choom."]),
     "nothing_to_restore": ("confused", "Nothing to bring back.", ["Nothing to bring back, choom."]),
     # File Explorer
-    "revealed": ("happy", "Here's {name} in File Explorer.", ["Here's {name}, choom. Right there in File Explorer."]),
+    "revealed": ("happy", f"Here's {{name}} in {FILE_MANAGER}.", [f"Here's {{name}}, choom. Right there in {FILE_MANAGER}."]),
     "opened_file": ("happy", "Opening {name}.", ["Opening {name}, choom."]),
     "not_in_files": ("confused", "Couldn't find {thing} in your files.", [
         "Scanned your files, choom. No {thing} anywhere."]),

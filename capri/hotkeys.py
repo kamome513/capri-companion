@@ -1,7 +1,7 @@
-"""System-wide keyboard shortcuts (Windows RegisterHotKey).
+"""System-wide keyboard shortcuts: Windows RegisterHotKey, Linux X11 key grabs (linux/hotkeys.py).
 
 Works while any other app has focus, needs no admin rights, and never
-sees any other keystrokes - Windows only tells us when *our* combo is pressed.
+sees any other keystrokes - the system only tells us when *our* combo is pressed.
 """
 
 from __future__ import annotations
@@ -9,9 +9,18 @@ from __future__ import annotations
 import sys
 from typing import Callable
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget
 
-SUPPORTED = sys.platform == "win32"
+
+def _linux_x11() -> bool:
+    if not sys.platform.startswith("linux"):
+        return False
+    from .linux import x11
+    return x11.available()
+
+
+SUPPORTED = sys.platform == "win32" or _linux_x11()
 
 MODIFIERS = {"alt": 0x0001, "ctrl": 0x0002, "control": 0x0002, "shift": 0x0004, "win": 0x0008}
 MOD_NOREPEAT = 0x4000
@@ -53,19 +62,43 @@ def pretty(combo: str) -> str:
 
 
 class HotkeyManager(QWidget):
-    """An invisible native window that receives WM_HOTKEY messages."""
+    """An invisible native window that receives WM_HOTKEY messages (Windows), or X11 key grabs (Linux)."""
+
+    _fired = Signal(int)            # from the X11 thread to the UI thread
 
     def __init__(self) -> None:
         super().__init__(None)
         self._callbacks: dict[int, Callable[[], None]] = {}
         self._next_id = 1
-        if SUPPORTED:
+        self._x11 = None
+        self._fired.connect(self._run)
+        if sys.platform == "win32":
             self.winId()   # create the native window without ever showing it
+        elif SUPPORTED:
+            try:
+                from .linux.hotkeys import X11Hotkeys
+                self._x11 = X11Hotkeys(self._fired.emit)
+            except Exception:
+                self._x11 = None
+
+    def _run(self, hotkey_id: int) -> None:
+        callback = self._callbacks.get(hotkey_id)
+        if callback is not None:
+            callback()
 
     def register(self, combo: str, callback: Callable[[], None]) -> str | None:
         """Register a hotkey. Returns an error message, or None on success."""
-        if not SUPPORTED:
-            return "global hotkeys are only available on Windows"
+        if self._x11 is not None:
+            hotkey_id = self._next_id
+            error = self._x11.register(combo, hotkey_id)
+            if error:
+                return error
+            self._next_id += 1
+            self._callbacks[hotkey_id] = callback
+            return None
+        if not SUPPORTED or sys.platform != "win32":
+            return ("global hotkeys need X11 - on Wayland, bind a shortcut in your desktop's keyboard settings "
+                    "to \"capri --listen\"")
         try:
             mods, vk = parse(combo)
         except ValueError as exc:
@@ -79,7 +112,11 @@ class HotkeyManager(QWidget):
         return None
 
     def unregister_all(self) -> None:
-        if SUPPORTED:
+        if self._x11 is not None:
+            self._x11.unregister_all()
+            self._callbacks.clear()
+            return
+        if sys.platform == "win32":
             import ctypes
             for hotkey_id in self._callbacks:
                 ctypes.windll.user32.UnregisterHotKey(int(self.winId()), hotkey_id)
@@ -87,7 +124,7 @@ class HotkeyManager(QWidget):
 
     def nativeEvent(self, event_type, message):
         name = event_type.data() if hasattr(event_type, "data") else bytes(event_type)
-        if SUPPORTED and bytes(name) == b"windows_generic_MSG":
+        if sys.platform == "win32" and bytes(name) == b"windows_generic_MSG":
             import ctypes.wintypes
             msg = ctypes.wintypes.MSG.from_address(int(message))
             if msg.message == WM_HOTKEY and msg.wParam in self._callbacks:

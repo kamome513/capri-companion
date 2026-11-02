@@ -87,3 +87,78 @@ jobs:
           v="${{ steps.v.outputs.version }}"
           gh release create "v$v" "dist/Capri-Setup-$v.exe" dist/latest.json --target "$GITHUB_SHA" \
             --title "Capri $v" --notes-file packaging/release_notes.md
+
+  linux:
+    # Linux: the AppImage (one file, runs on most distros: Ubuntu 22.04+, Fedora, Arch, Mint, Debian 12...)
+    needs: release
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version
+        id: v
+        run: echo "version=$(grep -oP '__version__ = "\K[^"]+' capri/__init__.py)" >> "$GITHUB_OUTPUT"
+
+      - name: Already built?
+        id: exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          if ! gh release view "v$v" >/dev/null 2>&1; then
+            echo "No release v$v yet (the Windows build makes it) - nothing to add to."; echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif gh release view "v$v" --json assets -q '.assets[].name' | grep -qx "Capri-x86_64.AppImage"; then
+            echo "The AppImage is already there."; echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.exists.outputs.skip != 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install what the build needs
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libportaudio2 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-keysyms1 \
+            libxcb-image0 libxcb-render-util0 libxcb-shape0 libxcb-randr0 libxcb-xinerama0 libxcb-xkb1 libegl1 \
+            libfontconfig1 libdbus-1-3 xvfb jq
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+          python -m pip install -r requirements-voice.txt
+          python -m pip install --no-deps --ignore-requires-python "kokoro-onnx>=0.5,<1"
+          python -m pip install "sherpa-onnx>=1.12" "python-xlib>=0.33"
+
+      - name: Build Capri
+        if: steps.exists.outputs.skip != 'true'
+        run: python -m PyInstaller --noconfirm --clean --distpath dist --workpath build packaging/capri.spec
+
+      - name: Check she starts (virtual screen, 20 s)
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          export XDG_CONFIG_HOME="$RUNNER_TEMP/cfg"
+          xvfb-run -a -s "-screen 0 1600x900x24" timeout 20 dist/Capri/Capri || test $? -eq 124
+          log="$XDG_CONFIG_HOME/Capri/capri.log"
+          cat "$log"
+          grep -q "starting" "$log"
+          ! grep -q "Traceback" "$log"
+
+      - name: Make the AppImage
+        if: steps.exists.outputs.skip != 'true'
+        run: packaging/build_appimage.sh
+
+      - name: Add it to the release (and to latest.json for the updater)
+        if: steps.exists.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          f=dist/Capri-x86_64.AppImage
+          size=$(stat -c %s "$f"); sha=$(sha256sum "$f" | cut -d' ' -f1)
+          mkdir -p latest
+          gh release download "v$v" -p latest.json -D latest --clobber || echo "{\"version\": \"$v\"}" > latest/latest.json
+          jq --arg file "Capri-x86_64.AppImage" --argjson size "$size" --arg sha "$sha" \
+            '.linux = {file: $file, size: $size, sha256: $sha}' latest/latest.json > dist/latest.json
+          cat dist/latest.json
+          gh release upload "v$v" "$f" dist/latest.json --clobber

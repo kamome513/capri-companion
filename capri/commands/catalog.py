@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..words import START_MENU
 import logging
 import os
 import re
@@ -56,7 +57,7 @@ class Target:
         if self.game is not None:
             return f"{self.game.name} (Steam game {self.game.appid})"
         if self.shortcut is not None:
-            return f"{self.shortcut.name} (Start menu shortcut)"
+            return f"{self.shortcut.name} ({START_MENU} shortcut)"
         if self.installed is not None:
             kind = "Store app" if self.installed.store_package else "installed app"
             return f"{self.installed.name} ({kind} {self.installed.app_id})"
@@ -83,6 +84,11 @@ def spoken_website(spoken: str) -> str | None:
     if not m:
         return None
     return f"https://{m.group(1).replace(' ', '')}.{TLDS[m.group(2)]}"
+
+
+def _bare(name: str) -> str:
+    """A process name to compare: lower case, no .exe."""
+    return name.lower().removesuffix(".exe")
 
 
 class Catalog:
@@ -214,8 +220,8 @@ class Catalog:
     @staticmethod
     def _pids_for(t: Target, processes: list[ProcessInfo]) -> list[int]:
         if t.entry is not None:
-            names = {n.lower() for n in t.entry.processes}
-            pids = [p.pid for p in processes if p.name.lower() in names]
+            names = {_bare(n) for n in t.entry.processes}       # "Discord.exe" also finds Linux's "Discord"
+            pids = [p.pid for p in processes if _bare(p.name) in names]
             if pids or t.entry.launch_type != PROGRAM or not t.entry.is_configured():
                 return pids
             exe = os.path.normcase(t.entry.expanded_target())
@@ -223,9 +229,15 @@ class Catalog:
         if t.game is not None:
             folder = os.path.normcase(str(t.game.install_dir)) + os.sep
             return [p.pid for p in processes if p.exe and os.path.normcase(p.exe).startswith(folder)]
-        if t.shortcut is not None and t.shortcut.target is not None:
-            exe = os.path.normcase(str(t.shortcut.target))
-            return [p.pid for p in processes if p.exe and os.path.normcase(p.exe) == exe]
+        if t.shortcut is not None and (t.shortcut.target is not None or t.shortcut.names):
+            pids = []
+            if t.shortcut.target is not None:
+                exe = os.path.normcase(os.path.realpath(str(t.shortcut.target)))
+                pids = [p.pid for p in processes if p.exe and os.path.normcase(os.path.realpath(p.exe)) == exe]
+            if not pids and t.shortcut.names:            # Linux: wrapper scripts, Flatpak / Snap apps
+                names = {_bare(n) for n in t.shortcut.names}
+                pids = [p.pid for p in processes if _bare(p.name) in names]
+            return pids
         if t.installed is not None:
             if t.installed.exe is not None:
                 exe = os.path.normcase(str(t.installed.exe))

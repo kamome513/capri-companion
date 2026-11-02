@@ -312,8 +312,28 @@ def click(target: Target, mouse: Callable[[int, int], None]) -> None:
 
 
 # -- Windows plumbing ----------------------------------------------------------------------------------
+def _linux_target_window() -> int | None:
+    from ..linux import x11
+    x = x11.shared()
+    if x is None:
+        return None
+    me = os.getpid()
+
+    def usable(wid: int) -> bool:
+        if not wid or x.pid(wid) == me or x.is_minimized(wid) or not x.is_app_window(wid):
+            return False
+        g = x.geometry(wid)
+        return bool(g) and g[2] - g[0] > 120 and g[3] - g[1] > 80
+    front = x.active()
+    if usable(front):
+        return front
+    return next((w for w in reversed(x.stacking()) if usable(w)), None)
+
+
 def target_window() -> int | None:
     """The window you're using - or, if that's one of Capri's (her chat window), the one behind it."""
+    if sys.platform.startswith("linux"):
+        return _linux_target_window()
     if sys.platform != "win32":
         return None
     import ctypes
@@ -345,6 +365,10 @@ def target_window() -> int | None:
 
 
 def cursor_pos() -> tuple[int, int]:
+    if sys.platform.startswith("linux"):
+        from ..linux import x11
+        x = x11.shared()
+        return x.pointer() if x is not None else (0, 0)
     import ctypes
     from ctypes import wintypes
     pt = wintypes.POINT()

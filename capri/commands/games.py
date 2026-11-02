@@ -62,9 +62,27 @@ class Front:
     d3d: bool = False        # Windows says: a full-screen Direct3D game is running
 
 
+# Linux: where games live (Steam's Proton / native games, Lutris, Heroic, itch, Minecraft).
+LINUX_GAME_FOLDERS = ("/steamapps/common/", "/games/", "/lutris/", "/heroic/", "/itch/apps/", "/.minecraft/",
+                      "/compatdata/", "/.var/app/com.valvesoftware.steam/")
+LINUX_NOT_GAMES = {"firefox", "firefox-esr", "chrome", "chromium", "google-chrome", "brave", "vivaldi-bin", "opera",
+                   "vlc", "mpv", "totem", "celluloid", "discord", "spotify", "code", "obs", "nautilus", "dolphin",
+                   "thunar", "gnome-shell", "plasmashell", "steam", "steamwebhelper", "xdg-desktop-portal",
+                   "libreoffice", "soffice.bin", "evince", "okular", "eog", "gwenview", "gimp", "krita", "blender"}
+
+
 def looks_like_game(front: Front, game_dirs: list[str] = ()) -> str:
     """Why it's a game ("library" / "d3d" / "fullscreen"), or "" if it isn't one."""
-    exe = (front.exe or "").lower()                       # Windows paths: case doesn't matter
+    raw = front.exe or ""
+    if raw.startswith("/"):                               # Linux
+        low = raw.lower()
+        name = low.rsplit("/", 1)[-1]
+        if not raw or front.pid == os.getpid() or name in LINUX_NOT_GAMES or name in LAUNCHERS:
+            return ""
+        if any(f in low for f in LINUX_GAME_FOLDERS) or any(raw.startswith(d) for d in game_dirs if d):
+            return "library"
+        return "fullscreen" if front.fullscreen else ""
+    exe = raw.lower()                                     # Windows paths: case doesn't matter
     name = ntpath.basename(exe)
     if not exe or front.pid == os.getpid() or name in LAUNCHERS:
         return ""
@@ -79,8 +97,42 @@ def looks_like_game(front: Front, game_dirs: list[str] = ()) -> str:
     return ""
 
 
+def linux_front() -> Front | None:
+    """Linux (X11): the window you're using, its program, and whether it covers its whole screen."""
+    from ..linux import x11
+    x = x11.shared()
+    if x is None:
+        return None
+    wid = x.active()
+    if not wid:
+        return None
+    pid = x.pid(wid)
+    exe = ""
+    try:
+        import psutil
+        exe = psutil.Process(pid).exe() if pid else ""
+    except Exception:
+        exe = ""
+    full = x.is_fullscreen(wid)
+    if not full:
+        g = x.geometry(wid)
+        try:
+            from PySide6.QtGui import QGuiApplication
+            from PySide6.QtCore import QPoint
+            screen = QGuiApplication.screenAt(QPoint((g[0] + g[2]) // 2, (g[1] + g[3]) // 2)) if g else None
+            if screen is not None and g:
+                r, ratio = screen.geometry(), screen.devicePixelRatio()
+                full = g[0] <= r.left() * ratio and g[1] <= r.top() * ratio and \
+                    g[2] >= (r.right() + 1) * ratio and g[3] >= (r.bottom() + 1) * ratio
+        except Exception:
+            pass
+    return Front(pid, exe, full, False)
+
+
 def windows_front() -> Front | None:
-    """The foreground window's process, and whether it's full screen. Windows only."""
+    """The foreground window's process, and whether it's full screen. (Linux: linux_front.)"""
+    if sys.platform.startswith("linux"):
+        return linux_front()
     if sys.platform != "win32":
         return None
     import ctypes

@@ -23,8 +23,9 @@ class SteamGame:
 @dataclass(frozen=True)
 class Shortcut:
     name: str
-    path: Path                 # the .lnk / .url file
-    target: Path | None        # resolved .exe, when the shortcut points at one
+    path: Path                 # the .lnk / .url file (Linux: the app's .desktop menu entry)
+    target: Path | None        # resolved .exe, when the shortcut points at one (Linux: its program)
+    names: tuple[str, ...] = ()   # Linux: names its processes / windows go by ("discord", "firefox")
 
 
 # Steam "apps" that aren't games you'd ask for.
@@ -45,7 +46,8 @@ def steam_root() -> Path | None:
                     return path
         except OSError:
             pass
-    for guess in (r"%ProgramFiles(x86)%\Steam", r"%ProgramFiles%\Steam", "~/.steam/steam"):
+    for guess in (r"%ProgramFiles(x86)%\Steam", r"%ProgramFiles%\Steam", "~/.steam/steam", "~/.local/share/Steam",
+                  "~/.var/app/com.valvesoftware.Steam/.local/share/Steam", "~/snap/steam/common/.local/share/Steam"):
         path = Path(os.path.expanduser(os.path.expandvars(guess)))
         if path.is_dir():
             return path
@@ -134,7 +136,15 @@ def lnk_target(path: Path) -> Path | None:
         return None
 
 
+def linux_shortcuts(dirs: list[Path] | None = None) -> list[Shortcut]:
+    """Every app in your Linux menus (.desktop entries: system, your own, Flatpak, Snap)."""
+    from ..linux.apps import installed_entries
+    return [Shortcut(e.name, e.path, e.program(), e.process_names()) for e in installed_entries(dirs)]
+
+
 def shortcuts(dirs: list[Path] | None = None) -> list[Shortcut]:
+    if sys.platform.startswith("linux") and dirs is None:
+        return linux_shortcuts()
     found: dict[str, Shortcut] = {}
     for base in dirs if dirs is not None else start_menu_dirs():
         for path in base.rglob("*"):

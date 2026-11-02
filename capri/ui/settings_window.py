@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..words import FILE_MANAGER, START_MENU
 import logging
 import shlex
 import subprocess
@@ -273,7 +274,7 @@ class SettingsWindow(QDialog):
             if sc.name.lower() in names:
                 continue
             target = sc.target
-            procs = [target.name] if target is not None and target.suffix.lower() == ".exe" else []
+            procs = [target.name] if target is not None and target.suffix.lower() == ".exe" else list(sc.names)
             out.append(AppEntry(sc.name, PROGRAM, str(sc.path), processes=procs))
             names.add(sc.name.lower())
         for app in self.catalog.installed:
@@ -309,8 +310,11 @@ class SettingsWindow(QDialog):
         if r < 0 and not new_row:
             self.status.setText("Select an app first (or use Add app or game...).")
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Choose the program", "",
-                                              "Programs and shortcuts (*.exe *.lnk *.url *.bat);;All files (*)")
+        import sys as _sys
+        kinds = ("Apps, programs and scripts (*.desktop *.AppImage *.appimage *.sh *.x86_64);;All files (*)"
+                 if _sys.platform.startswith("linux") else
+                 "Programs and shortcuts (*.exe *.lnk *.url *.bat);;All files (*)")
+        path, _ = QFileDialog.getOpenFileName(self, "Choose the program", "", kinds)
         if not path:
             return
         if r < 0:
@@ -383,7 +387,7 @@ class SettingsWindow(QDialog):
     def _found_tab(self) -> QWidget:
         page = QWidget()
         v = QVBoxLayout(page)
-        hint = QLabel("Capri can open these without any setup. Say “Capri, open <name>”, or “show me <name> in File Explorer”.")
+        hint = QLabel(f"Capri can open these without any setup. Say “Capri, open <name>”, or “show me <name> in {FILE_MANAGER}”.")
         hint.setObjectName("hint")
         v.addWidget(hint)
         self.found = QListWidget()
@@ -410,7 +414,7 @@ class SettingsWindow(QDialog):
         if names:
             self.found.addItem("[Folder]  " + ", ".join(names))
         if self.found.count() == 0:
-            self.found.addItem("Nothing found (no Steam library, Start-menu shortcuts or installed apps detected).")
+            self.found.addItem(f"Nothing found (no Steam library, {START_MENU} entries or installed apps detected).")
 
     def _refresh_model(self) -> None:
         from ..voice.model import BETTER_MODEL, find_model
@@ -774,7 +778,7 @@ class AppPicker(QDialog):
         self.browse_instead = False
         v = QVBoxLayout(self)
         hint = QLabel("Pick what Capri should open by name. Tick as many as you like. "
-                      "Games come from Steam, Epic, Xbox, Riot and other launchers; apps from your Start menu.")
+                      f"Games come from Steam, Epic, Xbox, Riot and other launchers; apps from your {START_MENU}.")
         hint.setWordWrap(True)
         hint.setObjectName("hint")
         v.addWidget(hint)

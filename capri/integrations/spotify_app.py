@@ -122,7 +122,7 @@ def main_window_titles(desktop, pids: list[int]) -> list[str]:
     out = []
     for hwnd in desktop.windows_for(pids):
         cls = desktop.window_class(hwnd)
-        if cls.startswith("Chrome_WidgetWin") or cls == "SpotifyMainWindow":
+        if cls.startswith("Chrome_WidgetWin") or cls == "SpotifyMainWindow" or cls.lower() == "spotify":
             out.append(desktop.window_title(hwnd))
     return out
 

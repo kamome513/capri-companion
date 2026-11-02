@@ -1,10 +1,14 @@
-**Download `Capri-Setup-1.36.3.exe` below and run it.** It installs for your user, with no admin rights or Python needed (Windows 10/11). If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (the installer isn't code-signed).
+**Windows:** download `Capri-Setup-1.37.0.exe` below and run it. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (the installer isn't code-signed). If you have 1.36 or newer, Capri updates herself.
 
-**Fixed in 1.36.3:**
-- **Gemini (2.5 and newer) works.** Google refused the list of things Capri can do (her "tools"), so every Gemini model failed. She now sends each AI a version it accepts. If a model can't do tools at all (some OpenRouter, DeepSeek, LM Studio and Ollama models), she just chats with it.
-- **"Thinking" models no longer reply with nothing.** If a model spends its whole answer allowance thinking, Capri asks again.
-- **No more reinstalling every time you open Capri.** An update that doesn't take is tried at most twice, then she tells you. The installer waits until Capri has fully closed, and it updates the copy you actually run.
-- **"Check for updates" works again.** It no longer relies on GitHub's rate-limited API, and if it can't check it says why.
-- **Restart Capri.** Right-click her → **Restart Capri**, Settings → PC & chat → **Restart Capri**, or say "restart yourself". A downloaded update installs while she restarts.
+**Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*, or `chmod +x Capri-x86_64.AppImage`), and double-click it. Nothing to install. Instructions and troubleshooting are on the main page.
 
-If you're on 1.36.0–1.36.2 and the update keeps reinstalling, install this one by hand once.
+**New in 1.37: Capri works properly on Linux.**
+- **Apps:** she opens and closes any app in your apps menu (including Flatpak and Snap), plus Steam, Lutris, Heroic and itch games.
+- **Your PC:** she types into apps (any letter, even emoji), minimises windows and brings them back, sits on windows, and shuts down / restarts / sleeps / locks (asking first, as always).
+- **Media and hotkeys:** media controls (pause, next, volume) and push-to-talk on Ctrl+Alt+C.
+- **The screen:** "click subscribe" and "highlight ..." read the screen with Tesseract.
+- **Voice and start-up:** she has a voice out of the box (espeak-ng; download her neural voice from Settings), starts when you log in if you want, greets you when you unlock, and turns into a drone when you play.
+- **Wayland:** she runs through XWayland so she can stay in her corner. Bind `Capri-x86_64.AppImage --listen` to a keyboard shortcut for push-to-talk.
+- **Updates:** the AppImage updates itself.
+
+Running from the code? `./run.sh` now tells you exactly which packages your distro needs.

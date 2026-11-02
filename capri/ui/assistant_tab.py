@@ -684,7 +684,7 @@ class AssistantTab(QWidget):
         from ..commands.parser import parse
         app = getattr(self.router.services, "spotify_app", None)
         if app is None:
-            return self._show_spotify_test("Spotify control is only available on Windows.")
+            return self._show_spotify_test("Spotify control isn't available here.")
         intent = parse("play " + self.test_song.text())
         query, artist = intent.query, intent.artist
         steps: list[str] = []

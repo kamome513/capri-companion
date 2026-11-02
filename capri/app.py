@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import itertools
 import logging
 import threading
@@ -137,8 +138,26 @@ def _running_mutex():
         return None
 
 
+def _linux_spotify_play() -> bool:
+    from .linux.desktop import spotify_play
+    return spotify_play()
+
+
+def use_xwayland() -> None:
+    """Linux on Wayland: run through XWayland (every Wayland desktop has it). On native Wayland an app
+    can't put its own windows where it wants or stay on top - Capri's whole point - and can't see or
+    type into other apps. You can still force native Wayland with QT_QPA_PLATFORM=wayland."""
+    if not sys.platform.startswith("linux") or os.environ.get("QT_QPA_PLATFORM"):
+        return
+    if (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("XDG_SESSION_TYPE") == "wayland") \
+            and os.environ.get("DISPLAY"):
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
+
+
 def restart_command() -> tuple[str, list[str], str]:
     """(program, arguments, folder) that start Capri again: Capri.exe, or python -m capri from the code."""
+    if os.environ.get("APPIMAGE"):                 # Linux AppImage: the file itself, not its unpacked insides
+        return os.environ["APPIMAGE"], [], str(Path(os.environ["APPIMAGE"]).parent)
     if getattr(sys, "frozen", False):
         return sys.executable, [], str(Path(sys.executable).parent)
     root = Path(__file__).resolve().parent.parent
@@ -153,7 +172,16 @@ def main(argv: list[str] | None = None) -> int:
                         help="folder containing manifest.json and Capri's images")
     parser.add_argument(autostart.STARTUP_FLAG, action="store_true",
                         help="started by Windows at sign-in: greet the user")
+    parser.add_argument("--listen", action="store_true",
+                        help="tell the running Capri to listen now (push-to-talk) - bind it to a keyboard shortcut")
+    parser.add_argument("--toggle-click-through", action="store_true",
+                        help="tell the running Capri to turn click-through on / off")
+    parser.add_argument("--after-update", action="store_true", help=argparse.SUPPRESS)   # wait for the old Capri
     args = parser.parse_args(argv)
+    use_xwayland()                    # Linux on Wayland: X11 through XWayland, so she can place her windows
+    if sys.platform.startswith("linux"):
+        from .linux.audio import use_bundled_portaudio
+        use_bundled_portaudio()       # the AppImage's own PortAudio (microphone + speaker)
     from . import net
     net.use_system_certificates()     # downloads work on PCs whose antivirus / network checks HTTPS
 
@@ -166,16 +194,22 @@ def main(argv: list[str] | None = None) -> int:
     # Only one Capri at a time. Starting her again (Start menu, run.bat) just brings her back.
     lock_dir = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.TempLocation))
     lock = QLockFile(str(lock_dir / "capri-companion.lock"))
-    if not lock.tryLock(100):
+    if not lock.tryLock(10_000 if args.after_update else 100):
         socket = QLocalSocket()
         socket.connectToServer(INSTANCE_NAME)
         if socket.waitForConnected(1000):
-            socket.write(b"show")
+            socket.write(b"listen" if args.listen else b"click-through" if args.toggle_click_through else b"show")
             socket.waitForBytesWritten(1000)
         print("[capri] already running - brought her back to the front.")
         return 0
 
     app.running_mark = _running_mutex()   # the installer waits for this to go before it updates her
+    if os.environ.get("APPIMAGE") and sys.platform.startswith("linux"):
+        try:
+            from .linux.desktop import ensure_menu_entry
+            ensure_menu_entry(asset_root() / "capri" / "icon.png")   # Capri in your apps menu
+        except Exception:
+            pass
     first_run = not Settings.path().exists()
     settings = Settings.load()
     if not args.preview and apply_waiting_update(settings):   # a downloaded update: install it, then she restarts
@@ -202,12 +236,23 @@ def main(argv: list[str] | None = None) -> int:
     QLocalServer.removeServer(INSTANCE_NAME)
     server.listen(INSTANCE_NAME)
 
+    remote = {}                        # "capri --listen" from a keyboard shortcut -> set once she's ready
+
     def on_second_launch() -> None:
         conn = server.nextPendingConnection()
-        if conn is not None:
-            conn.readyRead.connect(lambda: (conn.readAll(), companion.set_hidden(False),
-                                            controller.log("Hi", "already running - here I am"),
-                                            log.info("second launch: showing the running Capri")))
+        if conn is None:
+            return
+
+        def received() -> None:
+            what = bytes(conn.readAll()).strip()
+            action = remote.get(what.decode("ascii", "ignore"))
+            if action is not None:
+                log.info("second launch: %s", what)
+                return action()
+            companion.set_hidden(False)
+            controller.log("Hi", "already running - here I am")
+            log.info("second launch: showing the running Capri")
+        conn.readyRead.connect(received)
     server.newConnection.connect(on_second_launch)
 
     if args.preview:
@@ -249,7 +294,13 @@ def main(argv: list[str] | None = None) -> int:
     lipsync.progress.connect(greeting.set_progress)
 
     # Commands: only catalog entries (your apps, Steam games, Start menu) can be launched.
-    system = WindowsSystem()
+    linux = sys.platform.startswith("linux")
+    if linux:
+        from .linux.desktop import LinuxDesktop, LinuxSystem
+        desktop = LinuxDesktop()        # X11 windows, keys, typing; systemd power - fixed actions only
+        system = LinuxSystem(desktop=desktop)
+    else:
+        system = WindowsSystem()
     catalog = Catalog(load_apps, steam_games, shortcuts,
                       load_installed=installed_apps, load_places=places.places)   # + Store apps, folders
     weather = Weather(settings.weather_units)
@@ -279,7 +330,8 @@ def main(argv: list[str] | None = None) -> int:
                    OpenAIBrain(lambda: settings.openai_preset, lambda: settings.openai_url,
                                lambda: settings.openai_model, lambda: secrets.get("openai_api_key"), info,
                                slang=lambda: settings.slang, persona=lambda: settings.personality))
-    desktop = WindowsDesktop()      # power, minimising, Discord keys - fixed actions only
+    if not linux:
+        desktop = WindowsDesktop()      # power, minimising, Discord keys - fixed actions only
     ui = WindowsUI()               # presses apps' own buttons (Discord's Mute, Spotify's Play)
     about = AboutYou()              # what she remembers about you: %LOCALAPPDATA%\Capri only, never the AI
     claude_brain.ABOUT_USER = lambda: about.for_ai() if settings.share_memory_with_ai else ""
@@ -309,11 +361,11 @@ def main(argv: list[str] | None = None) -> int:
 
     services.spotify_app = SpotifyApp(
         system.open_item,
-        lambda: [p.pid for p in system.processes() if p.name.lower() == "spotify.exe"],
-        spotify_titles, press_track_play, http.get_text,
+        lambda: [p.pid for p in system.processes() if p.name.lower() in ("spotify.exe", "spotify")],
+        spotify_titles, press_track_play if not linux else (lambda pids, name: _linux_spotify_play()), http.get_text,
         lambda url: http.request("GET", url), api_search=spotify_api_search,
-        click_play=lambda pids: click_spotify_play(desktop, pids, services.spotify_buttons.log)
-        ) if sys.platform == "win32" else None
+        click_play=(lambda pids: click_spotify_play(desktop, pids, services.spotify_buttons.log)) if not linux
+        else None) if sys.platform == "win32" or linux else None
     def window_rect(pids: list[int]):
         r = desktop.window_rect(pids)
         return to_logical(r) if r else None
@@ -339,6 +391,17 @@ def main(argv: list[str] | None = None) -> int:
             return zapper.zap_at(None, then, small=True)
         visit_show.visit(target, then, window=window, near=True)
     services.zap_at = zap_button
+    if linux:                                  # "click subscribe": read the window (Tesseract), click it
+        from .linux import screen as linux_screen
+        services.screen = Finder(linux_screen.NoAccessibility(), target_window, desktop.hwnd_rect, cursor_pos,
+                                 ocr=linux_screen.ocr if linux_screen.ocr_available() else None)
+        services.click_at = lambda target: click(target, linux_screen.click_at)
+        services.front = target_window
+
+        def linux_front_rect():
+            wid = target_window()
+            return desktop.hwnd_rect(wid) if wid else None
+        services.hands = linux_screen.LinuxHands(linux_front_rect)
     if sys.platform == "win32":               # "click subscribe" / "click that"
         services.screen = Finder(ui, target_window, desktop.hwnd_rect, cursor_pos, ocr=windows_ocr)
         services.click_at = lambda target: click(target, click_at)
@@ -485,6 +548,8 @@ def main(argv: list[str] | None = None) -> int:
         on = not settings.click_through
         companion.set_click_through(on)
         controller.log("Click", "through ON (locked)" if on else "through off")
+    remote["listen"] = assistant.listen_now
+    remote["click-through"] = toggle_click_through
 
     def register_hotkeys() -> list[str]:
         hotkeys.unregister_all()

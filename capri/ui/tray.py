@@ -102,7 +102,7 @@ class CompanionMenu(QObject):
         self.a_autostart = None
         menu.addSeparator()
         if autostart.SUPPORTED:
-            self.a_autostart = self._check("Start with Windows", self._set_autostart)
+            self.a_autostart = self._check(autostart.LABEL, self._set_autostart)
         if open_settings is not None:
             self.a_settings = menu.addAction("Settings...", open_settings)
         self.a_update = None
@@ -254,7 +254,7 @@ class CompanionMenu(QObject):
             autostart.set_enabled(on)
         except OSError as exc:
             if self.tray:
-                self.tray.showMessage("Capri", f"Couldn't change Start with Windows: {exc}",
+                self.tray.showMessage("Capri", f"Couldn't change {autostart.LABEL}: {exc}",
                                       QSystemTrayIcon.MessageIcon.Warning)
         self.sync()
 

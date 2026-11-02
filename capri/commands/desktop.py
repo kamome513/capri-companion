@@ -20,7 +20,8 @@ from ..hotkeys import parse as parse_hotkey
 POWER_ACTIONS = ("shutdown", "restart", "sleep", "lock")
 # shutdown.exe, always from System32 (never whatever "shutdown" is on PATH), with fixed arguments.
 SHUTDOWN_ARGS = {"shutdown": ["/s", "/t", "0"], "restart": ["/r", "/t", "0"]}
-DISCORD_EXES = {"discord.exe", "discordptb.exe", "discordcanary.exe"}
+DISCORD_EXES = {"discord.exe", "discordptb.exe", "discordcanary.exe",
+                "discord", "discordptb", "discordcanary", "vesktop", "webcord", "legcord"}   # Linux too
 # Discord's own default keybinds. They only work while Discord is the window in front.
 DISCORD_DEFAULT_KEYS = {"mute": "ctrl+shift+m", "deafen": "ctrl+shift+d"}
 

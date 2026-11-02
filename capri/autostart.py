@@ -1,8 +1,9 @@
-"""Start-with-Windows via the per-user Run key (no admin rights needed).
+"""Start-with-Windows via the per-user Run key (no admin rights needed); on Linux, the standard
+XDG autostart entry (~/.config/autostart/capri.desktop) every desktop reads at login.
 
 HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\Capri
-The registry itself is the source of truth, so the setting can't drift out
-of sync with what Windows will actually do.
+The registry (or the autostart file) is the source of truth, so the setting can't drift out
+of sync with what the system will actually do.
 """
 
 from __future__ import annotations
@@ -13,7 +14,9 @@ from pathlib import Path
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 VALUE_NAME = "Capri"
 
-SUPPORTED = sys.platform == "win32"
+LINUX = sys.platform.startswith("linux")
+SUPPORTED = sys.platform == "win32" or LINUX
+LABEL = "Start when I log in" if LINUX else "Start with Windows"      # the menu / Settings words
 
 
 STARTUP_FLAG = "--startup"   # tells Capri it was started by Windows at sign-in (so: greet you)
@@ -30,7 +33,18 @@ def launch_command() -> str:
     return f'"{interpreter}" "{launcher}" {STARTUP_FLAG}'
 
 
+def _linux_text() -> str:
+    from .linux.desktop import desktop_entry_text, launch_argv
+    return desktop_entry_text(launch_argv(), STARTUP_FLAG, autostart=True)
+
+
 def current_command() -> str:
+    if LINUX:
+        from .linux.desktop import autostart_file
+        try:
+            return autostart_file().read_text(encoding="utf-8")
+        except OSError:
+            return ""
     if not SUPPORTED:
         return ""
     import winreg
@@ -54,7 +68,7 @@ def ensure_default(settings) -> str:
             if not is_enabled():
                 set_enabled(True)
                 return "enabled"
-        elif is_enabled() and current_command() != launch_command():
+        elif is_enabled() and current_command() != (_linux_text() if LINUX else launch_command()):
             set_enabled(True)                    # moved folder, or an entry without --startup
             return "updated"
     except OSError:
@@ -63,6 +77,9 @@ def ensure_default(settings) -> str:
 
 
 def is_enabled() -> bool:
+    if LINUX:
+        from .linux.desktop import autostart_file
+        return autostart_file().is_file()
     if not SUPPORTED:
         return False
     import winreg
@@ -75,6 +92,15 @@ def is_enabled() -> bool:
 
 
 def set_enabled(enabled: bool) -> None:
+    if LINUX:
+        from .linux.desktop import autostart_file
+        path = autostart_file()
+        if enabled:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(_linux_text(), encoding="utf-8")
+        else:
+            path.unlink(missing_ok=True)
+        return
     if not SUPPORTED:
         raise RuntimeError("Start with Windows is only available on Windows")
     import winreg

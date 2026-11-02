@@ -172,7 +172,8 @@ def test_show_a_real_program_selects_its_file(tmp_path):
     router.catalog = c
     service.command.emit("show me powerpoint in file explorer")
     assert system.calls == [("reveal", str(exe))]
-    assert controller.message == "Here's PowerPoint in File Explorer."
+    from capri.words import FILE_MANAGER
+    assert controller.message == f"Here's PowerPoint in {FILE_MANAGER}."
 
 
 def make_files(tmp_path):

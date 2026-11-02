@@ -36,23 +36,60 @@ To make your own `Capri.exe` and installer, double-click `build.bat`. The instal
 
 ## Linux
 
-1. Install Python 3.10+ and PortAudio. On Debian/Ubuntu:
-   `sudo apt install python3-venv libportaudio2`
-2. Download this project and open a terminal in its folder.
-3. Run `./run.sh`. It sets her up the first time, then starts her.
+### Install (easiest)
 
-**What works on Linux:** her look and animations, "Hey Capri" and listening, her voices, chatting
-and the AI, timers, weather, time and date, web searches and websites, and the Settings window.
+1. Go to the [latest release](https://github.com/kamome513/capri-companion/releases/latest) and download
+   **`Capri-x86_64.AppImage`**.
+2. Make it runnable: right-click it → **Properties** → **Permissions** → tick **Allow executing file as
+   program**. Or in a terminal: `chmod +x Capri-x86_64.AppImage`
+3. Double-click it. Nothing to install: no Python, no admin rights.
+4. She adds herself to your apps menu. On the first start she downloads her speech model (about 40 MB,
+   once). She updates herself like on Windows: keep the AppImage in a folder you own (your home
+   folder, Downloads, `~/Applications`...).
 
-**Windows only:** opening and closing installed apps and games, typing, minimising windows,
-Discord controls, media keys, hotkeys, shutting down / restarting / sleeping / locking, clicking
-things on your screen, game hype, and sitting on windows. On Linux she says "I can only do that on
-Windows" instead of pretending.
+It runs on most 64-bit distros from the last few years: Ubuntu 22.04+, Linux Mint 21+, Debian 12+,
+Fedora 36+, Arch, Pop!_OS, openSUSE and others.
 
-**Tips:**
-- She stays in her corner best in an **X11** session. On Wayland, apps can't place their own
-  windows.
-- Linux support hasn't been tried on a real Linux desktop yet, so expect rough edges.
+If it doesn't open, it's usually one of these:
+- **Ubuntu 24.04 and newer:** `sudo apt install libfuse2t64`
+- **Older Ubuntu / Debian:** `sudo apt install libfuse2`
+- Or skip that entirely: `./Capri-x86_64.AppImage --appimage-extract-and-run`
+
+### Run from the code instead
+
+1. Download this project (green **Code** button → **Download ZIP**) and unzip it.
+2. Open a terminal in its folder and run `./run.sh`.
+3. If your system is missing something, it says exactly what to install for your distro (apt / dnf /
+   pacman / zypper). The first start takes a few minutes while it sets her up.
+
+### What works on Linux
+
+Everything in the manual below works on Linux too, with a few differences:
+- **Apps:** she finds everything in your apps menu, including Flatpak and Snap apps, plus Steam
+  games and games from Lutris, Heroic, itch and others.
+- **Her voice:** she speaks with espeak-ng out of the box. Settings → Assistant → *Download Capri's
+  voice* gets her proper neural voice (120 MB, once).
+- **Reading the screen** ("click subscribe", "highlight deadline") needs Tesseract:
+  `sudo apt install tesseract-ocr` (or `dnf` / `pacman`).
+- **Media controls** work best with `playerctl` installed. Without it she presses the keyboard's
+  media keys.
+- **Discord** "mute me" / "deafen me" use your Discord keybinds. Set them in Discord (Settings →
+  Keybinds) and in Capri (Settings → PC & chat). Screen sharing isn't supported.
+- **Power:** shut down, restart, sleep and lock use your system's own commands (systemd).
+
+### X11 and Wayland
+
+- **X11:** everything works.
+- **Wayland** (the default on new Ubuntu and Fedora): she runs through XWayland, which every Wayland
+  desktop includes, so she can still stand in her corner and stay on top. But Wayland doesn't let any
+  app see or control other apps' windows, so on native Wayland apps:
+  - **Typing** needs `wtype` (Sway, Hyprland...) or `ydotool`.
+  - **Minimising, sitting on windows and clicking things on screen** only work with apps that also
+    run through XWayland (many games, Steam, Discord and older apps do).
+  - **Push-to-talk:** apps can't set global hotkeys on Wayland. Add a keyboard shortcut in your
+    desktop's settings that runs `/path/to/Capri-x86_64.AppImage --listen` (or `./run.sh --listen`).
+    It makes her listen, just like Ctrl+Alt+C.
+  - For the full experience, pick an **X11 / Xorg** session on your login screen (the gear icon).
 
 ---
 
@@ -201,7 +238,7 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 | **Window → Always on top** | Keep her above other windows |
 | **Window → Click-through** | Clicks go straight through her (Ctrl+Alt+Shift+C toggles it) |
 | **Window → Reset position** | Back to the bottom-right corner |
-| **Start with Windows** | Starts Capri when you sign in |
+| **Start with Windows** (Linux: **Start when I log in**) | Starts Capri when you sign in |
 | **Check for updates** / **Restart to update** | Looks for a newer Capri. Once one is downloaded, restarts her to install it (asks first) |
 | **Settings...** | Opens Settings (below) |
 | **Open log folder** | Opens `capri.log`, handy if something goes wrong |
@@ -266,7 +303,7 @@ install something.
 | **Spoken replies** | Talk out loud or not |
 | **Night City slang** | "Preem, choom." On or off |
 | **Personality** | How she talks |
-| **Voice** | Her neural "Capri" voice, Windows voices, ElevenLabs or beeps |
+| **Voice** | Her neural "Capri" voice, Windows voices (Linux: espeak-ng), ElevenLabs or beeps |
 | **Download Capri's voice** | Her neural voice (120 MB, once) |
 | **ElevenLabs key / voice** | Use an ElevenLabs voice (needs their key) |
 | **Style, Volume, Speed, Pitch, Expression** | Tune how she sounds |
@@ -289,7 +326,7 @@ install something.
 | **Keep chatting** | After she asks you something, she listens for the answer without "Hey Capri" |
 | **Red lag lightning** | Her zap effects when she presses Discord buttons or closes windows |
 | **Greet me when I sign in** / **Big, in the middle** / **Preview greeting** | Her hello when you sign in or wake the PC |
-| **Start Capri with Windows** | Same as the menu item |
+| **Start Capri with Windows** (Linux: **when I log in**) | Same as the menu item |
 | **Update automatically** / **Check for updates now** | Daily check for a new Capri: downloads it and installs it on her next start. Off = she only tells you |
 | **Restart Capri** | Closes and starts her again (installs a downloaded update) |
 | **Game hype** (cheer for kills, say something when I die, watch my screen, encourage me) / **Preview** | Hype while you play: CS2, Dota 2 and League directly, any game by reading your screen |
@@ -303,7 +340,7 @@ install something.
   off in Settings → PC & chat).
 - She only listens for "Hey Capri". That runs on your PC, and audio is never recorded or uploaded.
 - Your settings, apps list and memory of you are kept in your own user folder
-  (`%LOCALAPPDATA%\Capri` on Windows). Delete `settings.json` there to reset her.
+  (`%LOCALAPPDATA%\Capri` on Windows, `~/.config/Capri` on Linux). Delete `settings.json` there to reset her.
 - Only what you say to the AI (if you set one up) goes to that AI. Personal things don't, and your
   Windows user name is removed from anything that does.
 - She never runs commands an AI makes up. She can only do the fixed actions in this manual, and

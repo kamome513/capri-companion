@@ -7,6 +7,7 @@ be launched - there is no way to run an arbitrary command.
 
 from __future__ import annotations
 
+from ..words import START_MENU
 import json
 import logging
 import ntpath
@@ -118,7 +119,17 @@ def found_games(steam: list | None = None, shortcuts: list | None = None) -> lis
     into a game library (Epic, Riot, Xbox, GOG, EA, Ubisoft, Battle.net...)."""
     from .discovery import shortcuts as find_shortcuts, steam_games
     from .games import GAME_FOLDERS, LAUNCHERS
+    import sys
     out: dict[str, AppEntry] = {}
+    if sys.platform.startswith("linux") and shortcuts is None:
+        try:                                     # Linux: menu entries marked as games (Lutris, Heroic, itch...)
+            from ..linux.apps import installed_entries
+            for e in installed_entries():
+                if e.is_game and "steam://" not in e.exec_line:
+                    out.setdefault(e.name.lower(), AppEntry(e.name, PROGRAM, str(e.path),
+                                                            processes=list(e.process_names()), close=CLOSE_ASK))
+        except Exception:
+            pass
     try:
         steam = steam_games() if steam is None else steam
     except Exception:
@@ -165,7 +176,7 @@ def entry_status(e: AppEntry, steam_ids: set[str] | None = None) -> tuple[bool |
     """(ok, words) for the Apps tab: True = found, False = broken, None = Capri will look for it."""
     target = e.target.strip()
     if not target:
-        return None, "No path - Capri looks it up in your Start menu"
+        return None, f"No path - Capri looks it up in your {START_MENU}"
     if e.launch_type == STEAM:
         if not target.isdigit():
             return False, "A Steam id is a number"

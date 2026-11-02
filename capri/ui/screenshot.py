@@ -49,9 +49,13 @@ def _to_image(rgb: np.ndarray) -> QImage:
 
 
 def _qt_grab() -> QImage:
-    """Fallback (not Windows): the primary screen through Qt."""
+    """Not Windows: every monitor through Qt (X11: the whole desktop in one go)."""
     screen = QGuiApplication.primaryScreen()
-    return screen.grabWindow(0).toImage() if screen is not None else QImage()
+    if screen is None:
+        return QImage()
+    g = screen.virtualGeometry()
+    image = screen.grabWindow(0, g.x(), g.y(), g.width(), g.height()).toImage()
+    return image if not image.isNull() else screen.grabWindow(0).toImage()
 
 
 class _Flash(OverlayWindow):

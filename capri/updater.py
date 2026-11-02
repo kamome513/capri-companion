@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -43,7 +44,10 @@ MAX_TRIES = 2              # the same update not taking twice at start-up: stop 
 INSTALLING_SECONDS = 120   # an installer started this recently is still running: don't start another
 PAGE = f"https://github.com/{REPO}/releases/latest"
 DOWNLOADS = f"https://github.com/{REPO}/releases/download/"
-ASSET = re.compile(r"^Capri-Setup-[\w.\-]+\.exe$", re.I)
+WINDOWS_ASSET = re.compile(r"^Capri-Setup-[\w.\-]+\.exe$", re.I)
+LINUX_ASSET = re.compile(r"^Capri-x86_64\.AppImage$")      # Linux: one AppImage, same name every release
+ASSET = WINDOWS_ASSET
+LINUX = sys.platform.startswith("linux")             # which release file this Capri updates from
 CHECK_EVERY = 24 * 3600
 
 
@@ -59,9 +63,21 @@ def newer(latest: str, current: str = __version__) -> bool:
     return bool(a) and a + (0,) * (width - len(a)) > b + (0,) * (width - len(b))
 
 
+def appimage() -> str:
+    """Linux: the AppImage file Capri runs from ("" otherwise)."""
+    return os.environ.get("APPIMAGE", "") if LINUX else ""
+
+
 def frozen() -> bool:
-    """The installed Capri.exe (not run from the code)."""
+    """A Capri that can update itself: the installed Capri.exe, or the Linux AppImage (not run from the code)."""
+    if LINUX:
+        path = appimage()
+        return bool(path) and os.path.isfile(path) and os.access(os.path.dirname(path) or ".", os.W_OK)
     return bool(getattr(sys, "frozen", False)) and sys.platform == "win32"
+
+
+def asset_pattern():
+    return LINUX_ASSET if LINUX else WINDOWS_ASSET
 
 
 @dataclass
@@ -85,13 +101,18 @@ def _from_latest_json(info: dict, current: str) -> Update | None | bool:
     """latest.json -> an Update / None (up to date) / False (not a latest.json - ask the API)."""
     if not isinstance(info, dict) or "version" not in info or "file" not in info:
         return False
+    if LINUX:                                            # the AppImage's own entry
+        section = info.get("linux")
+        if not isinstance(section, dict) or "file" not in section:
+            return False
+        info = {"version": info["version"], **section}
     version = ".".join(map(str, parse_version(str(info["version"]))))
     if not version:
         return False
     if not newer(version, current):
         return None
     name = str(info["file"])
-    if not ASSET.match(name):
+    if not asset_pattern().match(name):
         return False
     return Update(version, f"{DOWNLOADS}v{version}/{name}", name, int(info.get("size") or 0),
                   str(info.get("sha256") or "").lower(), f"https://github.com/{REPO}/releases/tag/v{version}")
@@ -120,7 +141,7 @@ def check(fetch: Callable[[str], dict] = _get_json, current: str = __version__) 
         return None
     for asset in info.get("assets") or []:
         name, url = str(asset.get("name", "")), str(asset.get("browser_download_url", ""))
-        if ASSET.match(name) and url.startswith(DOWNLOADS):
+        if asset_pattern().match(name) and url.startswith(DOWNLOADS):
             digest = str(asset.get("digest") or "")
             return Update(version, url, name, int(asset.get("size") or 0),
                           digest.split(":", 1)[1].lower() if digest.startswith("sha256:") else "",
@@ -136,7 +157,7 @@ def updates_dir() -> Path:
 def download(update: Update, folder: Path | None = None, progress: Callable[[int, int], None] | None = None,
              opener=urllib.request.urlopen) -> Path:
     """Fetch the installer and check it. Returns its path. Blocking (network)."""
-    if not update.url.startswith(DOWNLOADS) or not ASSET.match(update.name):
+    if not update.url.startswith(DOWNLOADS) or not asset_pattern().match(update.name):
         raise ValueError("not one of Capri's own release files")
     folder = folder or updates_dir()
     folder.mkdir(parents=True, exist_ok=True)
@@ -180,7 +201,7 @@ def ready(folder: Path | None = None, current: str = __version__) -> tuple[str, 
         path = folder / str(info["file"])
     except (OSError, ValueError, KeyError, TypeError):
         return None
-    if not newer(str(info.get("version", "")), current) or not ASSET.match(path.name) or not path.is_file():
+    if not newer(str(info.get("version", "")), current) or not asset_pattern().match(path.name) or not path.is_file():
         clear(folder)
         return None
     if info.get("sha256"):
@@ -199,7 +220,8 @@ def clear(folder: Path | None = None) -> None:
     if not folder.is_dir():
         return
     for p in folder.iterdir():
-        if p.is_file() and (ASSET.match(p.name) or p.suffix == ".part" or p.name == "ready.json"):
+        if p.is_file() and (WINDOWS_ASSET.match(p.name) or LINUX_ASSET.match(p.name) or p.suffix == ".part"
+                            or p.name == "ready.json"):
             try:
                 p.unlink()
             except OSError:
@@ -230,6 +252,32 @@ def _note_try(folder: Path | None = None, now: float | None = None) -> None:
         pass
 
 
+def _install_appimage(new: Path, run: Callable, folder: Path | None) -> bool:
+    """Linux: put the checked new AppImage in place of the one you run (Linux lets you replace a running
+    program's file), then start it. It waits for this Capri to close first (--after-update)."""
+    target = appimage()
+    _note_try(folder or new.parent)
+    tmp = target + ".new"
+    try:
+        shutil.copyfile(new, tmp)
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, target)
+    except OSError as exc:
+        log.warning("update: couldn't replace %s: %s", target, exc)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False
+    try:
+        run([target, "--after-update"], close_fds=True, start_new_session=True, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as exc:
+        log.warning("update: replaced, but couldn't start the new Capri: %s", exc)
+    clear(folder or new.parent)                     # installed: nothing waiting any more
+    return True
+
+
 def installer_running() -> bool:
     """Is a Capri-Setup installer running right now? (Inno Setup runs as Capri-Setup-x.exe / .tmp)"""
     try:
@@ -252,6 +300,8 @@ def install(installer: Path, run: Callable = subprocess.Popen, folder: Path | No
     False if it couldn't start."""
     if not frozen():
         return False
+    if LINUX:
+        return _install_appimage(installer, run, folder)
     app_dir = app_dir or os.path.dirname(sys.executable)
     _note_try(folder or installer.parent)
     try:

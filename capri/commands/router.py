@@ -1071,7 +1071,7 @@ class CommandRouter(QObject):
         self._result(State.SUCCESS, "spotify_search", query=query)
 
     def _spotify_pids(self) -> list[int]:
-        return [p.pid for p in self._processes() if p.name.lower() == "spotify.exe"]
+        return [p.pid for p in self._processes() if p.name.lower() in ("spotify.exe", "spotify")]
 
     def _media(self, intent: Intent) -> None:
         action = intent.query

@@ -342,7 +342,7 @@ class WindowPerch(QObject):
             self.flashes[1].fire(b)
 
 
-# -- Windows plumbing ---------------------------------------------------------------------------------
+# -- Windows plumbing (Linux: below) ---------------------------------------------------------------------------------
 def _sittable(hwnd: int) -> QRect | None:
     """The window's visible rectangle (Qt's coordinates) if she can sit on it, else None:
     it must exist, be visible, not minimised / maximised / full screen / cloaked, and not hers."""
@@ -384,8 +384,76 @@ def _sittable(hwnd: int) -> QRect | None:
     return to_logical((r.left, r.top, r.right, r.bottom))
 
 
+# -- Linux plumbing (X11) ----------------------------------------------------------------------------
+def _x():
+    if not sys.platform.startswith("linux"):
+        return None
+    from ..linux import x11
+    return x11.shared()
+
+
+def _linux_sittable(x, wid: int) -> QRect | None:
+    if not wid or x.pid(wid) == os.getpid() or not x.is_app_window(wid) or x.is_minimized(wid):
+        return None
+    states = x.states(wid)
+    if "_NET_WM_STATE_FULLSCREEN" in states or {"_NET_WM_STATE_MAXIMIZED_VERT", "_NET_WM_STATE_MAXIMIZED_HORZ"} <= states:
+        return None
+    g = x.geometry(wid)
+    if not g or g[2] - g[0] < 200 or g[3] - g[1] < 120:
+        return None
+    from .screen_spots import to_logical
+    return to_logical(g)
+
+
+def _linux_front() -> tuple[int, QRect] | None:
+    x = _x()
+    if x is None:
+        return None
+    wid = x.active()
+    rect = _linux_sittable(x, wid)
+    return (wid, rect) if rect is not None else None
+
+
+def _linux_top() -> tuple[int, QRect] | None:
+    x = _x()
+    if x is None:
+        return None
+    found = _linux_front()
+    if found is not None:
+        return found
+    for wid in reversed(x.stacking()):
+        rect = _linux_sittable(x, wid)
+        if rect is not None:
+            return wid, rect
+    return None
+
+
+def _linux_covered(wid: int) -> bool:
+    x = _x()
+    if x is None or not wid:
+        return False
+    mine = x.geometry(wid)
+    if not mine:
+        return False
+    y = mine[1] + 6
+    seat = [(px, y) for px in (mine[2] - 220, mine[2] - 140, mine[2] - 60) if px > mine[0]]
+    order = x.stacking()                                  # bottom to top
+    if wid not in order:
+        return False
+    me = os.getpid()
+    for above in order[order.index(wid) + 1:]:
+        if x.pid(above) == me or x.is_minimized(above) or not x.is_app_window(above):
+            continue
+        r = x.geometry(above)
+        if r and sum(r[0] <= px < r[2] and r[1] <= py < r[3] for px, py in seat) >= 2:
+            return True
+    return False
+
+
 def front_window() -> tuple[int, QRect] | None:
     """The window you're using, if she can sit on it."""
+    if sys.platform.startswith("linux"):
+        return _linux_front()
     if sys.platform != "win32":
         return None
     import ctypes
@@ -395,6 +463,9 @@ def front_window() -> tuple[int, QRect] | None:
 
 
 def window_rect(hwnd: int) -> QRect | None:
+    if sys.platform.startswith("linux"):
+        x = _x()
+        return _linux_sittable(x, hwnd) if x is not None else None
     if sys.platform != "win32":
         return None
     return _sittable(hwnd)
@@ -403,6 +474,8 @@ def window_rect(hwnd: int) -> QRect | None:
 def top_window() -> tuple[int, QRect] | None:
     """The window you're using - or, if that's hers (her menu was just open), the top window
     she can sit on."""
+    if sys.platform.startswith("linux"):
+        return _linux_top()
     if sys.platform != "win32":
         return None
     found = front_window()
@@ -428,6 +501,8 @@ def top_window() -> tuple[int, QRect] | None:
 def seat_covered(hwnd: int) -> bool:
     """Is the spot she sits on (the right part of the window's top edge) hidden under another window
     stacked above it? Her own windows, tooltips / popups and hidden windows don't count."""
+    if sys.platform.startswith("linux"):
+        return _linux_covered(hwnd)
     if sys.platform != "win32" or not hwnd:
         return False
     import ctypes

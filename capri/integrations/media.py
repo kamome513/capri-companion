@@ -17,8 +17,11 @@ KEYEVENTF_KEYUP = 0x0002
 
 
 def press(name: str) -> None:
+    if sys.platform.startswith("linux"):
+        from ..linux.desktop import media
+        return media(name)                     # playerctl / wpctl / pactl, else the X11 media keys
     if sys.platform != "win32":
-        raise OSError("media keys are only available on Windows")
+        raise OSError("media keys aren't available on this system")
     import ctypes
     vk = KEYS[name]
     repeats = VOLUME_STEPS if name in ("volume_up", "volume_down") else 1

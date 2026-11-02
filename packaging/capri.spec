@@ -1,6 +1,7 @@
 # PyInstaller spec for Capri.  Build with:  build.bat   (or: pyinstaller packaging/capri.spec)
 # Produces dist/Capri/Capri.exe - a folder build (starts much faster than a one-file exe).
 
+import os
 import sys
 from pathlib import Path
 
@@ -37,6 +38,20 @@ for package in ("kokoro_onnx", "onnxruntime", "espeakng_loader", "phonemizer", "
     binaries += p_binaries
     hiddenimports += p_hidden
 
+if sys.platform.startswith("linux"):
+    # Linux: talking to the desktop (X11) - python-xlib loads its extension modules by name.
+    hiddenimports += collect_submodules("Xlib") + collect_submodules("capri.linux")
+    # The microphone / speaker library, so nothing has to be installed (capri/linux/audio.py finds it).
+    import ctypes.util
+    import glob
+    for candidate in [ctypes.util.find_library("portaudio")] + glob.glob("/usr/lib/x86_64-linux-gnu/libportaudio.so.2*"):
+        if candidate:
+            path = candidate if os.path.isabs(candidate) else next(
+                iter(glob.glob(f"/usr/lib/*/{candidate}") + glob.glob(f"/usr/lib/{candidate}")), "")
+            if path and os.path.exists(path):
+                binaries.append((os.path.realpath(path), "."))
+                break
+
 a = Analysis(
     [str(ROOT / "capri_launcher.py")],
     pathex=[str(ROOT)],
@@ -49,8 +64,13 @@ a = Analysis(
 )
 # Smaller download, nothing she uses: Qt's software-OpenGL fallback (~20 MB - she draws with plain QPainter),
 # its spare display plugins (Windows uses qwindows) and Qt's own translations (her words are her own).
-UNUSED = {"opengl32sw.dll", "qdirect2d.dll", "qoffscreen.dll", "qminimal.dll"}
+UNUSED = {"opengl32sw.dll", "qdirect2d.dll", "qoffscreen.dll", "qminimal.dll",
+          "libqoffscreen.so", "libqminimal.so", "libqlinuxfb.so", "libqvnc.so", "libqvkkhrdisplay.so",
+          "libqeglfs.so", "libqminimalegl.so"}
 a.binaries = [b for b in a.binaries if Path(b[0]).name.lower() not in UNUSED]
+if sys.platform.startswith("linux"):              # the PortAudio copy under the name sounddevice looks for
+    a.binaries = [(("libportaudio.so.2" if Path(dest).name.startswith("libportaudio.so") else dest), src, kind)
+                  for dest, src, kind in a.binaries]
 a.datas = [d for d in a.datas if "translations" not in Path(d[0]).parts]
 # her neural voice speaks English: espeak's dictionaries for the 100+ other languages stay out (~18 MB)
 a.datas = [d for d in a.datas if not (Path(d[0]).name.endswith("_dict") and "espeak-ng-data" in Path(d[0]).parts

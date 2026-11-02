@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import io
+import threading
+from pathlib import Path
 import shutil
 from xml.sax.saxutils import escape
 
@@ -187,15 +189,77 @@ class KokoroEngine:
         return Audio(x, int(rate), pitched=True)
 
 
+class _EspeakLib:
+    """espeak-ng through its library (the copy her neural voice already ships, espeakng_loader) -
+    so Linux has a real voice even without the espeak-ng program installed."""
+
+    def __init__(self) -> None:
+        import ctypes
+        import espeakng_loader
+        self.ctypes = ctypes
+        self.lib = ctypes.CDLL(espeakng_loader.get_library_path())
+        self.samples: list[bytes] = []
+        CALLBACK = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.POINTER(ctypes.c_short), ctypes.c_int, ctypes.c_void_p)
+
+        def collect(wav, count, _events):
+            if wav and count > 0:
+                self.samples.append(ctypes.string_at(wav, count * 2))
+            return 0
+        self._callback = CALLBACK(collect)              # kept alive as long as the library uses it
+        self.lib.espeak_Initialize.restype = ctypes.c_int
+        data = espeakng_loader.get_data_path().encode()
+        self.rate = self.lib.espeak_Initialize(2, 500, ctypes.c_char_p(str(Path(data.decode()).parent).encode()), 0)
+        if self.rate <= 0:
+            self.rate = self.lib.espeak_Initialize(2, 500, ctypes.c_char_p(data), 0)
+        if self.rate <= 0:
+            raise RuntimeError("espeak-ng didn't start")
+        self.lib.espeak_SetSynthCallback(self._callback)
+        self.lib.espeak_SetVoiceByName(b"en")
+        self.lock = threading.Lock()
+
+    def synth(self, text: str, wpm: int, pitch: int) -> Audio:
+        c = self.ctypes
+        with self.lock:
+            self.samples = []
+            self.lib.espeak_SetParameter(1, int(wpm), 0)          # espeakRATE
+            self.lib.espeak_SetParameter(3, int(pitch), 0)        # espeakPITCH
+            data = text.encode("utf-8") + b"\0"
+            self.lib.espeak_Synth(c.c_char_p(data), c.c_size_t(len(data)), 0, 0, 0, 1, None, None)  # espeakCHARS_UTF8
+            self.lib.espeak_Synchronize()
+            raw = b"".join(self.samples)
+        return _from_int16(raw, self.rate)
+
+
 class EspeakEngine:
     PREFIX = "espeak: "
+    _lib: _EspeakLib | None = None
+    _lib_failed = False
+
+    @classmethod
+    def _library(cls) -> _EspeakLib | None:
+        if cls._lib is None and not cls._lib_failed:
+            try:
+                cls._lib = _EspeakLib()
+            except Exception:
+                cls._lib_failed = True
+        return cls._lib
 
     def voices(self) -> list[str]:
-        return [self.PREFIX + "en"] if shutil.which("espeak-ng") or shutil.which("espeak") else []
+        if shutil.which("espeak-ng") or shutil.which("espeak"):
+            return [self.PREFIX + "en"]
+        import importlib.util
+        return [self.PREFIX + "en"] if importlib.util.find_spec("espeakng_loader") is not None else []
 
     def synthesize(self, text: str, voice: str, speed: float, pitch: float = 0.0) -> Audio:
         exe = shutil.which("espeak-ng") or shutil.which("espeak")
         p = max(0, min(99, round(50 + pitch * 4)))
+        if not exe:
+            lib = self._library()
+            if lib is None:
+                raise RuntimeError("espeak-ng isn't available")
+            audio = lib.synth(respell(text), int(130 + speed * 80), p)
+            audio.pitched = True
+            return audio
         wav = subprocess.run([exe, "--stdout", "-s", str(int(130 + speed * 80)), "-p", str(p), "--", respell(text)],
                              capture_output=True, check=True).stdout
         with wave.open(io.BytesIO(wav)) as w:
