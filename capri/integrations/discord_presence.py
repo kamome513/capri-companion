@@ -36,6 +36,11 @@ APP_ID = "1566821023926452306"                    # Capri's Discord application 
 PAGE = "https://github.com/kamome513/capri-companion"
 INVITE = "https://discord.gg/FBxdDSCaA7"    # Capri's Discord server: the "Join her Discord" button
 ART = "https://raw.githubusercontent.com/kamome513/capri-companion/main/assets/discord/"   # her animated pictures
+ART_VERSION = "2"              # bump when the pictures change: Discord keeps a copy of each link for a while
+
+
+def art(name: str) -> str:
+    return f"{ART}{name}?v={ART_VERSION}"
 OP_HANDSHAKE, OP_FRAME, OP_CLOSE = 0, 1, 2
 RETRY_SECONDS = 20.0           # Discord closed / not running: look again this often
 MIN_GAP = 4.5                  # Discord allows 5 activity updates per 20 s
@@ -131,14 +136,14 @@ def read_frame(conn) -> tuple[int, dict]:
 def activity(state: str, started: int, invite: str = "", doing: str = "", game: str = "") -> dict:
     """What your friends see under your name: Capri - Plugged in - 0:34, and her buttons.
     state: her look ("desktop" / "drone" / "hidden"); doing: what you're up to ("gaming" / "music" / "")."""
-    assets = {"large_image": ART + "capri.gif", "large_text": "Capri - a cyberpunk desktop companion"}
+    assets = {"large_image": art("capri.gif"), "large_text": "Capri - a cyberpunk desktop companion"}
     if doing == "gaming":
         details = "Backseat gaming"
         line = f"Playing {game}"[:128] if game else "Drone mode: on"
-        assets.update(small_image=ART + "gaming.gif", small_text="Gaming")
+        assets.update(small_image=art("gaming.gif"), small_text="Gaming")
     elif doing == "music":
         details, line = "Vibing to music", "Headphones on"
-        assets.update(small_image=ART + "music.gif", small_text="Listening to music")
+        assets.update(small_image=art("music.gif"), small_text="Listening to music")
     else:
         details = "Plugged in"
         line = {"drone": "Drone mode", "hidden": "Hiding"}.get(state, "")

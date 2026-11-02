@@ -2,8 +2,9 @@
 
 * capri.png - her shard (her "thumb drive" from the show): red body, green circuit traces, silver ends.
   For the Developer Portal's Rich Presence art.
-* capri.gif - the same shard, animated: energy runs along the circuits, a light sweeps over her, she floats.
-* gaming.gif / music.gif - small animated badges shown in the corner while you game / listen to music.
+* capri.gif - the same shard, animated and glitchy: energy runs along the circuits, a light sweeps over her,
+  she floats, neon glow, scanlines, RGB split, and now and then the picture tears.
+* gaming.gif / music.gif - small neon badges in the corner while you game / listen to music (glitching too).
 
 Run:  python tools/make_discord_art.py assets/discord      (needs PySide6 and Pillow)
 """
@@ -173,51 +174,103 @@ def shard_image(n: int, t: float | None) -> QImage:
 
 
 def badge(n: int, t: float, kind: str) -> QImage:
-    """A round badge: a game controller with blinking buttons, or bouncing equaliser bars."""
+    """A neon badge: a glowing gamepad with blinking buttons, or bouncing equaliser bars (her red / green)."""
     img = QImage(n, n, QImage.Format.Format_ARGB32)
-    img.fill(QColor(16, 14, 20))
+    img.fill(QColor(8, 7, 12))
     p = QPainter(img)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     c = n / 2
-    ring = 0.5 + 0.5 * math.sin(t * 2 * math.pi)
-    p.setPen(QPen(QColor(int(150 + 80 * ring), 30, 44), n * 0.06))
-    p.setBrush(QColor(28, 24, 34))
-    p.drawEllipse(QPointF(c, c), n * 0.44, n * 0.44)
-    p.setPen(Qt.PenStyle.NoPen)
+    s = n / 128
+    beat = 0.5 + 0.5 * math.sin(t * 2 * math.pi)
     if kind == "gaming":
-        bob = math.sin(t * 2 * math.pi) * n * 0.02
-        p.translate(c, c + bob)
-        p.rotate(math.sin(t * 2 * math.pi) * 6)
-        s = n / 128
-        pad = QPainterPath()
-        pad.addRoundedRect(QRectF(-40 * s, -18 * s, 80 * s, 36 * s), 16 * s, 16 * s)
-        pad.addEllipse(QPointF(-30 * s, 12 * s), 14 * s, 14 * s)
-        pad.addEllipse(QPointF(30 * s, 12 * s), 14 * s, 14 * s)
+        p.translate(c, c + math.sin(t * 2 * math.pi) * 2 * s)
+        p.rotate(-8 + math.sin(t * 2 * math.pi) * 5)
+        pad = QPainterPath()                                   # a chunky gamepad filling the badge
+        pad.addRoundedRect(QRectF(-50 * s, -24 * s, 100 * s, 44 * s), 20 * s, 20 * s)
+        pad.addEllipse(QPointF(-36 * s, 14 * s), 19 * s, 21 * s)
+        pad.addEllipse(QPointF(36 * s, 14 * s), 19 * s, 21 * s)
         pad.setFillRule(Qt.FillRule.WindingFill)
-        body = QLinearGradient(QPointF(0, -18 * s), QPointF(0, 26 * s))
-        body.setColorAt(0, QColor(222, 58, 48))
-        body.setColorAt(1, QColor(130, 18, 24))
-        p.setBrush(body)
-        p.drawPath(pad.simplified())
-        p.setBrush(QColor(235, 238, 244))                                 # d-pad
-        p.drawRect(QRectF(-30 * s, -4 * s, 16 * s, 6 * s))
-        p.drawRect(QRectF(-25 * s, -9 * s, 6 * s, 16 * s))
-        for i, (x, y) in enumerate(((22, -2), (30, -9), (30, 5), (38, -2))):
+        pad = pad.simplified()
+        neon = QColor(40, 255, 120)
+        p.setBrush(QColor(6, 30, 16))
+        for width, alpha in ((14, 50), (8, 110), (4, 255)):     # neon tube: soft glow, then the bright line
+            colour = QColor(neon)
+            colour.setAlpha(alpha)
+            p.setPen(QPen(colour, width * s))
+            p.drawPath(pad)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(170, 255, 200))                       # d-pad
+        p.drawRoundedRect(QRectF(-41 * s, -5 * s, 22 * s, 8 * s), 2 * s, 2 * s)
+        p.drawRoundedRect(QRectF(-34 * s, -12 * s, 8 * s, 22 * s), 2 * s, 2 * s)
+        for i, (x, y, col) in enumerate(((26, -1, (255, 60, 90)), (35, -10, (40, 255, 120)),
+                                        (35, 8, (255, 220, 60)), (44, -1, (80, 200, 255)))):
             lit = int((t * 8) % 4) == i
-            p.setBrush(QColor(140, 255, 190) if lit else QColor(40, 150, 90))
-            p.drawEllipse(QPointF(x * s, y * s), (4.6 if lit else 3.6) * s, (4.6 if lit else 3.6) * s)
+            r = (6.5 if lit else 4.5) * s
+            if lit:
+                p.setBrush(QColor(*col, 90))
+                p.drawEllipse(QPointF(x * s, y * s), r * 1.9, r * 1.9)
+            p.setBrush(QColor(*col) if lit else QColor(col[0] // 2, col[1] // 2, col[2] // 2))
+            p.drawEllipse(QPointF(x * s, y * s), r, r)
+        p.setBrush(QColor(40, 255, 120, int(120 + 120 * beat)))   # the middle light
+        p.drawEllipse(QPointF(0, -10 * s), 4 * s, 4 * s)
     else:
-        bars, width = 5, n * 0.085
+        ring = QColor(int(170 + 85 * beat), 30, 50)
+        for width, alpha in ((12, 50), (6, 120), (3, 255)):
+            ring.setAlpha(alpha)
+            p.setPen(QPen(ring, width * s))
+            p.drawEllipse(QPointF(c, c), 52 * s, 52 * s)
+        p.setPen(Qt.PenStyle.NoPen)
+        bars, width = 5, 13 * s
         for i in range(bars):
-            h = n * (0.12 + 0.22 * abs(math.sin((t * 2 + i * 0.23) * math.pi * (1 + (i % 2) * 0.5))))
-            x = c + (i - (bars - 1) / 2) * width * 1.45 - width / 2
-            g = QLinearGradient(QPointF(0, c + n * 0.2), QPointF(0, c + n * 0.2 - h))
-            g.setColorAt(0, QColor(214, 46, 44))
-            g.setColorAt(1, QColor(110, 255, 170))
+            h = n * (0.14 + 0.30 * abs(math.sin((t * 2 + i * 0.23) * math.pi * (1 + (i % 2) * 0.5))))
+            x = c + (i - (bars - 1) / 2) * width * 1.4 - width / 2
+            base = c + 30 * s
+            g = QLinearGradient(QPointF(0, base), QPointF(0, base - h))
+            g.setColorAt(0, QColor(230, 40, 50))
+            g.setColorAt(1, QColor(80, 255, 150))
             p.setBrush(g)
-            p.drawRoundedRect(QRectF(x, c + n * 0.2 - h, width, h), width / 2.5, width / 2.5)
+            p.drawRoundedRect(QRectF(x, base - h, width, h), width / 2.5, width / 2.5)
+            p.setBrush(QColor(200, 255, 220))                     # a bright cap on each bar
+            p.drawRoundedRect(QRectF(x, base - h - 5 * s, width, 3 * s), 1.5 * s, 1.5 * s)
     p.end()
     return img
+
+
+GLITCH_FRAMES = {5, 6, 13, 21, 22, 23}                 # the frames that tear (of 30; scaled for other lengths)
+
+
+def glitch(frame, i: int, count: int, seed: int, split: int = 2):
+    """Neon bloom, scanlines, RGB split, and now and then the picture tears: slices jump sideways."""
+    import random
+    import numpy as np
+    from PIL import Image, ImageChops, ImageEnhance, ImageFilter
+    rgb = frame.convert("RGB")
+    bloom = ImageEnhance.Brightness(rgb.filter(ImageFilter.GaussianBlur(rgb.width / 30))).enhance(0.55)
+    rgb = ImageChops.screen(rgb, bloom)
+    a = np.asarray(rgb).astype(np.int16)
+    h, w, _ = a.shape
+    rng = random.Random(seed * 1000 + i)
+    burst = round(i * 30 / count) in GLITCH_FRAMES
+    dx = max(1, w // 160) * (split + (3 if burst else 0))
+    out = a.copy()
+    out[..., 0] = np.roll(a[..., 0], -dx, axis=1)            # red one way, blue the other: the RGB split
+    out[..., 2] = np.roll(a[..., 2], dx, axis=1)
+    if burst:
+        for _ in range(rng.randint(3, 6)):                  # torn slices
+            y0 = rng.randint(0, h - 4)
+            y1 = min(h, y0 + rng.randint(h // 60 + 1, h // 9))
+            out[y0:y1] = np.roll(out[y0:y1], rng.randint(-w // 7, w // 7), axis=1)
+            if rng.random() < 0.5:                          # some slices flash cyan / magenta (where she is)
+                tint = np.array(rng.choice(((0, 90, 110), (120, 0, 90))), dtype=np.int16)
+                lit = out[y0:y1].max(axis=2, keepdims=True) > 70
+                out[y0:y1] += tint * lit
+        for _ in range(rng.randint(1, 3)):                  # dead pixels / blocks
+            bw, bh = rng.randint(w // 30, w // 8), rng.randint(2, h // 30 + 2)
+            x0, y0 = rng.randint(0, w - bw), rng.randint(0, h - bh)
+            out[y0:y0 + bh, x0:x0 + bw] = rng.choice(((40, 255, 120), (255, 40, 80), (230, 230, 240)))
+    out[::3] = out[::3] * 82 // 100                          # scanlines
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8))
 
 
 def to_pil(img: QImage):
@@ -236,9 +289,9 @@ def save_gif(frames, path: Path, ms: int) -> None:
 def main(out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
     shard_image(1024, None).save(str(out / "capri.png"))
-    save_gif([to_pil(shard_image(320, i / 30)) for i in range(30)], out / "capri.gif", 70)
-    save_gif([to_pil(badge(128, i / 24, "gaming")) for i in range(24)], out / "gaming.gif", 80)
-    save_gif([to_pil(badge(128, i / 24, "music")) for i in range(24)], out / "music.gif", 80)
+    save_gif([glitch(to_pil(shard_image(320, i / 30)), i, 30, 1) for i in range(30)], out / "capri.gif", 70)
+    save_gif([glitch(to_pil(badge(128, i / 24, "gaming")), i, 24, 2, 1) for i in range(24)], out / "gaming.gif", 80)
+    save_gif([glitch(to_pil(badge(128, i / 24, "music")), i, 24, 3, 1) for i in range(24)], out / "music.gif", 80)
     for name in ("capri.png", "capri.gif", "gaming.gif", "music.gif"):
         print(name, (out / name).stat().st_size, "bytes")
 

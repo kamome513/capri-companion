@@ -30,14 +30,14 @@ ROOT = Path(__file__).resolve().parent.parent
 def test_desktop_is_plugged_in_with_her_animated_picture():
     act = dp.activity("desktop", 1, dp.INVITE)
     assert act["details"] == "Plugged in" and "state" not in act
-    assert act["assets"]["large_image"] == dp.ART + "capri.gif" and "small_image" not in act["assets"]
+    assert act["assets"]["large_image"] == dp.art("capri.gif") and "small_image" not in act["assets"]
     assert [b["label"] for b in act["buttons"]] == ["Get Capri", "Join her Discord"]
 
 
 def test_gaming_names_the_game_from_your_library():
     act = dp.activity("drone", 1, dp.INVITE, "gaming", "Deadlock")
     assert (act["details"], act["state"]) == ("Backseat gaming", "Playing Deadlock")
-    assert act["assets"]["small_image"] == dp.ART + "gaming.gif" and act["assets"]["small_text"] == "Gaming"
+    assert act["assets"]["small_image"] == dp.art("gaming.gif") and act["assets"]["small_text"] == "Gaming"
     assert dp.activity("drone", 1, "", "gaming", "")["state"] == "Drone mode: on"       # a game she can't name
     assert len(dp.activity("drone", 1, "", "gaming", "x" * 300)["state"]) <= 128            # Discord's limit
     assert len(act["buttons"]) == 2
@@ -46,7 +46,7 @@ def test_gaming_names_the_game_from_your_library():
 def test_music_never_says_the_song():
     act = dp.activity("desktop", 1, dp.INVITE, "music")
     assert (act["details"], act["state"]) == ("Vibing to music", "Headphones on")
-    assert act["assets"]["small_image"] == dp.ART + "music.gif"
+    assert act["assets"]["small_image"] == dp.art("music.gif")
 
 
 def test_the_pictures_are_real_animated_gifs_in_the_repo():
@@ -268,3 +268,7 @@ def test_windows_sessions_only_count_apps_making_sound():
 def test_windows_session_errors_are_skipped():
     broken = SimpleNamespace(GetSession=lambda i: 1 / 0)
     assert nd._session_app(broken, 0, {}, 1, None) == ""
+
+
+def test_picture_links_change_when_the_pictures_do():
+    assert dp.art("capri.gif") == dp.ART + "capri.gif?v=" + dp.ART_VERSION      # a new link: Discord fetches anew

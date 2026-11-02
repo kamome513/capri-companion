@@ -113,7 +113,7 @@ def test_she_shows_up_as_playing_capri():
         assert hello == (0, {"v": 1, "client_id": "1234567890"})
         act = fake.activities()[0]
         assert act["details"] == "Plugged in" and "state" not in act and act["timestamps"] == {"start": 1_700_000_000}
-        assert act["assets"]["large_image"] == dp.ART + "capri.gif" and act["buttons"][0]["url"] == dp.PAGE
+        assert act["assets"]["large_image"] == dp.art("capri.gif") and act["buttons"][0]["url"] == dp.PAGE
         assert "zed_the_tester" not in json.dumps(act)                       # nothing about you
         p.step()                                                      # nothing changed: nothing sent
         assert len(fake.activities()) == 1
