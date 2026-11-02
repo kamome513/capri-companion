@@ -15,6 +15,7 @@ if (ROOT / "models").is_dir():                 # offline speech model (+ optiona
     datas.append((str(ROOT / "models"), "models"))
 binaries = []
 hiddenimports = collect_submodules("anthropic")
+hiddenimports += ["truststore", "certifi"]       # net.py imports them at start-up: secure downloads on every PC
 
 # Vosk ships its native library (libvosk.dll) inside the package.
 v_datas, v_binaries, v_hidden = collect_all("vosk")
