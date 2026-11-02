@@ -24,54 +24,6 @@ No Python, no admin rights.
     instead.
 * **From source:** double-click `run.bat`. See *Run it on Windows* below.
 
-## New in 1.35
-
-* **"Open your settings" works.** So do "show me your settings" and just "settings". Plain "open settings"
-  still opens Windows Settings.
-* **"Change music to SoundCloud"** (and "switch my music app to ...", "set the music player to ...").
-* **Songs: she plays the one you asked for.**
-  * "Chicago by MJ" plays Michael Jackson's "Chicago", not "Chicago (Original Version)". Live, remix,
-    remaster and other versions only win if you ask for them.
-  * Initials work for artists ("MJ", "NF").
-* **No more random clicks or "select all" when you say "play ... by ...".** She only types into
-  Spotify, or clicks its Play button, when Spotify is really in front. Otherwise she uses Spotify's
-  own search link, which needs no keyboard.
-* **No more surprise websites.** A slow Spotify gets more time (25 s), then she shows the search
-  inside Spotify. YouTube is only used when the Spotify app isn't installed.
-* **"Can you ..." then a pause:** she waits for the rest instead of stopping at "can you".
-* **Your "Also say" names come first.** If one sounds like one of her own phrases (her chat window,
-  say), "open <your name>" opens your app.
-* **Apps tab: easier, and it lists what's really on your PC.**
-  * It no longer comes filled with games you might not have (Deadlock, Roblox, Minecraft...). An old
-    list loses those once, and gains every game you've downloaded: Steam, plus Epic, Xbox, Riot,
-    GOG, EA, Ubisoft and Battle.net through their Start-menu shortcuts.
-  * **Add app or game...** opens a searchable list of everything installed. Tick and add; no file
-    hunting. **Browse for a file...** is still there for anything not listed.
-  * **Add my games** adds games you've installed since.
-  * A **Found?** column says whether Capri can find each app: ✓ found, ✗ file missing / not installed
-    in Steam / needs the full path, • she'll look it up in the Start menu.
-  * Arguments, processes and "When closing" are behind **Show advanced**.
-* **Parakeet hearing: best for heavy accents.** Settings → Wake word → *Download Parakeet* (about
-  480 MB, once). Then pick **Parakeet** under Hearing and press Apply.
-  * Parakeet is NVIDIA's speech model, run with sherpa-onnx. It's far better with strong accents,
-    mumbling and cheap mics.
-  * Vosk still catches "Hey Capri". Parakeet re-hears what you said after it, in about half a second.
-  * It runs on your PC and nothing is sent anywhere.
-  * It uses about 900 MB of RAM. While she's a drone in a game it unloads and Vosk hears you alone;
-    it reloads after.
-* **A private memory of you.**
-  * Tell her "my name is Sam", "I love Deadlock", "my favourite food is ramen", "I'm from Glasgow"
-    or "remember that my exam is Friday". Ask "what's my name?" or "what do you know about me?".
-  * It's saved in `%LOCALAPPDATA%\Capri\about_you.json`: your user folder, never Capri's files or
-    the installer.
-  * **Anything personal is answered by her own chatbot on your PC, even with an AI set up.** It's not
-    sent to the AI.
-  * Nothing from her memory goes into the AI's instructions unless you tick *Let the AI know what
-    Capri remembers about me* (Settings → Assistant).
-  * Your Windows user name and user-folder paths are taken out of anything that does go to an AI.
-  * "Forget that I like ..." removes one thing. "Forget everything about me" asks first, then deletes
-    it all. There's also a button in Settings.
-
 ## New in 1.34
 
 * **No more spikes on her legs.** Only her hair is drawn around her now.
