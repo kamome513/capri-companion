@@ -1,0 +1,11 @@
+{
+  "name": "Capri",
+  "icon": "icon.png",
+  "display": "auto",
+  "poses": {
+    "idle": "idle.png",
+    "thinking": "idle.png",
+    "speaking": "grin.png",
+    "success": "grin.png"
+  }
+}

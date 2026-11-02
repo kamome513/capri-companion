@@ -1,0 +1,24 @@
+CAPRI - a desktop companion (Windows)
+
+EASIEST: run Capri-Setup-<version>.exe (no Python needed, no admin rights).
+On her first start she downloads her offline speech model (40 MB, once).
+
+OR, from this folder:
+1. Install Python 3.10 or newer from python.org.
+   In the installer, tick "Add python.exe to PATH".
+2. Unzip this folder somewhere (not inside the zip preview).
+3. Double-click run.bat.
+   The first start takes a few minutes: it installs what she needs and downloads
+   her offline speech model. After that she starts in a few seconds.
+4. Say "Hey Capri", then what you want - "open Discord", "what time is it",
+   "play lofi", or just talk to her.
+
+Settings: right-click her (or the tray icon) -> Settings.
+To chat with an AI: Settings -> Assistant -> AI, pick one and paste its key
+(a free Google Gemini key from aistudio.google.com works).
+
+Want a real app (Capri.exe) instead? Double-click build.bat once.
+
+Linux: ./run.sh (some PC controls are Windows-only - see README.md).
+Everything runs on your PC. Your voice is only listened to for "Hey Capri",
+offline, and never recorded or uploaded.

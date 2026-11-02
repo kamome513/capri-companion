@@ -1,0 +1,49 @@
+"""Log file + crash catching.
+
+The packaged Capri.exe has no console, so warnings and errors go to
+%LOCALAPPDATA%\\Capri\\capri.log (3 x 1 MB, rotated). An unexpected error
+is logged with its traceback instead of silently killing her.
+"""
+
+from __future__ import annotations
+
+import logging
+import logging.handlers
+import sys
+import threading
+from pathlib import Path
+from typing import Callable
+
+from PySide6.QtCore import QStandardPaths
+
+log = logging.getLogger("capri")
+
+
+def log_dir() -> Path:
+    return Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation))
+
+
+def setup(on_crash: Callable[[str], None] | None = None) -> Path:
+    path = log_dir() / "capri.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(path, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(threadName)s: %(message)s"))
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(handler)
+    if sys.stderr is not None:                       # running from a console (run.bat): show there too
+        console = logging.StreamHandler()
+        console.setFormatter(logging.Formatter("[capri] %(message)s"))
+        root.addHandler(console)
+
+    def excepthook(kind, value, tb) -> None:
+        log.error("Unexpected error", exc_info=(kind, value, tb))
+        if on_crash is not None:
+            try:
+                on_crash(f"{kind.__name__}: {value}")
+            except Exception:
+                pass
+
+    sys.excepthook = excepthook
+    threading.excepthook = lambda args: excepthook(args.exc_type, args.exc_value, args.exc_traceback)
+    return path

@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+build/
+dist/
+preview/
+models/
+*.zip
+.pytest_cache/

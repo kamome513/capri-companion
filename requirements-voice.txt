@@ -1,0 +1,7 @@
+# Her neural voice (Kokoro, offline). Optional: without it she uses the Windows voices.
+# kokoro-onnx itself is installed separately with --no-deps --ignore-requires-python
+# (see run.bat): it's pure Python, but its package still says "Python < 3.14" even
+# though everything it needs has Python 3.14 builds.
+onnxruntime>=1.20
+phonemizer>=3.3
+espeakng-loader>=0.2.4
