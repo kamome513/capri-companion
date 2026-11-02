@@ -17,7 +17,7 @@ Everything she hears is processed on your PC.
    installer isn't code-signed, so Windows doesn't recognise it.
 4. Capri starts in the bottom-right corner. On the first start she downloads her speech model
    (about 40 MB, once).
-5. Say **"Hey Capri, open Discord"** (or any app you have).
+5. Say **"Hey Capri, open Chrome"** (or any app you have).
 
 Works on Windows 10 and 11.
 
@@ -60,11 +60,11 @@ Windows" instead of pretending.
 ### Talking to her
 
 Say **"Capri"** or **"Hey Capri"**, then what you want. You can say it in one breath ("Hey Capri,
-open Discord") or pause after her name. Her frame turns green while she's listening.
+open Chrome") or pause after her name. Her frame turns green while she's listening.
 
 - **Push-to-talk:** press **Ctrl+Alt+C**, then speak. No wake word needed.
 - **Type instead:** right-click her → **Chat with Capri...**
-- **Two things at once:** "close Discord and open Spotify", or "open Notepad then type hello".
+- **Two things at once:** "close Chrome and open Notepad", or "open Notepad then type hello".
 - **Stop her talking:** "stop talking" / "shut up".
 - **Cancel:** "never mind".
 
@@ -74,19 +74,19 @@ open Discord") or pause after her name. Her frame turns green while she's listen
 
 | Say | What happens |
 |---|---|
-| "open Discord" / "launch Deadlock" / "start Steam" | Opens any installed app, Steam game, Start-menu shortcut or website |
-| "close Discord" / "quit Deadlock" | Closes it. For games she asks "yes or no?" first |
+| "open Chrome" / "launch Fortnite" / "start Minecraft" | Opens any app or game you have installed, or a website |
+| "close Chrome" / "quit Fortnite" | Closes it. For games she asks "yes or no?" first |
 | "open YouTube" / "open twitch dot tv" | Opens the website |
-| "search for deadlock builds" / "search YouTube for lofi" | Web search (Google, YouTube, Reddit, Wikipedia...) |
+| "search for easy pasta recipes" / "search YouTube for lofi" | Web search (Google, YouTube, Reddit, Wikipedia...) |
 | "go into search mode" | She keeps asking what to search next |
-| "show me Clipchamp in File Explorer" / "open my downloads" | Opens the folder |
-| "switch tabs on Opera" / "play the video" | Browser tabs and the video on the page |
+| "show me Chrome in File Explorer" / "open my downloads" | Opens the folder |
+| "switch tabs on Chrome" / "play the video" | Browser tabs and the video on the page |
 
 **Music**
 
 | Say | What happens |
 |---|---|
-| "play Chicago by Michael Jackson" | Plays the song (Spotify by default) |
+| "play Bohemian Rhapsody by Queen" | Plays the song (Spotify by default) |
 | "play lofi on YouTube" / "on SoundCloud" | Plays it on another music app, just this once |
 | "change music to SoundCloud" | Changes where "play ..." goes from now on |
 | "pause" / "resume" / "next song" / "previous song" | Controls whatever is playing |
@@ -100,14 +100,13 @@ open Discord") or pause after her name. Her frame turns green while she's listen
 | "mute me" / "unmute me" / "deafen me" / "undeafen me" | Mute and deafen, even mid-game without tabbing you out |
 | "join call" | Joins the voice channel you saved in Settings |
 | "leave call" | Leaves the call |
-| "stream my screen" / "stop streaming" | Screen share on and off |
 
 **Your PC**
 
 | Say | What happens |
 |---|---|
 | "minimise everything" / "bring them back" | Hides all windows, then restores them |
-| "minimise Discord" / "minimise this" | Minimises one window |
+| "minimise Chrome" / "minimise this" | Minimises one window |
 | "lock my PC" | Locks it |
 | "shut down" / "restart" / "put my PC to sleep" | Asks you first. Only a clear "yes" does it |
 | "take a screenshot" / "screenshot this window" | Saves it to Pictures\Screenshots |
@@ -136,10 +135,10 @@ Claude, Ollama...), she chats like a real conversation.
 
 | Say | What happens |
 |---|---|
-| "my name is Sam" / "I love Deadlock" / "my favourite food is ramen" / "I'm from Glasgow" | She remembers it |
+| "my name is Alex" / "I love pizza" / "my favourite movie is Shrek" / "I'm from London" | She remembers it |
 | "remember that my exam is Friday" | She remembers that too |
 | "what's my name?" / "what do you know about me?" | She tells you |
-| "forget that I love Deadlock" | Forgets one thing |
+| "forget that I love pizza" | Forgets one thing |
 | "forget everything about me" | Asks first, then deletes it all |
 
 It's saved only on your PC. Personal things are answered by her own chatbot and never sent to the
@@ -149,11 +148,11 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 
 | Say | What happens |
 |---|---|
-| "when I say gaming time, open Steam and Discord" | Your own shortcut |
-| "forget the shortcut gaming time" | Deletes it |
-| "when I say to school I mean Discord" | Fixes a word she keeps mishearing |
-| "this red button makes me leave call" (pointing at it with the mouse) | She learns that button |
-| "forget the leave call button" | Forgets it |
+| "when I say study time, open Chrome and Notepad" | Your own shortcut |
+| "forget the shortcut study time" | Deletes it |
+| "when I say note bad I mean Notepad" | Fixes a word she keeps mishearing |
+| "this button makes me skip ad" (pointing at it with the mouse) | She learns that button |
+| "forget the skip ad button" | Forgets it |
 
 **Her look and mood**
 
@@ -213,7 +212,7 @@ You can **drag** Capri or her panel anywhere, on any monitor.
 | Button / column | What it does |
 |---|---|
 | **Name (say this)** | What you say: "open *Name*" |
-| **Also say** | Other words for it, separated by commas (e.g. *blocks strap* for Bloxstrap) |
+| **Also say** | Other words for it, separated by commas (e.g. *my browser* for Chrome) |
 | **Type** | Program, Steam game, or Website / link |
 | **Where it is** | The program's path, the Steam game's number, or the link |
 | **Found?** | ✓ she can find it, ✗ it's missing (and why), • she'll look it up in the Start menu |
@@ -242,7 +241,7 @@ install something.
 | **Clean up my mic** | Turns a quiet mic up and cuts rumble and hiss |
 | **Push-to-talk / Click-through hotkey** | Change the keyboard shortcuts |
 | **Apply** | Uses the changes |
-| **Fix what she mishears** (Add / Remove / Fix what she just heard) | "When she hears *to school*, read it as *discord*" |
+| **Fix what she mishears** (Add / Remove / Fix what she just heard) | "When she hears *note bad*, read it as *notepad*" |
 
 **Character tab:** her look.
 
