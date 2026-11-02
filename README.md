@@ -332,6 +332,7 @@ install something.
 | **Restart Capri** | Closes and starts her again (installs a downloaded update) |
 | **Game hype** (cheer for kills, say something when I die, watch my screen, encourage me) / **Preview** | Hype while you play: CS2, Dota 2 and League directly, any game by reading your screen |
 | **Toggle Mute / Deafen keybind** | Your Discord keybinds, if you changed Discord's defaults |
+| **Show "Playing Capri" on my Discord profile** | Your friends see Capri on your profile ("Plugged in", how long), with **Get Capri** and **Join her Discord** buttons. Only that she's open is shown |
 | **Your voice channel** / **Leave call keybind** / **Join it now** | For "join call" and "leave call". Right-click the channel in Discord → Copy Link |
 | **Save** | Saves your changes |
 
@@ -344,6 +345,8 @@ install something.
   (`%LOCALAPPDATA%\Capri` on Windows, `~/.config/Capri` on Linux). Delete `settings.json` there to reset her.
 - Only what you say to the AI (if you set one up) goes to that AI. Personal things don't, and your
   Windows user name is removed from anything that does.
+- On Discord, your profile shows "Playing Capri" while she's open, and nothing else about what you do. Turn it off
+  in Settings → PC & chat (Discord's own Activity Privacy setting also applies).
 - She never runs commands an AI makes up. She can only do the fixed actions in this manual, and
   shutting down, restarting or sleeping always asks you first.
 

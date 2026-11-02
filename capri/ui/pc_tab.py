@@ -110,6 +110,13 @@ class PcTab(QWidget):
         self.deafen_key.setPlaceholderText("empty = Discord's Ctrl+Shift+D")
         form.addRow("Toggle Mute keybind", self.mute_key)
         form.addRow("Toggle Deafen keybind", self.deafen_key)
+        from ..integrations import discord_presence
+        self.presence = QCheckBox("Show \u201cPlaying Capri\u201d on my Discord profile (your friends see she's open)")
+        self.presence.setChecked(getattr(s, "discord_presence", True))
+        self.presence.setEnabled(discord_presence.APP_ID != "")
+        self.presence.setToolTip("Discord's own Activity Privacy setting still decides who sees it. Only that Capri "
+                                 "is open is shown - never what you say to her.")
+        form.addRow(self.presence)
         root.addWidget(discord)
 
         call = QGroupBox("Discord call  (“join call”, “leave call”, “stream my screen”)")
@@ -195,6 +202,7 @@ class PcTab(QWidget):
             self.status.setText("Your call: paste a voice channel link (right-click the channel -> Copy Link).")
             return False
         s.discord_call = self.call.text().strip()
+        s.discord_presence = self.presence.isChecked()
         s.game_hype = self.hype.isChecked()
         s.game_hype_deaths = self.hype_deaths.isChecked()
         s.game_hype_screen = self.hype_screen.isChecked()

@@ -472,6 +472,12 @@ def main(argv: list[str] | None = None) -> int:
         if on:
             QTimer.singleShot(1500, memory.trim)  # her idle memory back to Windows for your game
     companion.drone_changed.connect(game_mode)
+    from .integrations.discord_presence import DiscordPresence
+    presence = DiscordPresence(enabled=lambda: settings.discord_presence)   # "Playing Capri" on Discord
+    presence.start()
+    companion.drone_changed.connect(lambda on: presence.set_state("drone" if on else "desktop"))
+    assistant.settings_changed.connect(presence.refresh)
+    app.aboutToQuit.connect(presence.close)
     QTimer.singleShot(60_000, memory.trim)    # once she's settled in
     trim_timer = QTimer(app)
     trim_timer.setInterval(10 * 60_000)       # and every 10 minutes: idle memory back to Windows

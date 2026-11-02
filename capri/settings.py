@@ -106,6 +106,7 @@ class Settings:
     discord_deafen_key: str = ""       # your Discord "Toggle Deafen" keybind ("" = Discord's Ctrl+Shift+D)
     discord_leave_key: str = ""        # your Discord "Disconnect from Voice Channel" keybind ("" = press the button)
     discord_call: str = ""             # "join call": your voice channel's link (right-click it -> Copy Link)
+    discord_presence: bool = True      # "Playing Capri" on your Discord profile (Rich Presence, local only)
     game_hype: bool = False            # "nice kill!": cheer for kills in CS2 / Dota 2 / League (writes their GSI cfg)
     game_hype_deaths: bool = False     # ...and say something when you die
     game_hype_screen: bool = False     # ...in any game: she reads the middle of the game screen (on this PC) for kills
