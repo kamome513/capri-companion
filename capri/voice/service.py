@@ -24,6 +24,7 @@ from typing import Callable
 
 from PySide6.QtCore import QObject, Signal
 
+from ..net import friendly
 from .model import download_model, find_model, user_models_dir
 from .cleanup import MicCleaner
 from .wakeword import (WAKE_GRAMMAR, WAKE_WORD, Command, Heard, NoCommand, Partial, Rejected, Wake, clean_command,
@@ -153,7 +154,7 @@ class VoiceService(QObject):
                 model_dir = download_model(user_models_dir(), quiet=True)
             except Exception as exc:
                 log.warning("voice: couldn't download the speech model: %r", exc)
-                self._emit_status(Status.MODEL_MISSING, f"couldn't download it ({str(exc)[:60]}) - "
+                self._emit_status(Status.MODEL_MISSING, f"couldn't download it ({friendly(exc)[:70]}) - "
                                                         f"check your internet and restart me")
                 return
         if model_knows_wake_word(model_dir) is False:

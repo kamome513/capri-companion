@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QScrollArea, QAbstractItemView, QCheckBox, QCombo
                                QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import __version__, hotkeys
+from ..net import friendly
 from ..commands import parser
 from ..commands.apps import (CLOSE_ASK, CLOSE_FORCE, CLOSE_NORMAL, PROGRAM, STEAM, WEBSITE, AppEntry,
                              add_found_games, entry_status, found_games, save_apps)
@@ -432,7 +433,7 @@ class SettingsWindow(QDialog):
                 download_model(url=BETTER_URL, quiet=True)
                 message = "Installed. Restart Capri (right-click → Exit, then start her) to use it."
             except Exception as exc:
-                message = f"Download failed: {str(exc)[:80]}"
+                message = "Download failed: " + friendly(exc)
             QTimer.singleShot(0, self, lambda: (self.model_status.setText(message), self.model_btn.setEnabled(True)))
         threading.Thread(target=run, daemon=True).start()
 
@@ -489,12 +490,32 @@ class SettingsWindow(QDialog):
     def _parakeet_words() -> str:
         from ..voice import parakeet
         if parakeet.ready():
-            return "Parakeet is ready. Pick it under Hearing and press Apply."
+            return ("Parakeet is downloaded. Press Apply to use it. It runs on your PC and uses about 900 MB of "
+                    "RAM (given back to your game while she's in drone mode).")
         if not parakeet.installed():
             return "Parakeet's engine (sherpa-onnx) is missing from this copy of Capri."
         return ("Parakeet (NVIDIA's speech model) understands strong accents and mumbling far better. "
-                "It runs on your PC - nothing you say is sent anywhere. It uses about 900 MB of RAM "
-                "(given back to your game while she's in drone mode).")
+                "Press Download, then Apply. It runs on your PC - nothing you say is sent anywhere.")
+
+    def _hearing_changed(self) -> None:
+        """Only what the picked hearing needs: a download button, Whisper's size, a line about it."""
+        from ..voice import parakeet, whisper
+        picked = self.hearing.currentData()
+        if getattr(self, "_parakeet_busy", False):
+            return self._voice_form.setRowVisible(self.whisper_size, False)
+        need_parakeet = picked == "parakeet" and not parakeet.ready() and parakeet.installed()
+        need_whisper = picked == "whisper" and not whisper.installed()
+        self.parakeet_btn.setVisible(need_parakeet)
+        self.parakeet_btn.setEnabled(True)
+        self.whisper_btn.setVisible(need_whisper)
+        self._voice_form.setRowVisible(self._hearing_buttons, need_parakeet or need_whisper)
+        self._voice_form.setRowVisible(self.whisper_size, picked == "whisper")
+        self.parakeet_status.setText({
+            "vosk": "Vosk is built in and light. Mishears you? Pick Parakeet - it's far better with accents.",
+            "parakeet": self._parakeet_words(),
+            "whisper": ("Whisper is installed. Press Apply to use it." if whisper.installed() else
+                        "Whisper isn't installed yet - press Install Whisper (about a minute), then Apply."),
+        }.get(picked, ""))
 
     def _download_parakeet(self) -> None:
         import threading
@@ -503,6 +524,7 @@ class SettingsWindow(QDialog):
             self.parakeet_status.setText(self._parakeet_words())
             return
         self.parakeet_btn.setEnabled(False)
+        self._parakeet_busy = True
         self._parakeet_progress = "Starting the download..."
         self.parakeet_status.setText(self._parakeet_progress)
 
@@ -516,16 +538,18 @@ class SettingsWindow(QDialog):
                 self._parakeet_progress = "done"
             except Exception as exc:
                 log.warning("Parakeet download failed: %s", exc)
-                self._parakeet_progress = f"failed: Download failed ({str(exc)[:80]}). Check your internet and try again."
+                self._parakeet_progress = f"failed: Download failed: {friendly(exc)}."
 
         def tick() -> None:
             text = self._parakeet_progress
             if text == "done":
-                self.parakeet_btn.setVisible(False)
+                self._parakeet_busy = False
                 self.hearing.setCurrentIndex(max(0, self.hearing.findData("parakeet")))
-                self.parakeet_status.setText("Parakeet is ready - picked it under Hearing. Press Apply.")
+                self._hearing_changed()
+                self.parakeet_status.setText("Parakeet is downloaded - press Apply to start using it.")
                 return
             if text.startswith("failed: "):
+                self._parakeet_busy = False
                 self.parakeet_btn.setEnabled(True)
                 self.parakeet_status.setText(text[8:])
                 return
@@ -544,7 +568,7 @@ class SettingsWindow(QDialog):
             self.hearing_status.setText("Run setup_hearing.bat in Capri's folder.")
             return
         subprocess.Popen(["cmd.exe", "/c", str(script)], cwd=str(ROOT), creationflags=NEW_CONSOLE)
-        self.hearing_status.setText("Installing in the window that opened. When it says Done: pick Whisper above, Apply.")
+        self.hearing_status.setText("Installing in the window that opened. When it says Done, press Apply.")
         self.hearing.setCurrentIndex(max(0, self.hearing.findData("whisper")))
 
     # -- Voice tab -----------------------------------------------------------------------
@@ -579,37 +603,41 @@ class SettingsWindow(QDialog):
         form.addRow("Understanding you", self.model_btn)
         form.addRow("", self.model_status)
         self._refresh_model()
-        # -- accents: Whisper re-hears what you said (optional) --
-        from ..voice import whisper
+        # -- how she hears you: Vosk (built in), Parakeet (download), Whisper (from the code only) --
+        import sys as _sys
+        from ..voice import parakeet, whisper
         self.hearing = QComboBox()
-        self.hearing.addItem("Vosk (quick and light)", "vosk")
-        self.hearing.addItem("Parakeet (best for heavy accents)", "parakeet")
-        self.hearing.addItem("Whisper (better with accents)", "whisper")
+        self.hearing.addItem("Vosk - quick and light (built in)", "vosk")
+        self.hearing.addItem(f"Parakeet - best for strong accents ({parakeet.MODEL_MB} MB download)", "parakeet")
+        if whisper.installed() or not getattr(_sys, "frozen", False):   # the installed app can't add Whisper
+            self.hearing.addItem("Whisper - good with accents", "whisper")
         self.hearing.setCurrentIndex(max(0, self.hearing.findData(self.settings.hearing)))
+        form.addRow("Hearing", self.hearing)
         self.whisper_size = QComboBox()
         for key, label in whisper.SIZES.items():
             self.whisper_size.addItem(label, key)
         self.whisper_size.setCurrentIndex(max(0, self.whisper_size.findData(self.settings.whisper_size)))
-        form.addRow("Hearing", self.hearing)
         form.addRow("Whisper model", self.whisper_size)
-        self.hearing_status = QLabel("Whisper is installed." if whisper.installed() else
-                                     "Whisper isn't installed yet - press the button below (about a minute).")
-        self.hearing_status.setObjectName("hint")
-        self.hearing_status.setWordWrap(True)
-        form.addRow("", self.hearing_status)
-        self.whisper_btn = QPushButton("Install Whisper (best for accents)")
-        self.whisper_btn.setVisible(not whisper.installed())
-        self.whisper_btn.clicked.connect(self._install_whisper)
-        form.addRow("", self.whisper_btn)
-        from ..voice import parakeet
-        self.parakeet_btn = QPushButton(f"Download Parakeet - best for heavy accents ({parakeet.MODEL_MB} MB)")
+        self.parakeet_btn = QPushButton(f"Download Parakeet ({parakeet.MODEL_MB} MB)")
         self.parakeet_btn.clicked.connect(self._download_parakeet)
-        self.parakeet_btn.setVisible(not parakeet.ready())
-        form.addRow("", self.parakeet_btn)
-        self.parakeet_status = QLabel(self._parakeet_words())
+        self.whisper_btn = QPushButton("Install Whisper")
+        self.whisper_btn.clicked.connect(self._install_whisper)
+        buttons = QWidget()
+        row = QHBoxLayout(buttons)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(self.parakeet_btn)
+        row.addWidget(self.whisper_btn)
+        row.addStretch(1)
+        form.addRow("", buttons)
+        self._hearing_buttons = buttons
+        self.parakeet_status = QLabel("")             # what the picked hearing does, and how it's going
         self.parakeet_status.setObjectName("hint")
         self.parakeet_status.setWordWrap(True)
+        self.hearing_status = self.parakeet_status
         form.addRow("", self.parakeet_status)
+        self._voice_form = form
+        self.hearing.currentIndexChanged.connect(lambda _i: self._hearing_changed())
+        self._hearing_changed()
         from PySide6.QtWidgets import QCheckBox
         self.mic_cleanup = QCheckBox("Clean up my mic: turn a quiet mic up, cut rumble and hiss (on this PC)")
         self.mic_cleanup.setChecked(self.settings.mic_cleanup)

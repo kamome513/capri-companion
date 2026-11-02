@@ -49,6 +49,9 @@ VERIFY_RELAX = 0.15           # with the second listen on, the first can be this
 MIN_WAKE_SECONDS = 0.2        # "capri" takes longer than this to say: shorter is a click or a blip
 VERIFY_PAD_SECONDS = 0.12     # a little audio after the word, for the second listen
 WAKE_WORD = "capri"
+# A breath, a click or an "uh" before her name often comes out as one of these little words ("the hey capri").
+# One of them in front still counts as calling her; a real word ("went to capri") doesn't.
+FILLERS = {"the", "a", "uh", "um", "oh", "okay", "yeah", "hi", "and", "so", "ah", "er", "erm", "hmm", "yo"}
 UNKNOWN = "[unk]"
 
 COMMAND_START_TIMEOUT = 6.0   # seconds to start speaking after a bare "Capri"
@@ -134,10 +137,14 @@ def sounds_like_capri(said: str, learned: list[str] | tuple[str, ...] = ()) -> b
     return False
 
 
+COMMAND_FILLERS = {"the", "uh", "um", "umm", "uhh", "ah", "erm", "hmm"}   # "the open discord" (not "oh": "oh pen" = open)
+
+
 def clean_command(text: str) -> str:
-    """Drop a repeated wake word ("capri capri open discord") and extra spaces."""
+    """Drop a repeated wake word ("capri capri open discord"), a stray "the" / "uh" in front
+    ("the open discord"), and extra spaces."""
     words = text.split()
-    while words and words[0] in ("hey", WAKE_WORD):
+    while words and (words[0] in ("hey", WAKE_WORD) or words[0] in COMMAND_FILLERS and len(words) > 1):
         words.pop(0)
     return re.sub(r"\s+", " ", " ".join(words)).strip()
 
@@ -226,6 +233,8 @@ class WakeWordListener:
             return []
         if self.training:                       # teaching her your voice: just report how it sounded
             return [self._heard(words)]
+        lead = 1 if words[0].get("word") in FILLERS and len(words) > 1 else 0     # "the hey capri"
+        words = words[lead:]
         i = 1 if words[0].get("word") == "hey" and len(words) > 1 else 0
         first = words[i]
         if first.get("word") != WAKE_WORD:

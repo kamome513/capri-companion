@@ -132,6 +132,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(autostart.STARTUP_FLAG, action="store_true",
                         help="started by Windows at sign-in: greet the user")
     args = parser.parse_args(argv)
+    from . import net
+    net.use_system_certificates()     # downloads work on PCs whose antivirus / network checks HTTPS
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)  # let Ctrl+C in the console quit
     app = QApplication(sys.argv[:1])

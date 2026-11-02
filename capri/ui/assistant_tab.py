@@ -9,6 +9,7 @@ from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
                                QPushButton, QSlider, QVBoxLayout, QWidget)
 
+from ..net import friendly
 from .. import personality, secrets
 from ..commands.parser import Intent, Kind
 from ..speech.effects import CAPRI_PRESET, STYLES
@@ -637,7 +638,7 @@ class AssistantTab(QWidget):
                 download_kokoro(progress=progress)
                 self._signals.voice_progress.emit("done")
             except Exception as exc:   # shown to you; nothing half-installed is left behind
-                self._signals.voice_progress.emit(f"Download failed: {str(exc)[:60]}")
+                self._signals.voice_progress.emit("Download failed: " + friendly(exc))
         threading.Thread(target=run, daemon=True).start()
 
     def _voice_progress(self, message: str) -> None:

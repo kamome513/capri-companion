@@ -14,6 +14,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from .. import __version__, updater
+from ..net import friendly
 from ..states import State
 
 log = logging.getLogger("capri")
@@ -111,7 +112,7 @@ class UpdateManager(QObject):
         self.busy = False
         if isinstance(result, Exception):
             log.warning("update download failed: %s", result)
-            self._say(f"Couldn't download the update ({str(result)[:60]}). I'll try again later.", error=True)
+            self._say(f"Couldn't download the update ({friendly(result)[:70]}). I'll try again later.", error=True)
             return
         self._offer(self.found.version if self.found else "")
 

@@ -312,6 +312,7 @@ install something.
 |---|---|
 | She doesn't react to "Hey Capri" | Check the right microphone is picked (right-click → Voice → Microphone). Try **Teach her your voice**, or lower the wake word confidence |
 | She wakes up by mistake | Raise the wake word confidence |
+| A download fails ("certificate verify failed") | Your antivirus is probably scanning HTTPS. Allow Capri, or turn off its "HTTPS scanning" / "web shield" for a minute, and try again |
 | She mishears your accent | Settings → Wake word → **Download Parakeet**, then pick it under Hearing |
 | She can't find an app | Settings → Apps → **Add app or game...**, or add what she hears to **Also say** |
 | "I don't have Ollama installed" but you do | Open the Ollama app once (it sits by the clock), then say "set up your brain". If you changed Ollama's address, put it in Settings → Assistant → Address |

@@ -5,3 +5,6 @@ psutil>=5.9
 numpy>=1.26
 comtypes>=1.2; sys_platform == "win32"
 anthropic>=2.3,<3
+# Secure downloads on every PC: check certificates the way Windows / browsers do (antivirus HTTPS scanning)
+truststore>=0.9
+certifi>=2024.2.2
