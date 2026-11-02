@@ -146,7 +146,7 @@ jobs:
 
       - name: Make the AppImage
         if: steps.exists.outputs.skip != 'true'
-        run: packaging/build_appimage.sh
+        run: bash packaging/build_appimage.sh
 
       - name: Add it to the release (and to latest.json for the updater)
         if: steps.exists.outputs.skip != 'true'
