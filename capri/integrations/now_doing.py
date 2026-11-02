@@ -7,9 +7,10 @@
     SoundCloud, the Spotify web player...).
   - Linux: media players report "Playing" over D-Bus (MPRIS - what your desktop's media controls use).
     The same rules apply for browsers.
-* Gaming: the game check she already does for drone mode.
+* Gaming: the game check she already does for drone mode. While you play she steps off Discord, so your
+  game is what Discord shows.
 
-Only "is music playing / which game" is used - never song names, never what you listen to.
+Only "is music playing / are you in a game" is used - never song names, never what you listen to.
 """
 
 from __future__ import annotations
@@ -285,16 +286,26 @@ def browser_titles(processes: Callable[[], list], desktop) -> list[str]:
     return [desktop.window_title(w) for w in desktop.windows_for(pids)]
 
 
-def game_title(exe: str, steam_games: Iterable) -> str:
-    """A nice name for the game running from `exe`: the library's name for it, else ""."""
-    if not exe:
-        return ""
-    low = os.path.normcase(exe)
-    for game in steam_games or []:
-        folder = getattr(game, "install_dir", None)
-        if folder and low.startswith(os.path.normcase(str(folder)) + os.sep):
-            return game.name
-    return ""
+class GameSeen:
+    """"Are you in a game?" - and it stays yes while that game runs, even when you alt-tab out of it.
+    active: her game mode is on; front_game: the pid of the game in front right now, or None."""
+
+    def __init__(self, active: Callable[[], bool], front_game: Callable[[], int | None],
+                 alive: Callable[[int], bool]) -> None:
+        self.active, self.front_game, self.alive = active, front_game, alive
+        self.pid: int | None = None
+
+    def __call__(self) -> bool:
+        if self.active():
+            return True
+        pid = self.front_game()
+        if pid:
+            self.pid = pid
+            return True
+        if self.pid is not None and self.alive(self.pid):
+            return True
+        self.pid = None
+        return False
 
 
 def sounding_for_platform() -> Callable[[], list[str]] | None:
@@ -306,24 +317,24 @@ def sounding_for_platform() -> Callable[[], list[str]] | None:
 
 
 class StatusWatch:
-    """Every few seconds: gaming? music? -> report(mode, game) when it changes ("gaming" / "music" / "").
+    """Every few seconds: gaming? music? -> report(mode) when it changes ("gaming" / "music" / "").
     Music is checked off the main thread on Windows (the sound mixer can be slow); on Linux it's D-Bus and
     window titles, which belong on the main thread and are quick."""
 
-    EVERY_MS = 8000
+    EVERY_MS = 5000
 
-    def __init__(self, report: Callable[[str, str], None], in_game: Callable[[], bool],
-                 game_name: Callable[[], str], music: MusicWatch | None, off_thread: bool = sys.platform == "win32",
-                 wanted: Callable[[], bool] = lambda: True) -> None:
+    def __init__(self, report: Callable[[str], None], in_game: Callable[[], bool], music: MusicWatch | None,
+                 off_thread: bool = sys.platform == "win32", wanted: Callable[[], bool] = lambda: True) -> None:
         from PySide6.QtCore import QObject, QTimer, Signal
 
         class _Bridge(QObject):
             heard = Signal(bool)
-        self.report, self.in_game, self.game_name, self.music = report, in_game, game_name, music
+        self.report, self.in_game, self.music = report, in_game, music
         self.off_thread, self.wanted = off_thread, wanted
         self.music_on = False
+        self.gaming = False
         self._busy = False
-        self._last: tuple[str, str] | None = None
+        self._last: str | None = None
         self._bridge = _Bridge()
         self._bridge.heard.connect(self._heard)
         self.timer = QTimer()
@@ -340,7 +351,11 @@ class StatusWatch:
     def tick(self) -> None:
         if not self.wanted():
             return
-        if self.music is not None and not self._busy:
+        try:
+            self.gaming = bool(self.in_game())
+        except Exception:
+            self.gaming = False
+        if self.music is not None and not self._busy and not self.gaming:
             if self.off_thread:
                 import threading
                 self._busy = True
@@ -356,17 +371,7 @@ class StatusWatch:
         self._decide()
 
     def _decide(self) -> None:
-        try:
-            gaming = bool(self.in_game())
-        except Exception:
-            gaming = False
-        game = ""
-        if gaming:
-            try:
-                game = self.game_name() or ""
-            except Exception:
-                game = ""
-        now = ("gaming", game) if gaming else ("music", "") if self.music_on else ("", "")
+        now = "gaming" if self.gaming else "music" if self.music_on else ""
         if now != self._last:
             self._last = now
-            self.report(*now)
+            self.report(now)

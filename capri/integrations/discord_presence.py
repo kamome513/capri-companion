@@ -7,11 +7,12 @@ activities with others") still decides who sees it. Turn it off in Capri: Settin
 
 What's shown: that Capri is open and for how long, plus what she's doing with you -
 * "Plugged in" on your desktop,
-* "Backseat gaming" while you play (with the game's name when it's one from your library),
 * "Vibing to music" while music plays (never which song),
 * "Drone mode" / "Hiding".
+While you're in a game she steps aside (clears her status): Discord's member list / DMs show only one
+"Playing ..." line and would pick hers over your game's. She's back when the game closes.
 Never what you say to her or your other apps. Her picture is animated (a GIF from Capri's GitHub page -
-Discord shows GIFs from a link, not uploaded ones), with a small animated badge for gaming / music.
+Discord shows GIFs from a link, not uploaded ones), with a small animated badge for music.
 
 Discord needs an Application ID (from discord.com/developers/applications): APP_ID below.
 """
@@ -133,15 +134,11 @@ def read_frame(conn) -> tuple[int, dict]:
     return op, json.loads(conn.recv(length).decode("utf-8") or "{}")
 
 
-def activity(state: str, started: int, invite: str = "", doing: str = "", game: str = "") -> dict:
+def activity(state: str, started: int, invite: str = "", doing: str = "") -> dict:
     """What your friends see under your name: Capri - Plugged in - 0:34, and her buttons.
-    state: her look ("desktop" / "drone" / "hidden"); doing: what you're up to ("gaming" / "music" / "")."""
+    state: her look ("desktop" / "drone" / "hidden"); doing: what you're up to ("music" / "")."""
     assets = {"large_image": art("capri.gif"), "large_text": "Capri - a cyberpunk desktop companion"}
-    if doing == "gaming":
-        details = "Backseat gaming"
-        line = f"Playing {game}"[:128] if game else "Drone mode: on"
-        assets.update(small_image=art("gaming.gif"), small_text="Gaming")
-    elif doing == "music":
+    if doing == "music":
         details, line = "Vibing to music", "Headphones on"
         assets.update(small_image=art("music.gif"), small_text="Listening to music")
     else:
@@ -170,7 +167,7 @@ class DiscordPresence:
         self.app_id, self.enabled, self._connect, self.clock = app_id, enabled, connect, clock
         self.started = int(now())
         self.state = "desktop"
-        self.doing, self.game = "", ""
+        self.doing = ""
         self.conn = None
         self.shown = False                # what Discord shows right now: our activity, or nothing
         self._sent: tuple | None = None
@@ -196,9 +193,9 @@ class DiscordPresence:
         self.state = state
         self._wake.set()
 
-    def set_doing(self, doing: str, game: str = "") -> None:
-        """"gaming" (+ the game's name, or "") / "music" / "" - from StatusWatch."""
-        self.doing, self.game = doing, game if doing == "gaming" else ""
+    def set_doing(self, doing: str) -> None:
+        """"gaming" / "music" / "" - from StatusWatch. Gaming: she steps aside so your game shows."""
+        self.doing = doing
         self._wake.set()
 
     def refresh(self) -> None:
@@ -235,7 +232,8 @@ class DiscordPresence:
     def step(self) -> None:
         """One go: connect if needed, then make Discord show (or stop showing) the right thing."""
         with self._lock:
-            want = bool(self.enabled())
+            # in a game: off Discord entirely, so your game is what Discord shows ("Playing <your game>")
+            want = bool(self.enabled()) and self.doing != "gaming"
             if not want and self.conn is None:
                 return
             if self.conn is None:
@@ -246,8 +244,8 @@ class DiscordPresence:
                     self._next_try = self.clock() + RETRY_SECONDS
                     return
                 self._handshake()
-            # her look ("drone" / "hidden") only shows when you're not gaming / listening
-            wanted = ("desktop" if self.doing else self.state, self.doing, self.game) if want else None
+            # her look ("drone" / "hidden") only shows when you're not listening to music
+            wanted = ("desktop" if self.doing else self.state, self.doing) if want else None
             if wanted == self._sent:
                 return
             if self.clock() - self._last_send < MIN_GAP:
@@ -255,8 +253,8 @@ class DiscordPresence:
                 time.sleep(0.5)
                 return
             if want:
-                state, doing, game = wanted
-                self._send_activity(activity(state, self.started, INVITE, doing, game))
+                state, doing = wanted
+                self._send_activity(activity(state, self.started, INVITE, doing))
             else:
                 self._send_activity(None)
             self._sent = wanted

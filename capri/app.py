@@ -480,27 +480,19 @@ def main(argv: list[str] | None = None) -> int:
     app.aboutToQuit.connect(presence.close)
     from .integrations import now_doing
 
-    def game_name() -> str:                   # "Playing <game>" on Discord: only names from your game library
+    def front_game() -> int | None:           # the game in front right now (its process id), if any
         games = services.games
-        if games.active and games.folder is not None and games.name:
-            return games.name                 # one she launched
-        exe = ""
-        try:
-            import psutil
-            if games.active and games.pid:
-                exe = psutil.Process(games.pid).exe()
-            else:
-                front = games.front()
-                exe = front.exe if front else ""
-        except Exception:
-            exe = ""
-        return now_doing.game_title(exe, catalog.games)
+        front = games.front()
+        return front.pid if front and looks_like_game(front, games.game_dirs()) else None
+    from .commands.games import _pid_alive
+    gaming = now_doing.GameSeen(lambda: services.games.active, front_game, _pid_alive)
     sounding = now_doing.sounding_for_platform()
     music = now_doing.MusicWatch(sounding, lambda: now_doing.browser_titles(system.processes, desktop)) \
         if sounding else None
-    status = now_doing.StatusWatch(presence.set_doing, in_game, game_name, music,
+    status = now_doing.StatusWatch(presence.set_doing, gaming, music,
                                    wanted=lambda: settings.discord_presence and presence.available)
-    status.start()                            # gaming / music -> her Discord status
+    services.games.changed.connect(lambda on: status.tick())   # a game opened / closed: right away
+    status.start()                            # music -> her Discord status; gaming -> she steps aside for your game
     app._status_watch = status
     app.aboutToQuit.connect(status.stop)
     QTimer.singleShot(60_000, memory.trim)    # once she's settled in

@@ -111,13 +111,13 @@ class PcTab(QWidget):
         form.addRow("Toggle Mute keybind", self.mute_key)
         form.addRow("Toggle Deafen keybind", self.deafen_key)
         from ..integrations import discord_presence
-        self.presence = QCheckBox("Show \u201cPlaying Capri\u201d on my Discord profile (gaming / music / plugged in)")
+        self.presence = QCheckBox("Show \u201cPlaying Capri\u201d on my Discord profile (plugged in / music)")
         self.presence.setChecked(getattr(s, "discord_presence", True))
         self.presence.setEnabled(discord_presence.APP_ID != "")
-        self.presence.setToolTip("Your friends see animated Capri: \u201cPlugged in\u201d, \u201cBackseat gaming\u201d "
-                                 "(and the game, if it's in your library) or \u201cVibing to music\u201d - never the "
-                                 "song, never what you say to her. Discord's own Activity Privacy setting still "
-                                 "decides who sees it.")
+        self.presence.setToolTip("Your friends see animated Capri: \u201cPlugged in\u201d or \u201cVibing to "
+                                 "music\u201d (never the song, never what you say to her). While you're in a game "
+                                 "she steps off Discord so your game shows. Discord's own Activity Privacy setting "
+                                 "still decides who sees it.")
         form.addRow(self.presence)
         root.addWidget(discord)
 

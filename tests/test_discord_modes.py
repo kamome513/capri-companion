@@ -1,5 +1,5 @@
-"""v1.38: her Discord status changes with what you're doing - "Backseat gaming" while you play, "Vibing to
-music" while music plays - and her pictures are animated."""
+"""v1.38: her Discord status changes with what you're doing - "Vibing to music" while music plays, and while
+you're in a game she steps off Discord so your game is what it shows - and her pictures are animated."""
 
 from __future__ import annotations
 
@@ -32,15 +32,6 @@ def test_desktop_is_plugged_in_with_her_animated_picture():
     assert act["details"] == "Plugged in" and "state" not in act
     assert act["assets"]["large_image"] == dp.art("capri.gif") and "small_image" not in act["assets"]
     assert [b["label"] for b in act["buttons"]] == ["Get Capri", "Join her Discord"]
-
-
-def test_gaming_names_the_game_from_your_library():
-    act = dp.activity("drone", 1, dp.INVITE, "gaming", "Deadlock")
-    assert (act["details"], act["state"]) == ("Backseat gaming", "Playing Deadlock")
-    assert act["assets"]["small_image"] == dp.art("gaming.gif") and act["assets"]["small_text"] == "Gaming"
-    assert dp.activity("drone", 1, "", "gaming", "")["state"] == "Drone mode: on"       # a game she can't name
-    assert len(dp.activity("drone", 1, "", "gaming", "x" * 300)["state"]) <= 128            # Discord's limit
-    assert len(act["buttons"]) == 2
 
 
 def test_music_never_says_the_song():
@@ -76,13 +67,44 @@ def test_presence_sends_the_new_mode_when_it_changes():
         p.step()
         time.sleep(0.1)
         assert len(fake.activities()) == 2
+    finally:
+        fake.stop()
+
+
+def test_she_steps_off_discord_while_you_game_so_your_game_shows():
+    """Discord's member list / DMs show one "Playing ..." line: hers would hide your game's."""
+    from test_discord_presence import FakeDiscord, presence, settle
+    fake = FakeDiscord()
+    try:
+        p, clock = presence(fake)
+        p.step()
+        assert settle(lambda: len(fake.activities()) == 1) and p.shown
         p.set_state("drone")
-        p.set_doing("gaming", "Deadlock")
+        p.set_doing("gaming")
         clock[0] += 10
         p.step()
-        assert settle(lambda: len(fake.activities()) == 3) and fake.activities()[2]["state"] == "Playing Deadlock"
-        p.set_doing("", "Deadlock")                                            # game closed: name dropped
-        assert p.game == ""
+        assert settle(lambda: fake.activities()[-1:] == [None] and fake.got[-1][0] == 2)   # cleared, disconnected
+        assert p.conn is None and not p.shown
+        clock[0] += 60
+        p.step()
+        assert fake.connections == 1                                        # stays off Discord while you play
+        p.set_state("desktop")
+        p.set_doing("")                                                     # the game closed: she's back
+        p.step()
+        assert settle(lambda: fake.connections == 2 and fake.activities()[-1] is not None)
+        assert fake.activities()[-1]["details"] == "Plugged in" and p.shown
+    finally:
+        fake.stop()
+
+
+def test_never_sent_while_gaming_from_the_start():
+    from test_discord_presence import FakeDiscord, presence
+    fake = FakeDiscord()
+    try:
+        p, _clock = presence(fake)
+        p.set_doing("gaming")
+        p.step()
+        assert fake.connections == 0 and p.conn is None
     finally:
         fake.stop()
 
@@ -138,11 +160,16 @@ def test_browser_titles_come_from_browser_windows_only():
     assert nd.browser_titles(lambda: procs, desktop) == ["w10", "w30"]
 
 
-def test_game_names_come_from_the_library():
-    games = [SimpleNamespace(name="Deadlock", install_dir=Path("/games/steamapps/common/Deadlock"))]
-    assert nd.game_title("/games/steamapps/common/Deadlock/game/bin/deadlock", games) == "Deadlock"
-    assert nd.game_title("/games/steamapps/common/DeadlockTools/x", games) == ""
-    assert nd.game_title("", games) == ""
+def test_a_game_counts_until_it_closes_even_after_alt_tab():
+    front, alive, active = [4242], {4242}, [False]
+    seen = nd.GameSeen(lambda: active[0], lambda: front[0], lambda pid: pid in alive)
+    assert seen()
+    front[0] = None                                                            # alt-tabbed to the desktop
+    assert seen()
+    alive.clear()                                                              # the game closed
+    assert not seen() and seen.pid is None
+    active[0] = True                                                           # her game mode (a game she started)
+    assert seen()
 
 
 # -- the watcher ------------------------------------------------------------------------------------------------
@@ -150,16 +177,18 @@ def test_status_watch_reports_changes_and_gaming_wins():
     got = []
     gaming, music = [False], [False]
     w = nd.MusicWatch(lambda: ["Spotify.exe"] if music[0] else [], lambda: [])
-    s = nd.StatusWatch(lambda *a: got.append(a), lambda: gaming[0], lambda: "Deadlock", w, off_thread=False)
+    s = nd.StatusWatch(got.append, lambda: gaming[0], w, off_thread=False)
     s.tick()
-    assert got == [("", "")]
+    assert got == [""]
     s.tick()
-    assert got == [("", "")]                                                   # unchanged: not reported again
+    assert got == [""]                                                         # unchanged: not reported again
     music[0] = True
     s.tick()
     gaming[0] = True
     s.tick()
-    assert got[1:] == [("music", ""), ("gaming", "Deadlock")]
+    gaming[0] = False
+    s.tick()
+    assert got[1:] == ["music", "gaming", "music"]
 
 
 def test_status_watch_checks_windows_sound_off_the_main_thread():
@@ -170,20 +199,18 @@ def test_status_watch_checks_windows_sound_off_the_main_thread():
     def sounding():
         threads.append(threading.current_thread())
         return ["Spotify.exe"]
-    s = nd.StatusWatch(lambda *a: got.append(a), lambda: False, lambda: "", nd.MusicWatch(sounding, lambda: []),
-                       off_thread=True)
+    s = nd.StatusWatch(got.append, lambda: False, nd.MusicWatch(sounding, lambda: []), off_thread=True)
     s.tick()
     end = time.time() + 3
-    while time.time() < end and ("music", "") not in got:
+    while time.time() < end and "music" not in got:
         app.processEvents()
         time.sleep(0.01)
-    assert ("music", "") in got and threads and threads[0] is not main
+    assert "music" in got and threads and threads[0] is not main
 
 
 def test_status_watch_rests_while_discord_status_is_off():
     got = []
-    s = nd.StatusWatch(lambda *a: got.append(a), lambda: True, lambda: "", None, off_thread=False,
-                       wanted=lambda: False)
+    s = nd.StatusWatch(got.append, lambda: True, None, off_thread=False, wanted=lambda: False)
     s.tick()
     assert got == []
 
