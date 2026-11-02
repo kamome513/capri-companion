@@ -13,6 +13,7 @@ CommandRouter (catalog, confirmations). Generated text is never executed.
 from __future__ import annotations
 
 import json
+import re
 import logging
 import time
 from typing import Callable
@@ -27,7 +28,7 @@ PRESETS = {
     "openai": ("ChatGPT (OpenAI)", "https://api.openai.com/v1", "gpt-5-nano", True),
     "groq": ("Groq (free tier, very fast)", "https://api.groq.com/openai/v1", "llama-3.1-8b-instant", True),
     "openrouter": ("OpenRouter (hundreds of models)", "https://openrouter.ai/api/v1", "openai/gpt-5-nano", True),
-    "gemini": ("Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash-lite", True),
+    "gemini": ("Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-flash-latest", True),
     "deepseek": ("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat", True),
     "mistral": ("Mistral", "https://api.mistral.ai/v1", "mistral-small-latest", True),
     "xai": ("xAI (Grok)", "https://api.x.ai/v1", "grok-3-mini", True),
@@ -41,6 +42,38 @@ TIMEOUT = 30.0
 OPENAI_TOOLS = [{"type": "function",
                  "function": {"name": t["name"], "description": t["description"], "parameters": t["input_schema"]}}
                 for t in TOOLS]
+
+
+# Models that can't hold a conversation (pictures, speech, search vectors...): never picked as a stand-in.
+NOT_CHAT = ("embed", "image", "imagen", "veo", "tts", "audio", "transcribe", "whisper", "dall-e", "moderation",
+            "realtime", "live", "aqa", "search", "computer-use", "robotics", "guard", "rerank", "native-audio")
+
+
+def model_missing(status: int, detail: str) -> bool:
+    """The service says the model doesn't exist (retired, renamed, a typo)."""
+    d = detail.lower()
+    return status == 404 or "model" in d and any(w in d for w in ("not exist", "not found", "not supported",
+                                                                  "is not available", "no longer", "deprecated",
+                                                                  "decommissioned", "invalid model"))
+
+
+def pick_stand_in(available: list[str], wanted: str) -> str:
+    """The available chat model closest to the one asked for: same family words ("flash", "lite", "mini"),
+    stable before preview, newest version first. "" if there's none."""
+    words = set(re.split(r"[-_.:/ ]+", wanted.lower())) - {""}
+    best, best_key = "", None
+    for name in available:
+        low = name.lower()
+        if not low or any(w in low for w in NOT_CHAT):
+            continue
+        parts = set(re.split(r"[-_.:/ ]+", low)) - {""}
+        version = tuple(int(n) for n in re.findall(r"\d+", low)[:3])
+        stable = not any(w in low for w in ("preview", "exp", "experimental", "beta", "alpha"))
+        fast = bool(parts & {"flash", "mini", "lite", "small", "instant", "turbo", "chat", "nano", "haiku"})
+        key = (len(words & parts), stable, fast, version, -len(low))
+        if best_key is None or key > best_key:
+            best, best_key = name, key
+    return best
 
 
 def reasoning_model(model: str) -> bool:
@@ -57,6 +90,7 @@ class OpenAIBrain:
         self._preset, self._url, self._model, self._key = preset, url, model, api_key
         self._info, self._fetch, self._clock, self._slang, self._persona = info, fetch, clock, slang, persona
         self._skip: set[str] = set()          # options this service turned out not to accept
+        self.stand_in = ""                    # the model she switched to when yours doesn't exist (any more)
         self.reset()
 
     # -- which service ---------------------------------------------------------------------------
@@ -70,7 +104,31 @@ class OpenAIBrain:
         return ((self._url() or "").strip() or self.preset()[1]).rstrip("/")
 
     def model(self) -> str:
-        return (self._model() or "").strip() or self.preset()[2]
+        return self.stand_in or (self._model() or "").strip() or self.preset()[2]
+
+    def list_models(self) -> list[str]:
+        """The models this key can use (the service's own /models list). Blocking."""
+        key = self._key().strip()
+        data = self._fetch("GET", self.base() + "/models", headers={"Authorization": f"Bearer {key}"} if key else {},
+                           timeout=TIMEOUT) or {}
+        items = data.get("data", []) if isinstance(data, dict) else []
+        return [str(m.get("id", "")).split("models/")[-1] for m in items if isinstance(m, dict) and m.get("id")]
+
+    def _swap_model(self) -> bool:
+        """Her model doesn't exist (any more): switch to the closest one the service has. True if she did."""
+        if self.stand_in:                                 # already swapped once: don't go round in circles
+            return False
+        wanted = self.model()
+        try:
+            stand_in = pick_stand_in(self.list_models(), wanted)
+        except Exception as exc:
+            log.warning("ai: couldn't list %s's models: %s", self.label(), exc)
+            return False
+        if not stand_in or stand_in == wanted:
+            return False
+        log.info("ai: %s has no model %r - using %r instead", self.label(), wanted, stand_in)
+        self.stand_in = stand_in
+        return True
 
     def has_key(self) -> bool:
         return bool(self._key().strip()) or not self.preset()[3]
@@ -134,8 +192,9 @@ class OpenAIBrain:
         if exc.status == 429 and official and ("quota" in detail or "billing" in detail or "credit" in detail):
             return ("My ChatGPT key has no credit. The API is paid separately from ChatGPT Plus: add a few "
                     "dollars at platform.openai.com, under Billing." + FREE_TIP)
-        if exc.status == 404 or "model" in detail and ("not exist" in detail or "not found" in detail):
-            return f"{self.label()} says there's no model called {self.model()}. Pick another in Settings."
+        if model_missing(exc.status, detail):
+            return (f"{self.label()} says there's no model called {self.model()}, and I couldn't find one to "
+                    f"use instead. Clear the Model box in Settings, Assistant, or type one your key has.")
         if exc.status == 429:
             return (f"{self.label()} says I'm out of credit." if "quota" in detail or "credit" in detail else
                     f"{self.label()}'s rate limited. Give it a minute.")
@@ -164,6 +223,8 @@ class OpenAIBrain:
                                    headers=headers, timeout=TIMEOUT) or {}
             except http.HttpError as exc:
                 body = exc.body.lower()
+                if model_missing(exc.status, self._detail(exc) or body) and self._swap_model():
+                    continue                              # retired / renamed model: ask again with the new one
                 dropped = next((o for o in ("reasoning_effort", "max_completion_tokens", "max_tokens")
                                 if o in body and o not in self._skip and exc.status == 400), None)
                 if dropped is None:

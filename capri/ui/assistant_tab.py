@@ -39,6 +39,35 @@ class _Signals(QObject):
     spotify_done = Signal(str)
     spotify_test_done = Signal(str)
     voice_progress = Signal(str)
+    models_done = Signal(object, object)       # (which box, [model names] or a problem)
+
+
+class ModelBox(QComboBox):
+    """A model name you can type, or pick from the list of models your AI actually has."""
+
+    def __init__(self, text: str = "") -> None:
+        super().__init__()
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.setMinimumContentsLength(22)
+        self.setText(text)
+
+    def text(self) -> str:
+        return self.currentText()
+
+    def setText(self, text: str) -> None:
+        self.setEditText(text or "")
+
+    def setPlaceholderText(self, text: str) -> None:
+        self.lineEdit().setPlaceholderText(text)
+
+    def set_models(self, names: list[str]) -> None:
+        keep = self.currentText()
+        self.blockSignals(True)
+        self.clear()
+        self.addItems(names)
+        self.setEditText(keep)
+        self.blockSignals(False)
 
 
 def _slider(value: float) -> QSlider:
@@ -215,10 +244,14 @@ class AssistantTab(QWidget):
         form.addRow("AI", self.ai_pick)
         self.ai_url = QLineEdit(s.openai_url)
         form.addRow("Address", self.ai_url)
-        self.ai_model = QLineEdit(s.openai_model)
-        self.ai_model.setToolTip("Any model the service has. ChatGPT: gpt-5-nano is the cheapest (your credit lasts "
-                                 "longest); gpt-5-mini is smarter.")
-        form.addRow("Model", self.ai_model)
+        self.ai_model = ModelBox(s.openai_model)
+        self.ai_model.setToolTip("Pick one of the models your key has (press Show my models), or type any model "
+                                 "name. Empty = the one shown.")
+        self.ai_models_btn = QPushButton("Show my models")
+        self.ai_models_btn.setToolTip("Ask the AI service which models your key can use (add your key first)")
+        self.ai_models_btn.clicked.connect(lambda: self._list_models("openai"))
+        self.ai_model_row = self._with_button(self.ai_model, self.ai_models_btn)
+        form.addRow("Model", self.ai_model_row)
         self.ai_key = QLineEdit(secrets.get("openai_api_key"))
         self.ai_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.ai_key.editingFinished.connect(lambda: self._ai_key_entered("openai"))   # checked straight away
@@ -228,9 +261,14 @@ class AssistantTab(QWidget):
         self.api_key.setPlaceholderText("sk-ant-...  (from console.anthropic.com)")
         self.api_key.editingFinished.connect(lambda: self._ai_key_entered("claude"))
         form.addRow("Claude API key", self.api_key)
-        self.ollama_model = QLineEdit(s.ollama_model)
+        self.ollama_model = ModelBox(s.ollama_model)
         self.ollama_model.setPlaceholderText("llama3.2")
-        form.addRow("Ollama model", self.ollama_model)
+        self.ollama_models_btn = QPushButton("Show my models")
+        self.ollama_models_btn.setToolTip("The models you've downloaded in Ollama")
+        self.ollama_models_btn.clicked.connect(lambda: self._list_models("local"))
+        self.ollama_model_row = self._with_button(self.ollama_model, self.ollama_models_btn)
+        form.addRow("Ollama model", self.ollama_model_row)
+        self._signals.models_done.connect(self._models_listed)
         self.ai_hint = _hint("")
         form.addRow(self.ai_hint)
         self.ai_last = _hint("")                  # what happened the last time she used it - never a mystery
@@ -363,9 +401,9 @@ class AssistantTab(QWidget):
         preset = picked.split(":", 1)[1] if picked.startswith("openai:") else ""
         _label, url, model, needs_key = PRESETS.get(preset, PRESETS["custom"])
         auto = picked == "auto"                  # auto: both key boxes, so a pasted key always has a place
-        show = {self.ai_url: preset in ("custom", "lmstudio"), self.ai_model: bool(preset),
+        show = {self.ai_url: preset in ("custom", "lmstudio"), self.ai_model_row: bool(preset),
                 self.ai_key: (bool(preset) and needs_key) or auto, self.api_key: picked == "claude" or auto,
-                self.ollama_model: picked == "local"}
+                self.ollama_model_row: picked == "local"}
         for widget, visible in show.items():
             self._ai_form.setRowVisible(widget, visible)
         self.ai_url.setPlaceholderText(url or "https://.../v1")
@@ -376,7 +414,65 @@ class AssistantTab(QWidget):
             "auto": "Uses ChatGPT (or another service) if you've added its key, else Claude with a key, else Ollama.",
             "claude": "Your own key from console.anthropic.com. Paid per use.",
             "local": "Free and private, but slow unless your PC is strong. Say \u201cset up your brain\u201d to install it.",
-        }.get(picked, "Leave Model empty to use the one shown." if preset else ""))
+        }.get(picked, "Press Show my models to pick from the ones your key has - or leave Model empty to use "
+                      "the one shown." if preset else ""))
+
+    @staticmethod
+    def _with_button(box: QWidget, button: QPushButton) -> QWidget:
+        row = QWidget()
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(box, 1)
+        lay.addWidget(button)
+        return row
+
+    def _list_models(self, which: str) -> None:
+        """Show my models: ask the picked AI (with the key typed here, saved or not) what it has."""
+        button = self.ai_models_btn if which == "openai" else self.ollama_models_btn
+        button.setEnabled(False)
+        button.setText("Asking...")
+        picked = self.ai_pick.currentData() or "auto"
+        preset = picked.split(":", 1)[1] if picked.startswith("openai:") else "openai"
+        url, key = self.ai_url.text().strip(), self.ai_key.text().strip()
+
+        def run() -> None:
+            try:
+                if which == "openai":
+                    from ..ai.openai_compat import OpenAIBrain
+                    brain = OpenAIBrain(lambda: preset, lambda: url, lambda: "", lambda: key, {})
+                    names = brain.list_models()
+                else:
+                    from ..ai.ollama_find import default_url
+                    from ..integrations import http
+                    base = (self.settings.ollama_url or default_url()).rstrip("/")
+                    tags = http.request("GET", base + "/api/tags", timeout=8.0) or {}
+                    names = [m.get("name", "") for m in tags.get("models", [])]
+                self._signals.models_done.emit(which, names)
+            except Exception as exc:
+                self._signals.models_done.emit(which, exc)
+        threading.Thread(target=run, daemon=True).start()
+
+    def _models_listed(self, which: str, result) -> None:
+        from ..ai.openai_compat import NOT_CHAT
+        box, button = ((self.ai_model, self.ai_models_btn) if which == "openai"
+                       else (self.ollama_model, self.ollama_models_btn))
+        button.setEnabled(True)
+        button.setText("Show my models")
+        if isinstance(result, Exception):
+            status = getattr(result, "status", None)
+            self.ai_hint.setText("That key doesn't work - check it." if status in (401, 403) else
+                                 "Couldn't get the list: is Ollama running?" if which == "local" else
+                                 f"Couldn't get the list ({str(result)[:80]}). Add your key first.")
+            return
+        chat = sorted({n for n in result if n and not any(w in n.lower() for w in NOT_CHAT)})
+        if not chat:
+            self.ai_hint.setText("No chat models found." + (" Run: ollama pull llama3.2" if which == "local" else ""))
+            return
+        box.set_models(chat)
+        if not box.text():
+            box.setText(chat[0])
+        box.showPopup()
+        self.ai_hint.setText(f"{len(chat)} model{'s' * (len(chat) != 1)} found - pick one, then Save.")
 
     def _show_ai_last(self) -> None:
         last = getattr(self.router, "ai_status", None)

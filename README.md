@@ -273,7 +273,8 @@ install something.
 | **Play music on** | Spotify, YouTube Music, SoundCloud, YouTube... |
 | **Client ID, Connect, Disconnect, Test Spotify** | Connect Spotify (Premium) so she can start exact songs and say what's playing |
 | **Chatbot** | Chat with her about anything |
-| **AI, Address, Model, API key** | Pick an AI and paste its key. A free Google Gemini key works |
+| **AI, Address, API key** | Pick an AI and paste its key. A free Google Gemini key works |
+| **Model** / **Show my models** | Pick from the models your key (or Ollama) actually has. Empty = a sensible default |
 | **Test AI** / **Last try** | Checks the AI works, and shows what happened last time |
 | **Let the AI know what Capri remembers about me** | Off by default: your memory stays on your PC |
 | **She knows** / **Forget everything about me** | What she remembers, and a button to wipe it |
@@ -314,6 +315,7 @@ install something.
 | She mishears your accent | Settings → Wake word → **Download Parakeet**, then pick it under Hearing |
 | She can't find an app | Settings → Apps → **Add app or game...**, or add what she hears to **Also say** |
 | "I don't have Ollama installed" but you do | Open the Ollama app once (it sits by the clock), then say "set up your brain". If you changed Ollama's address, put it in Settings → Assistant → Address |
+| The AI says a model "doesn't exist" | Settings → Assistant → **Show my models** and pick one from the list |
 | "Mute me" doesn't work | Put your Discord keybinds in Settings → PC & chat. Don't run Discord "as administrator" |
 | Her voice sounds robotic | Settings → Assistant → **Download Capri's voice** |
 | She vanished | Click the tray icon by the clock, or start Capri again |

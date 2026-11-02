@@ -97,13 +97,13 @@ def test_one_ai_list_and_only_what_it_needs():
     r = rig(FakeDesktop())
     tab = _tab(r)
     tab.ai_pick.setCurrentIndex(tab.ai_pick.findData("openai:openai"))
-    assert tab.ollama_model.isHidden() and tab.api_key.isHidden() and tab.ai_url.isHidden()   # no Ollama for ChatGPT
-    assert not tab.ai_key.isHidden() and not tab.ai_model.isHidden()
+    assert tab.ollama_model_row.isHidden() and tab.api_key.isHidden() and tab.ai_url.isHidden()   # no Ollama for ChatGPT
+    assert not tab.ai_key.isHidden() and not tab.ai_model_row.isHidden()
     tab.apply()
     s = r.assistant.settings
     assert s.ai_provider == "openai" and s.openai_preset == "openai"
     tab.ai_pick.setCurrentIndex(tab.ai_pick.findData("local"))
-    assert not tab.ollama_model.isHidden() and tab.ai_key.isHidden()
+    assert not tab.ollama_model_row.isHidden() and tab.ai_key.isHidden()
     tab.ai_pick.setCurrentIndex(tab.ai_pick.findData("openai:custom"))
     assert not tab.ai_url.isHidden()
     tab.ai_pick.setCurrentIndex(tab.ai_pick.findData("openai:groq"))
