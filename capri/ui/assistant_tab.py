@@ -41,6 +41,7 @@ class _Signals(QObject):
     spotify_test_done = Signal(str)
     voice_progress = Signal(str)
     models_done = Signal(object, object)       # (which box, [model names] or a problem)
+    ollama_progress = Signal(str)               # "Downloading her brain... 40%" / "done:..." / "failed:..."
 
 
 class ModelBox(QComboBox):
@@ -270,6 +271,12 @@ class AssistantTab(QWidget):
         self.ollama_model_row = self._with_button(self.ollama_model, self.ollama_models_btn)
         form.addRow("Ollama model", self.ollama_model_row)
         self._signals.models_done.connect(self._models_listed)
+        self.ollama_setup_btn = QPushButton("Set up Ollama for me (free, runs on this PC)")
+        self.ollama_setup_btn.setToolTip("Installs Ollama, downloads a chat model that suits your PC and switches "
+                                         "her chat to it. About 3 GB, a few minutes.")
+        self.ollama_setup_btn.clicked.connect(self._setup_ollama)
+        form.addRow("", self.ollama_setup_btn)
+        self._signals.ollama_progress.connect(self._ollama_progress)
         self.ai_hint = _hint("")
         form.addRow(self.ai_hint)
         self.ai_last = _hint("")                  # what happened the last time she used it - never a mystery
@@ -404,7 +411,7 @@ class AssistantTab(QWidget):
         auto = picked == "auto"                  # auto: both key boxes, so a pasted key always has a place
         show = {self.ai_url: preset in ("custom", "lmstudio"), self.ai_model_row: bool(preset),
                 self.ai_key: (bool(preset) and needs_key) or auto, self.api_key: picked == "claude" or auto,
-                self.ollama_model_row: picked == "local"}
+                self.ollama_model_row: picked == "local", self.ollama_setup_btn: picked in ("local", "auto")}
         for widget, visible in show.items():
             self._ai_form.setRowVisible(widget, visible)
         self.ai_url.setPlaceholderText(url or "https://.../v1")
@@ -474,6 +481,47 @@ class AssistantTab(QWidget):
             box.setText(chat[0])
         box.showPopup()
         self.ai_hint.setText(f"{len(chat)} model{'s' * (len(chat) != 1)} found - pick one, then Save.")
+
+    def _setup_ollama(self) -> None:
+        """Install Ollama + a model, and switch her chat to it - after you say yes."""
+        from PySide6.QtWidgets import QMessageBox
+        make = getattr(self.router.services, "ollama_setup", None)
+        if make is None:
+            return self.ai_hint.setText("Install Ollama from ollama.com, then run:  ollama pull llama3.2")
+        sure = QMessageBox.question(self, "Capri", "Set up Ollama, her free AI brain that runs on this PC?\n\n"
+                                    "Capri installs Ollama (if you don't have it) and downloads a chat model that "
+                                    "suits your PC - about 3 GB together. It takes a few minutes; you can keep "
+                                    "using your PC meanwhile.")
+        if sure != QMessageBox.StandardButton.Yes:
+            return
+        self.ollama_setup_btn.setEnabled(False)
+        self.ai_hint.setText("Setting up Ollama...")
+
+        def run() -> None:
+            try:
+                message = make(self._signals.ollama_progress.emit).run_all()
+                self._signals.ollama_progress.emit("done:" + message)
+            except Exception as exc:
+                from ..net import friendly
+                self._signals.ollama_progress.emit("failed:" + friendly(exc))
+        threading.Thread(target=run, daemon=True, name="ollama-setup").start()
+
+    def _ollama_progress(self, text: str) -> None:
+        if text.startswith("done:"):
+            self.ollama_setup_btn.setEnabled(True)
+            brain = getattr(self.router.services, "brain", None)
+            if hasattr(brain, "refresh"):
+                brain.refresh()
+            self.reload()                                   # Ollama is now her AI
+            self.ai_hint.setText(text[5:])
+            from ..states import State
+            self.assistant.show_result(State.SUCCESS, text[5:], emotion="happy")
+            return
+        if text.startswith("failed:"):
+            self.ollama_setup_btn.setEnabled(True)
+            self.ai_hint.setText("Setting up Ollama didn't work: " + text[7:])
+            return
+        self.ai_hint.setText(text)
 
     def _show_ai_last(self) -> None:
         last = getattr(self.router, "ai_status", None)

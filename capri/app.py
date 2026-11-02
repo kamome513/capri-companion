@@ -420,6 +420,8 @@ def main(argv: list[str] | None = None) -> int:
     services.screenshot = shooter.take                 # "take a screenshot"
     services.pc_info = pc_stats.report                 # "what's using all my ram"
     services.doctor = AIDoctor(settings, brain.claude.has_key, openai=brain.openai)   # "set up your brain"
+    from .ai.ollama_setup import OllamaSetup
+    services.ollama_setup = lambda progress: OllamaSetup(services.doctor, settings, progress)   # installs it all
 
     def wake_ollama() -> None:                        # installed but not running: start it, so she can think
         try:

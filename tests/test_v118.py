@@ -376,11 +376,11 @@ def test_no_ollama_offers_to_install_it():
     doc = FakeDoctor("not_installed")
     r = rig(FakeDesktop(), doctor=doc)
     r.service.command.emit("why cant you think")
-    assert settle(2, lambda: r.speaker.lines and "Install it?" in r.speaker.lines[-1])
+    assert settle(2, lambda: r.speaker.lines and "Want me to set it up?" in r.speaker.lines[-1])
     r.service.command.emit("no")
     assert doc.installed == 0
     r.service.command.emit("set up your ai")
-    assert settle(2, lambda: "Install it?" in r.speaker.lines[-1])
+    assert settle(2, lambda: "Want me to set it up?" in r.speaker.lines[-1])
     r.service.command.emit("yes")
     assert settle(2, lambda: doc.installed == 1)
 

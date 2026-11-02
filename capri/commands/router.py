@@ -140,6 +140,7 @@ class Services:
     updates: Any = None             # ui.updates.UpdateManager: "check for updates" / "update yourself"
     restart: Callable[[], None] | None = None   # "restart yourself": a fresh Capri (installs a waiting update)
     doctor: Any = None              # ai.doctor.AIDoctor: "set up your brain"
+    ollama_setup: Callable[[Callable[[str], None]], Any] | None = None   # progress -> ai.ollama_setup.OllamaSetup
 
 
 class _Bridge(QObject):
@@ -1702,10 +1703,11 @@ class CommandRouter(QObject):
                                                                "then ask me again.")
             if code == dr.NO_MODEL:
                 return self.assistant.confirm(f"{message} Download it now? It's about 2 gigabytes. Say yes or no.",
-                                              lambda yes: download() if yes else self.assistant.show_result(
+                                              lambda yes: (install() if self.services.ollama_setup else download())
+                                              if yes else self.assistant.show_result(
                                                   State.IDLE, "Okay. I'll stick to my offline brain."))
-            self.assistant.confirm(f"{message} Install it? It's about 2 gigabytes, and a setup window will "
-                                   f"open. Say yes or no.",
+            self.assistant.confirm(f"{message} Want me to set it up? I'll install Ollama and download my brain - "
+                                   f"about 3 gigabytes all together, a few minutes. Say yes or no.",
                                    lambda yes: install() if yes else self.assistant.show_result(
                                        State.IDLE, "Okay. You can also add a Claude key in Settings."))
 
@@ -1730,11 +1732,29 @@ class CommandRouter(QObject):
             self._background(lambda: doc.pull(progress), done)
 
         def install() -> None:
-            if not doc.install():
-                return self.assistant.show_result(State.ERROR, "I can't run the setup here. Run setup_ai.bat.")
-            self.controller.log("AI", "setup_ai.bat opened")
-            self.assistant.show_result(State.SUCCESS, "Setup's running in its own window. When it's done, "
-                                                      "ask me: is your AI working?")
+            make = self.services.ollama_setup
+            if make is None:                                   # (no automatic setup here: the script)
+                if not doc.install():
+                    return self.assistant.show_result(State.ERROR, "Install Ollama from ollama.com, then ask me "
+                                                                   "again: set up your brain.")
+                self.controller.log("AI", "setup_ai.bat opened")
+                return self.assistant.show_result(State.SUCCESS, "Setup's running in its own window. When it's "
+                                                                 "done, ask me: is your AI working?")
+            self.controller.log("AI", "setting up Ollama")
+
+            def progress(text: str) -> None:                   # from the setup thread: show it on the panel
+                self._bridge.done.emit(lambda t: self.controller.set_state(State.PROCESSING, t), text)
+
+            def finished(result) -> None:
+                if isinstance(result, Exception):
+                    from ..net import friendly
+                    self.controller.log("AI", f"setup failed: {str(result)[:40]}")
+                    return self.assistant.show_result(State.ERROR, f"Setting up Ollama didn't work: "
+                                                                   f"{friendly(result)}.")
+                refresh()
+                self.controller.log("AI", "Ollama set up")
+                self.assistant.show_result(State.SUCCESS, result, emotion="happy")
+            self._background(lambda: make(progress).run_all(), finished)
         self._background(doc.status, checked)
 
     def _pc_info(self, intent: Intent) -> None:
