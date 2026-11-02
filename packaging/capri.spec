@@ -41,6 +41,7 @@ for package in ("kokoro_onnx", "onnxruntime", "espeakng_loader", "phonemizer", "
 if sys.platform.startswith("linux"):
     # Linux: talking to the desktop (X11) - python-xlib loads its extension modules by name.
     hiddenimports += collect_submodules("Xlib") + collect_submodules("capri.linux")
+    hiddenimports += ["PySide6.QtDBus"]     # media players (Discord "Vibing to music"), lock screen greeting
     # The microphone / speaker library, so nothing has to be installed (capri/linux/audio.py finds it).
     import ctypes.util
     import glob

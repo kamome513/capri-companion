@@ -5,8 +5,13 @@ Linux - including Flatpak / Snap Discord). No login, no internet, no token: Disc
 activity to your friends, and its own setting (User Settings -> Activity Privacy -> "Share your detected
 activities with others") still decides who sees it. Turn it off in Capri: Settings -> PC & chat.
 
-What's shown is only that Capri is open, for how long, and whether she's in drone mode while you game -
-never what you say to her, your songs or your apps.
+What's shown: that Capri is open and for how long, plus what she's doing with you -
+* "Plugged in" on your desktop,
+* "Backseat gaming" while you play (with the game's name when it's one from your library),
+* "Vibing to music" while music plays (never which song),
+* "Drone mode" / "Hiding".
+Never what you say to her or your other apps. Her picture is animated (a GIF from Capri's GitHub page -
+Discord shows GIFs from a link, not uploaded ones), with a small animated badge for gaming / music.
 
 Discord needs an Application ID (from discord.com/developers/applications): APP_ID below.
 """
@@ -30,6 +35,7 @@ log = logging.getLogger("capri")
 APP_ID = "1566821023926452306"                    # Capri's Discord application (its name, "Capri", is what Discord shows)
 PAGE = "https://github.com/kamome513/capri-companion"
 INVITE = "https://discord.gg/FBxdDSCaA7"    # Capri's Discord server: the "Join her Discord" button
+ART = "https://raw.githubusercontent.com/kamome513/capri-companion/main/assets/discord/"   # her animated pictures
 OP_HANDSHAKE, OP_FRAME, OP_CLOSE = 0, 1, 2
 RETRY_SECONDS = 20.0           # Discord closed / not running: look again this often
 MIN_GAP = 4.5                  # Discord allows 5 activity updates per 20 s
@@ -122,19 +128,29 @@ def read_frame(conn) -> tuple[int, dict]:
     return op, json.loads(conn.recv(length).decode("utf-8") or "{}")
 
 
-def activity(state: str, started: int, invite: str = "") -> dict:
-    """What your friends see under your name: Capri - Plugged in - 0:34, and her buttons."""
+def activity(state: str, started: int, invite: str = "", doing: str = "", game: str = "") -> dict:
+    """What your friends see under your name: Capri - Plugged in - 0:34, and her buttons.
+    state: her look ("desktop" / "drone" / "hidden"); doing: what you're up to ("gaming" / "music" / "")."""
+    assets = {"large_image": ART + "capri.gif", "large_text": "Capri - a cyberpunk desktop companion"}
+    if doing == "gaming":
+        details = "Backseat gaming"
+        line = f"Playing {game}"[:128] if game else "Drone mode: on"
+        assets.update(small_image=ART + "gaming.gif", small_text="Gaming")
+    elif doing == "music":
+        details, line = "Vibing to music", "Headphones on"
+        assets.update(small_image=ART + "music.gif", small_text="Listening to music")
+    else:
+        details = "Plugged in"
+        line = {"drone": "Drone mode", "hidden": "Hiding"}.get(state, "")
     act = {
-        "details": "Plugged in",
+        "details": details,
         "timestamps": {"start": started},
-        "assets": {"large_image": "capri", "large_text": "Capri - a cyberpunk desktop companion"},
+        "assets": assets,
         "buttons": [{"label": "Get Capri", "url": PAGE}],
         "instance": False,
     }
-    line = {"drone": "Drone mode", "hidden": "Hiding"}.get(state)
     if line:
         act["state"] = line
-    invite = invite if invite is not None else INVITE
     if invite.startswith(("https://discord.gg/", "https://discord.com/invite/")):
         act["buttons"].append({"label": "Join her Discord", "url": invite})
     return act
@@ -149,6 +165,7 @@ class DiscordPresence:
         self.app_id, self.enabled, self._connect, self.clock = app_id, enabled, connect, clock
         self.started = int(now())
         self.state = "desktop"
+        self.doing, self.game = "", ""
         self.conn = None
         self.shown = False                # what Discord shows right now: our activity, or nothing
         self._sent: tuple | None = None
@@ -172,6 +189,11 @@ class DiscordPresence:
     def set_state(self, state: str) -> None:
         """"desktop" / "drone" / "hidden"."""
         self.state = state
+        self._wake.set()
+
+    def set_doing(self, doing: str, game: str = "") -> None:
+        """"gaming" (+ the game's name, or "") / "music" / "" - from StatusWatch."""
+        self.doing, self.game = doing, game if doing == "gaming" else ""
         self._wake.set()
 
     def refresh(self) -> None:
@@ -219,14 +241,19 @@ class DiscordPresence:
                     self._next_try = self.clock() + RETRY_SECONDS
                     return
                 self._handshake()
-            wanted = (self.state,) if want else None
+            # her look ("drone" / "hidden") only shows when you're not gaming / listening
+            wanted = ("desktop" if self.doing else self.state, self.doing, self.game) if want else None
             if wanted == self._sent:
                 return
             if self.clock() - self._last_send < MIN_GAP:
                 self._wake.set()                         # rate limit: next time round
                 time.sleep(0.5)
                 return
-            self._send_activity(activity(self.state, self.started, INVITE) if want else None)
+            if want:
+                state, doing, game = wanted
+                self._send_activity(activity(state, self.started, INVITE, doing, game))
+            else:
+                self._send_activity(None)
             self._sent = wanted
             self.shown = want
             if not want:

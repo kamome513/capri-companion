@@ -478,6 +478,31 @@ def main(argv: list[str] | None = None) -> int:
     companion.drone_changed.connect(lambda on: presence.set_state("drone" if on else "desktop"))
     assistant.settings_changed.connect(presence.refresh)
     app.aboutToQuit.connect(presence.close)
+    from .integrations import now_doing
+
+    def game_name() -> str:                   # "Playing <game>" on Discord: only names from your game library
+        games = services.games
+        if games.active and games.folder is not None and games.name:
+            return games.name                 # one she launched
+        exe = ""
+        try:
+            import psutil
+            if games.active and games.pid:
+                exe = psutil.Process(games.pid).exe()
+            else:
+                front = games.front()
+                exe = front.exe if front else ""
+        except Exception:
+            exe = ""
+        return now_doing.game_title(exe, catalog.games)
+    sounding = now_doing.sounding_for_platform()
+    music = now_doing.MusicWatch(sounding, lambda: now_doing.browser_titles(system.processes, desktop)) \
+        if sounding else None
+    status = now_doing.StatusWatch(presence.set_doing, in_game, game_name, music,
+                                   wanted=lambda: settings.discord_presence and presence.available)
+    status.start()                            # gaming / music -> her Discord status
+    app._status_watch = status
+    app.aboutToQuit.connect(status.stop)
     QTimer.singleShot(60_000, memory.trim)    # once she's settled in
     trim_timer = QTimer(app)
     trim_timer.setInterval(10 * 60_000)       # and every 10 minutes: idle memory back to Windows

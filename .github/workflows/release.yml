@@ -54,6 +54,11 @@ jobs:
           python -m pip install "sherpa-onnx>=1.12"
           choco install innosetup --no-progress -y
 
+      - name: Check Windows' sound mixer (her Discord "Vibing to music")
+        if: steps.exists.outputs.skip != 'true'
+        shell: pwsh
+        run: python tools/check_sound_mixer.py
+
       - name: Build Capri.exe
         if: steps.exists.outputs.skip != 'true'
         shell: pwsh
