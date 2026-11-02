@@ -10,8 +10,8 @@ Everything she hears is processed on your PC.
 
 ### Install (easiest)
 
-1. Go to the [Releases page](https://github.com/kamome513/capri-companion/releases) and download
-   `Capri-Setup-1.35.0.exe`.
+1. Go to the [latest release](https://github.com/kamome513/capri-companion/releases/latest) and download
+   `Capri-Setup-<version>.exe`.
 2. Run it. It installs for your user only, with no admin rights and no Python needed.
 3. If Windows shows **"Windows protected your PC"**, click **More info**, then **Run anyway**. The
    installer isn't code-signed, so Windows doesn't recognise it.
@@ -19,7 +19,8 @@ Everything she hears is processed on your PC.
    (about 40 MB, once).
 5. Say **"Hey Capri, open Chrome"** (or any app you have).
 
-Works on Windows 10 and 11.
+Works on Windows 10 and 11. **She updates herself:** once a day she checks for a new version,
+downloads it, and installs it the next time she starts.
 
 ### Run from the code instead
 
@@ -170,6 +171,7 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 | "turn on game hype" / "turn off game hype" | Cheers when you get kills |
 | "repeat what I said" / "say that again" | Repeats you, or herself |
 | "open your settings" | Opens her Settings |
+| "check for updates" / "update yourself" | Looks for a newer Capri / installs a downloaded one (asks first) |
 
 ### Right-click menu (or the tray icon by the clock)
 
@@ -199,6 +201,7 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 | **Window → Click-through** | Clicks go straight through her (Ctrl+Alt+Shift+C toggles it) |
 | **Window → Reset position** | Back to the bottom-right corner |
 | **Start with Windows** | Starts Capri when you sign in |
+| **Check for updates** / **Update now** | Looks for a newer Capri. Once one is downloaded, installs it (asks first) and restarts her |
 | **Settings...** | Opens Settings (below) |
 | **Open log folder** | Opens `capri.log`, handy if something goes wrong |
 | **Exit Capri** | Quits |
@@ -284,6 +287,7 @@ install something.
 | **Red lag lightning** | Her zap effects when she presses Discord buttons or closes windows |
 | **Greet me when I sign in** / **Big, in the middle** / **Preview greeting** | Her hello when you sign in or wake the PC |
 | **Start Capri with Windows** | Same as the menu item |
+| **Update automatically** / **Check for updates now** | Daily check for a new Capri: downloads it and installs it on her next start. Off = she only tells you |
 | **Game hype** (cheer for kills, say something when I die, watch my screen, encourage me) / **Preview** | Hype while you play: CS2, Dota 2 and League directly, any game by reading your screen |
 | **Toggle Mute / Deafen keybind** | Your Discord keybinds, if you changed Discord's defaults |
 | **Your voice channel** / **Leave call keybind** / **Join it now** | For "join call" and "leave call". Right-click the channel in Discord → Copy Link |
@@ -291,6 +295,8 @@ install something.
 
 ### Privacy
 
+- The only other thing she contacts on her own is GitHub, once a day, to check for updates (turn it
+  off in Settings → PC & chat).
 - She only listens for "Hey Capri". That runs on your PC, and audio is never recorded or uploaded.
 - Your settings, apps list and memory of you are kept in your own user folder
   (`%LOCALAPPDATA%\Capri` on Windows). Delete `settings.json` there to reset her.
@@ -307,6 +313,7 @@ install something.
 | She wakes up by mistake | Raise the wake word confidence |
 | She mishears your accent | Settings → Wake word → **Download Parakeet**, then pick it under Hearing |
 | She can't find an app | Settings → Apps → **Add app or game...**, or add what she hears to **Also say** |
+| "I don't have Ollama installed" but you do | Open the Ollama app once (it sits by the clock), then say "set up your brain". If you changed Ollama's address, put it in Settings → Assistant → Address |
 | "Mute me" doesn't work | Put your Discord keybinds in Settings → PC & chat. Don't run Discord "as administrator" |
 | Her voice sounds robotic | Settings → Assistant → **Download Capri's voice** |
 | She vanished | Click the tray icon by the clock, or start Capri again |

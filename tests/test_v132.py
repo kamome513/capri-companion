@@ -189,7 +189,7 @@ def test_ollama_running_without_the_model_says_so():
     from capri.settings import Settings
 
     def fetch(method, url, **k):
-        return {"models": [{"name": "mistral"}]}           # Ollama's up, llama3.2 isn't downloaded
+        return {"models": [{"name": "nomic-embed-text"}]}  # Ollama's up, but no chat model at all
     s = Settings()
     brains = Brains(s, ClaudeBrain(lambda: "", info={}), LocalBrain(lambda: "", lambda: "llama3.2", {}, fetch=fetch))
     reply = brains.ask("hey how are you")

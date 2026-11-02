@@ -104,7 +104,8 @@ class CompanionMenu(QObject):
         if autostart.SUPPORTED:
             self.a_autostart = self._check("Start with Windows", self._set_autostart)
         if open_settings is not None:
-            menu.addAction("Settings...", open_settings)
+            self.a_settings = menu.addAction("Settings...", open_settings)
+        self.a_update = None
         menu.addAction("Open log folder", self._open_logs)
         about = menu.addAction(f"Capri {__version__}")
         about.setEnabled(False)
@@ -122,6 +123,17 @@ class CompanionMenu(QObject):
         companion.context_menu_requested.connect(self.popup)
         companion.settings_changed.connect(self.sync)
         self.sync()
+
+    def add_updates(self, updates) -> None:
+        """'Check for updates' / 'Update now (Capri 1.36.0)' - just above Settings."""
+        self.a_update = QAction("Check for updates", self.menu)
+        self.a_update.triggered.connect(updates.menu_clicked)
+        before = getattr(self, "a_settings", None)
+        if before is not None:
+            self.menu.insertAction(before, self.a_update)
+        else:
+            self.menu.addAction(self.a_update)
+        self.menu.aboutToShow.connect(lambda: self.a_update.setText(updates.label()))
 
     @staticmethod
     def _sub(parent: QMenu, title: str) -> QMenu:

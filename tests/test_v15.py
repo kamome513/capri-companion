@@ -73,13 +73,14 @@ def test_local_ai_chats_with_her_persona_and_emotion():
     fake = FakeOllama([{"role": "assistant", "content": "[playful] Bored? Let's fix that. Game or music?"}])
     reply = brain(fake).ask("im soo bored")
     assert reply.text == "Bored? Let's fix that. Game or music?" and reply.emotion == "playful"
-    body = fake.calls[0][2]
-    assert fake.calls[0][1] == "http://127.0.0.1:11434/api/chat" and body["model"] == "llama3.2"
+    chats = [c for c in fake.calls if c[1].endswith("/api/chat")]
+    body = chats[0][2]
+    assert chats[0][1] == "http://127.0.0.1:11434/api/chat" and body["model"].startswith("llama3.2")
     assert body["messages"][0]["role"] == "system" and "Capri" in body["messages"][0]["content"]
     assert "tools" not in body and body["stream"] is False      # v1.32: plain chat - small models talk better
     fake = FakeOllama([{"role": "assistant", "content": "[happy] On it."}])
     brain(fake).ask("can you open discord")
-    assert fake.calls[0][2]["tools"] == OLLAMA_TOOLS             # asking her to do something: the tools go along
+    assert [c for c in fake.calls if c[1].endswith("/api/chat")][0][2]["tools"] == OLLAMA_TOOLS             # asking her to do something: the tools go along
 
 
 def test_local_ai_actions_become_capri_intents_only():
@@ -100,17 +101,20 @@ def test_local_ai_info_tools_loop():
         {"role": "assistant", "content": "It's 10 on Monday."}])
     reply = brain(fake).ask("what time is it roughly")
     assert reply.text == "It's 10 on Monday."
-    assert fake.calls[1][2]["messages"][-1] == {"role": "tool", "content": "Monday 10:00", "tool_name": "get_time"}
+    chats = [c for c in fake.calls if c[1].endswith("/api/chat")]
+    assert chats[1][2]["messages"][-1] == {"role": "tool", "content": "Monday 10:00", "tool_name": "get_time"}
 
 
 def test_local_ai_says_what_is_missing():
     assert brain(FakeOllama([], models=())).available()[0] is False
-    assert "ollama pull llama3.2" in brain(FakeOllama([], models=("qwen2.5:3b",))).available()[1]
+    assert "ollama pull llama3.2" in brain(FakeOllama([], models=("nomic-embed-text",))).available()[1]
+    other = brain(FakeOllama([], models=("qwen2.5:3b",)))          # v1.35.1: any chat model you've got
+    assert other.available() == (True, "Ollama is ready with qwen2.5:3b.") and other.chosen == "qwen2.5:3b"
     assert brain(FakeOllama([])).available()[0] is True
 
     def down(*a, **k):
         raise OSError("refused")
-    assert brain(down).ask("hi").error and "isn't running" in brain(down).available()[1]
+    assert brain(down).ask("hi").error and "can't reach Ollama" in brain(down).available()[1]
 
     def missing(*a, **k):
         raise http.HttpError(404, "model not found")

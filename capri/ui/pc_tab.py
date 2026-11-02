@@ -29,9 +29,10 @@ def _hint(text: str) -> QLabel:
 
 class PcTab(QWidget):
     def __init__(self, settings: Settings, on_saved: Callable[[], None], preview_greeting: Callable[[], None],
-                 game_hype=None, join_now: Callable[[], None] | None = None) -> None:
+                 game_hype=None, join_now: Callable[[], None] | None = None, updates=None) -> None:
         super().__init__()
         self._join_now = join_now
+        self.updates = updates
         self.settings = settings
         self._on_saved = on_saved
         self.game_hype = game_hype
@@ -126,6 +127,23 @@ class PcTab(QWidget):
         form.addRow(self.join_test)
         root.addWidget(call)
 
+        upd = QGroupBox("Updates")
+        form = QFormLayout(upd)
+        self.auto_update = QCheckBox("Update automatically: check GitHub once a day, download a new Capri in the "
+                                     "background, and install it the next time she starts")
+        self.auto_update.setChecked(getattr(s, "auto_update", True))
+        form.addRow(self.auto_update)
+        self.update_btn = QPushButton("Check for updates now")
+        self.update_status = _hint(updates.status if updates is not None else "")
+        self.update_status.setWordWrap(True)
+        if updates is not None:
+            self.update_btn.clicked.connect(updates.menu_clicked)
+            updates.changed.connect(self._update_changed)
+        else:
+            self.update_btn.setEnabled(False)
+        form.addRow(self.update_btn, self.update_status)
+        root.addWidget(upd)
+
         power = QGroupBox("PC power and windows")
         QVBoxLayout(power).addWidget(_hint(POWER_HELP))
         root.addWidget(power)
@@ -156,6 +174,7 @@ class PcTab(QWidget):
                     self.status.setText(f"Discord keybind “{box.text()}”: {exc}")
                     return False
             box.setText(combo)
+        s.auto_update = self.auto_update.isChecked()
         s.conversation = self.conversation.isChecked()
         s.teleport = self.teleport.isChecked()
         s.greet_on_login = self.greet.isChecked()
@@ -184,3 +203,8 @@ class PcTab(QWidget):
             self.hype_status.setText(self.game_hype.apply())
         self.status.setText(message)
         return True
+
+    def _update_changed(self, text: str) -> None:
+        self.update_status.setText(text)
+        if self.updates is not None:
+            self.update_btn.setText(self.updates.label())

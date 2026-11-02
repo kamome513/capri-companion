@@ -46,6 +46,7 @@ from .voice.whisper import WhisperEars
 from .voice.whisper import installed as whisper_installed
 from .voice import parakeet
 from .about_you import AboutYou
+from .ui.updates import UpdateManager, apply_waiting_update
 from .ai import claude as claude_brain
 from .integrations import pc_stats
 from .integrations.browser_tabs import BrowserTabs
@@ -152,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
 
     first_run = not Settings.path().exists()
     settings = Settings.load()
+    if not args.preview and apply_waiting_update(settings):   # a downloaded update: install it, then she restarts
+        return 0
     if not args.preview:
         did = autostart.ensure_default(settings)      # on by default (once); the tray turns it off
         if did:
@@ -405,7 +408,8 @@ def main(argv: list[str] | None = None) -> int:
                                                   (AssistantTab(assistant, router, spotify), "Assistant"),
                                                   (PcTab(settings, assistant.settings_changed.emit,
                                                          lambda: greet(preview=True), game_hype=hype,
-                                                         join_now=lambda: router.handle("join call")), "PC && chat")])
+                                                         join_now=lambda: router.handle("join call"),
+                                                         updates=services.updates), "PC && chat")])
         win = windows["settings"]
         win.load_rows()
         win.show()
@@ -421,6 +425,10 @@ def main(argv: list[str] | None = None) -> int:
 
     assistant.replied.connect(companion.feed.add_reply)        # her lines in the call cards
     menu = CompanionMenu(companion, art.icon, assistant, open_settings, open_chat)
+    updates = UpdateManager(settings, controller, assistant, menu.tray)    # new versions from GitHub
+    services.updates = updates
+    menu.add_updates(updates)
+    updates.start()
 
     # Global shortcuts: work even while a game has focus.
     hotkeys = HotkeyManager()

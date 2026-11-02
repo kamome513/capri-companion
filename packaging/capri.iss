@@ -8,7 +8,7 @@
 
 #define AppName "Capri"
 #ifndef AppVersion
-  #define AppVersion "1.35.0"
+  #define AppVersion "1.36.0"
 #endif
 
 [Setup]
@@ -47,6 +47,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\Capri.exe"; Description: "Start Capri now"; Flags: nowait postinstall skipifsilent
+; Capri updating herself (/update=1, silent): start her again afterwards.
+Filename: "{app}\Capri.exe"; Flags: nowait; Check: IsCapriUpdate
 
 [UninstallRun]
 Filename: "{cmd}"; Parameters: "/C taskkill /IM Capri.exe /F"; Flags: runhidden; RunOnceId: "StopCapri"
@@ -55,6 +57,11 @@ Filename: "{cmd}"; Parameters: "/C taskkill /IM Capri.exe /F"; Flags: runhidden;
 Type: dirifempty; Name: "{app}"
 
 [Code]
+function IsCapriUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:update|0}') = '1';
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usPostUninstall then

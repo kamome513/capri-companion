@@ -21,7 +21,7 @@ from ..about_you import scrub
 from ..integrations import http
 from .claude import CONVERSATION_IDLE, INFO_TOOLS, MAX_ACTIONS, MAX_TURNS, TOOLS, AIReply, system_prompt, to_intent
 
-DEFAULT_URL = "http://127.0.0.1:11434"
+from .ollama_find import DEFAULT_URL, default_url, pick_model  # noqa: F401  (DEFAULT_URL: re-exported)
 DEFAULT_MODEL = "llama3.2"        # 3B, ~2 GB, runs on most PCs; supports tools
 TIMEOUT = 90.0                    # a small CPU-only PC can take a while on the first reply
 
@@ -54,20 +54,38 @@ class LocalBrain:
         self.messages: list[dict] = []
         self._last = -1e9
 
+    chosen = ""                       # the model Ollama actually has that she uses (see available)
+
     def available(self) -> tuple[bool, str]:
-        """(ok, message) - is Ollama running, and is the model downloaded?"""
-        try:
-            tags = self._fetch("GET", self._base() + "/api/tags", timeout=3.0) or {}
-        except (http.HttpError, OSError):
-            return False, "Ollama isn't running. Install it from ollama.com (it starts by itself)."
+        """(ok, message) - is Ollama answering, and has it got a model she can talk with?"""
+        tags = None
+        for wait in (4.0, 8.0):                         # a just-started Ollama can be slow to answer
+            try:
+                tags = self._fetch("GET", self._base() + "/api/tags", timeout=wait) or {}
+                break
+            except (http.HttpError, OSError):
+                continue
+        if tags is None:
+            return False, (f"I can't reach Ollama at {self._base()}. Open the Ollama app (it sits by the "
+                           f"clock), or say \u201cset up your brain\u201d.")
         names = [m.get("name", "") for m in tags.get("models", [])]
-        model = self._model() or DEFAULT_MODEL
-        if not any(n == model or n.split(":")[0] == model.split(":")[0] for n in names):
-            return False, f"Model {model} isn't downloaded. Run:  ollama pull {model}"
+        wanted = self._model() or DEFAULT_MODEL
+        model = pick_model(names, wanted)
+        if not model:
+            return False, f"Ollama's running, but a chat model isn't downloaded yet. Run:  ollama pull {wanted}"
+        self.chosen = model
         return True, f"Ollama is ready with {model}."
 
     def _base(self) -> str:
-        return (self._url() or DEFAULT_URL).rstrip("/")
+        return (self._url() or default_url()).rstrip("/")
+
+    def _use_model(self) -> str:
+        if not self.chosen:
+            try:
+                self.available()                       # find out what Ollama has
+            except Exception:
+                pass
+        return self.chosen or self._model() or DEFAULT_MODEL
 
     def ask(self, text: str) -> AIReply:
         """Blocking - call from a worker thread."""
@@ -80,12 +98,13 @@ class LocalBrain:
         except http.HttpError as exc:
             self.reset()
             if exc.status == 404:
+                self.chosen = ""                       # it was removed: look again next time
                 return AIReply(f"My local AI model isn't downloaded. Run: ollama pull {self._model() or DEFAULT_MODEL}",
                                error=True)
             return AIReply(f"My local AI glitched ({exc.status}).", error=True)
         except OSError:
             self.reset()
-            return AIReply("Can't reach Ollama. Is it running?", error=True)
+            return AIReply(f"Can't reach Ollama at {self._base()}. Is the Ollama app running?", error=True)
 
     def _loop(self) -> AIReply:
         system = system_prompt(self._slang(), self._persona())
@@ -94,7 +113,7 @@ class LocalBrain:
         # them: hand them the tools only when you're asking for something to be done.
         tools = OLLAMA_TOOLS if wants_action(str(last)) else None
         for _ in range(4):
-            body = {"model": self._model() or DEFAULT_MODEL,
+            body = {"model": self._use_model(),
                     "messages": [{"role": "system", "content": system}] + self.messages,
                     "stream": False, "options": {"temperature": 0.8}, "keep_alive": "3m"}   # RAM freed 3 min after
             if tools:

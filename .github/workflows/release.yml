@@ -1,0 +1,77 @@
+# Builds Capri-Setup-<version>.exe on GitHub's own Windows machine and publishes it as a release,
+# whenever the version in capri/__init__.py changes on main (or when started by hand: Actions tab ->
+# "Build and release" -> Run workflow). Capri's auto-update then offers it to everyone.
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+    paths: ["capri/__init__.py"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version
+        id: v
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path capri/__init__.py -Pattern '__version__ = "(.+)"').Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Capri $v"
+
+      - name: Already released?
+        id: exists
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          if gh release view "v$v" >/dev/null 2>&1 || gh release view "$v" >/dev/null 2>&1; then
+            echo "Capri $v is already released - nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.exists.outputs.skip != 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install what the build needs
+        if: steps.exists.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+          python -m pip install -r requirements-voice.txt
+          python -m pip install --no-deps --ignore-requires-python "kokoro-onnx>=0.5,<1"
+          python -m pip install "sherpa-onnx>=1.12"
+          choco install innosetup --no-progress -y
+
+      - name: Build Capri.exe
+        if: steps.exists.outputs.skip != 'true'
+        shell: pwsh
+        run: python -m PyInstaller --noconfirm --clean --distpath dist --workpath build packaging/capri.spec
+
+      - name: Build the installer
+        if: steps.exists.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=${{ steps.v.outputs.version }}" packaging\capri.iss
+          Get-Item "dist\Capri-Setup-${{ steps.v.outputs.version }}.exe"
+
+      - name: Publish the release
+        if: steps.exists.outputs.skip != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          gh release create "v$v" "dist/Capri-Setup-$v.exe" --target "$GITHUB_SHA" \
+            --title "Capri $v" --notes-file packaging/release_notes.md

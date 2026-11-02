@@ -137,6 +137,7 @@ class Services:
     front: Callable[[], Any] | None = None   # the window in front (Windows), for "open X and type Y"
     in_game: Callable[[], bool] | None = None   # are you in a game right now (then: never tab you out of it)
     open_settings: Callable[[], None] | None = None   # "open your settings": her Settings window
+    updates: Any = None             # ui.updates.UpdateManager: "check for updates" / "update yourself"
     doctor: Any = None              # ai.doctor.AIDoctor: "set up your brain"
 
 
@@ -395,7 +396,7 @@ class CommandRouter(QObject):
             Kind.PC_INFO: self._pc_info, Kind.SCREENSHOT: self._screenshot, Kind.PERSONALITY: self._personality,
             Kind.SCREEN: self._screen, Kind.REPEAT: self._repeat, Kind.MOVE: self._move, Kind.AI_SETUP: self._ai_setup,
             Kind.SHORTCUT: self._shortcut, Kind.FORGET: self._forget, Kind.MUSIC_SERVICE: self._music_service,
-            Kind.LEARN_BUTTON: self._learn_button, Kind.FORGET_BUTTON: self._forget_button, Kind.TYPE: self._type, Kind.HAIR: self._hair, Kind.SETTINGS: self._settings,
+            Kind.LEARN_BUTTON: self._learn_button, Kind.FORGET_BUTTON: self._forget_button, Kind.TYPE: self._type, Kind.HAIR: self._hair, Kind.SETTINGS: self._settings, Kind.UPDATE: self._update,
             Kind.QUIET: self._quiet, Kind.VOICE: self._voice, Kind.TIMER: self._timer,
             Kind.PERCH_ON: lambda i: self._perch(True), Kind.PERCH_OFF: lambda i: self._perch(False),
             Kind.HYPE_ON: lambda i: self._hype(True), Kind.HYPE_OFF: lambda i: self._hype(False),
@@ -1687,7 +1688,7 @@ class CommandRouter(QObject):
             if code in (dr.READY, dr.CLAUDE, dr.ONLINE):
                 refresh()
                 return self.assistant.show_result(State.SUCCESS, message, emotion="happy")
-            if code == dr.NEEDS_KEY:                       # ChatGPT etc.: only you can add your key
+            if code in (dr.NEEDS_KEY, getattr(dr, "UNREACHABLE", "unreachable")):   # only you can fix these
                 return self.assistant.show_result(State.ERROR, message, emotion="confused")
             if code == dr.STOPPED and not retried:
                 self.controller.log("AI", "starting Ollama")
@@ -2043,6 +2044,18 @@ class CommandRouter(QObject):
             return self.assistant.show_result(State.ERROR, "My settings aren't available here.")
         opener()
         self.assistant.show_result(State.SUCCESS, "Here are my settings.", emotion="happy")
+
+    def _update(self, intent: Intent) -> None:
+        """'Check for updates' / 'update yourself': a downloaded update installs (after a yes),
+        otherwise she checks GitHub."""
+        updates = self.services.updates
+        if updates is None:
+            return self.assistant.show_result(State.ERROR, "I can't update myself here.")
+        said = (self._text or "").lower()
+        if "update yourself" in said or "install" in said or "update now" in said:
+            if updates.update_now():
+                return
+        updates.check_now()
 
     def _hair(self, intent: Intent) -> None:
         """'Change your hair' (swap) / 'use your old hair' / 'new hair': her hair style, saved."""

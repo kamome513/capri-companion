@@ -97,6 +97,7 @@ class Settings:
     auto_game_drone: bool = True       # ...and when she spots a game in front that you started yourself
     game_drone: bool = True            # turn into the little flying disk while a game she launched runs
     teleport: bool = True              # red lightning effects (zapping Discord's buttons, blasting closed windows)
+    auto_update: bool = True           # check GitHub daily; download a new Capri, install it on the next start
     greet_on_login: bool = True        # say hi when Windows starts / you sign back in
     big_greeting: bool = True          # ...big, in the middle of the screen
     autostart_default_done: bool = False   # Start with Windows gets switched on once, on first run

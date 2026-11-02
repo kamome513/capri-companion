@@ -47,6 +47,7 @@ class Kind(Enum):
     REVEAL = "reveal"             # targets = what to show in File Explorer (an app, a folder, one of your files)
     MUSIC_SERVICE = "music_service"   # "use soundcloud for music": targets = (service,)
     SETTINGS = "settings"         # "open your settings": her own Settings window
+    UPDATE = "update"             # "check for updates" / "update yourself": a newer Capri from GitHub
     SHORTCUT = "shortcut"         # "when I say gaming time, open steam and discord": targets = (phrase, command)
     FORGET = "forget"             # "forget the shortcut gaming time": targets = (phrase,)
     TAB = "tab"                   # "switch tabs on opera": targets = (browser,) or (); query = the tab ("" = ask)
@@ -703,12 +704,22 @@ def type_where(words: str) -> tuple[str, str] | None:
     return m.group(1).strip(" ,"), m.group(2).strip().lower()
 
 
+UPDATE_WORDS = (r"(?:(?:can you |could you |would you |please |hey |yo )*)"
+                r"(?:check (?:for |if there (?:are|s|is) )?(?:any |an |a |new )*updates?(?: for (?:yourself|you|capri))?"
+                r"|(?:are there|is there|got) (?:any |an |a )?(?:new )?(?:updates?|versions?)(?: for (?:you|capri))?"
+                r"|update (?:yourself|capri|you|now)|install (?:the |your |an? )?update"
+                r"|(?:get|download) (?:the |your )?(?:latest|newest|new) (?:version|update)(?: of (?:you|capri|yourself))?"
+                r"|is there a new(?:er)? (?:version of )?(?:you|capri)|are you up to date)(?: please| for me)*")
+
+
 def parse(text: str) -> Intent:
     t = normalise(text)
     if not t:
         return Intent(Kind.UNKNOWN)
     if re.match(rf"{TYPE_VERB} ", t) and (words := typed_words(text)) is not None:
         return Intent(Kind.TYPE, query=words)
+    if re.fullmatch(UPDATE_WORDS, t):
+        return Intent(Kind.UPDATE)                                 # "check for updates": a newer Capri on GitHub
     if re.fullmatch(OPEN_SETTINGS, t) or re.fullmatch(rf"(?:capri )?{SETTINGS_WORDS}(?: please)?", t):
         return Intent(Kind.SETTINGS)                               # "open your settings": hers, not Windows'
     m = re.fullmatch(HAIR, t)
