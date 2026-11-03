@@ -1,5 +1,4 @@
-"""Roaming - now and then she teleports somewhere else along the bottom of the screen (v1.39 walked; v1.40
-teleports, with her power closing in around her first)."""
+"""v1.39: roaming - now and then she walks somewhere else along the bottom of the screen, legs stepping."""
 
 from __future__ import annotations
 
@@ -45,41 +44,21 @@ def test_her_legs_come_apart_for_walking():
     assert r.hip_joints["left"].x() < r.hip_joints["right"].x()
 
 
-def test_she_teleports_to_a_spot_and_stands_there():
+def test_she_walks_to_a_spot_and_stands_there():
     c = companion()
     show = roam.RoamShow(c, rig, enabled=lambda: True)
     assert show.walk(900)
-    assert c.busy_elsewhere and show.active and len(show.fx.shards) == roam.SHARDS and show.fx.sprite is not None
-    seen = set()
-    end = time.time() + 6
+    assert c.busy_elsewhere and show.active
+    strides = set()
+    end = time.time() + 10
     while show.active and time.time() < end:
         app.processEvents()
-        t = show.fx.t
-        seen.add("gather" if t < roam.GATHER else "gone" if t < roam.GATHER + roam.ENGULF + roam.VANISH + roam.TRAVEL
-                 else "arrive")
+        strides.add(round(show.fx.pose.stride, 1))
         time.sleep(0.005)
-    assert seen == {"gather", "gone", "arrive"}
     assert not show.active and c.remembered == 1 and c.shown == 1 and not c.busy_elsewhere
     feet_x = c.moved_to.x() + 40 + 45
     assert abs(feet_x - 900) <= 1 and c.moved_to.y() + 30 + 250 == 860
-
-
-def test_the_teleport_paints():
-    from PySide6.QtGui import QImage
-    c = companion()
-    show = roam.RoamShow(c, rig, enabled=lambda: True)
-    show.walk(300)
-    img = QImage(1600, 500, QImage.Format.Format_ARGB32_Premultiplied)
-    for t in (0.2, roam.GATHER + 0.1, roam.GATHER + roam.ENGULF + 0.05, roam.GATHER + roam.ENGULF + roam.VANISH + 0.05,
-              roam.GATHER + roam.ENGULF + roam.VANISH + roam.TRAVEL + 0.2, show.length - 0.1):
-        show.fx.t = t
-        img.fill(0)
-        show.fx.render(img)                                             # every beat draws without falling over
-    show.stop()
-
-
-def test_a_teleport_phrase():
-    assert parse("teleport somewhere").kind is Kind.ROAM and parse("teleport").query == "walk"
+    assert max(strides) > 0.5 and min(strides) < -0.5                  # both legs stepped
 
 
 @pytest.mark.parametrize("state", [State.LISTENING, State.PROCESSING, State.SPEAKING])
@@ -101,14 +80,14 @@ def test_hey_capri_stops_her_where_she_is():
     c = companion()
     show = roam.RoamShow(c, rig, enabled=lambda: True)
     show.walk(300)
-    end = time.time() + 0.3
+    end = time.time() + 1.2
     while time.time() < end:
         app.processEvents()
         time.sleep(0.005)
     c.controller.state = State.LISTENING
     run(show, 2)
     feet_x = c.moved_to.x() + 40 + 45
-    assert not show.active and abs(feet_x - 1450) <= 1                 # needed before she left: still here
+    assert not show.active and 300 < feet_x < 1450                     # stopped part way
 
 
 def test_she_stays_on_her_screen():

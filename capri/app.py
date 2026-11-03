@@ -70,7 +70,6 @@ from .integrations.screen_click import ScreenHands, click_at, click_spotify_play
 from .integrations.screen_targets import Finder, click, cursor_pos, target_window, windows_ocr
 from .typing_watch import TypingWatch
 from . import memory
-from .ui.extras_tab import ExtrasTab
 from .ui.visit import VisitShow
 from .ui.visit_actions import VisitActions
 from .ui.zap import ZapShow
@@ -398,15 +397,6 @@ def main(argv: list[str] | None = None) -> int:
         controller.set_state(State.SUCCESS, line, emotion="happy" if where == "head" else "surprised")
         assistant.say(line, emotion="happy" if where == "head" else "surprised")
     companion.patted.connect(patted)
-    companion.character.set_body_look(settings.body_look)        # neon / full colour
-    companion.character.glitch_every = settings.glitch_every      # her real glitch every few minutes
-    companion.character.real_glitch.rescheduled()
-
-    def glitch_setting() -> None:
-        if companion.character.glitch_every != settings.glitch_every:
-            companion.character.glitch_every = settings.glitch_every
-            companion.character.real_glitch.rescheduled()
-    assistant.settings_changed.connect(glitch_setting)
     from .speech import speaker as speaker_mod
     speaker_mod.mic_device = lambda: settings.mic_voice_device     # "Her voice in your mic"
     from .ui.roam import RoamShow
@@ -648,10 +638,8 @@ def main(argv: list[str] | None = None) -> int:
                                                          lambda: greet(preview=True), game_hype=hype,
                                                          join_now=lambda: router.handle("join call"),
                                                          updates=services.updates,
-                                                         restart=services.restart), "PC && chat"),
-                                                  (ExtrasTab(settings, lambda: (assistant.settings_changed.emit(),
-                                                                                companion._apply_visibility()),
-                                                             services.clips_turn_on), "Extras")])
+                                                         restart=services.restart,
+                                                         clips_turn_on=services.clips_turn_on), "PC && chat")])
         win = windows["settings"]
         win.load_rows()
         win.show()
@@ -802,6 +790,14 @@ def main(argv: list[str] | None = None) -> int:
                 "Say \u201cHey Capri, open Discord\u201d. Right-click me (or this tray icon) for settings. "
                 "Your microphone audio is processed on this PC only.",
                 QSystemTrayIcon.MessageIcon.Information, 8000)
+    if not settings.extras_offered and not os.environ.get("CAPRI_NO_EXTRAS"):
+        def offer_extras() -> None:               # once: the things that start off (all in Settings too)
+            from .ui.extras import ExtrasDialog
+            dialog = ExtrasDialog(settings, assistant.settings_changed.emit, services.clips_turn_on)
+            windows["extras"] = dialog
+            dialog.show()
+            dialog.raise_()
+        QTimer.singleShot(9000 if args.startup else 4000, offer_extras)
     if settings.click_through and menu.tray:
         menu.tray.showMessage(
             "Capri", f"Click-through is on. Press {pretty(settings.hotkey_click_through)} "

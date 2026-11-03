@@ -180,7 +180,6 @@ class DroneWindow(OverlayWindow):
         self._glitch = (-1.0, 0)                               # (until, shard)
         self._timer = QTimer(self)
         self._timer.setInterval(33)
-        self._timer.setTimerType(Qt.TimerType.PreciseTimer)   # frames on time
         self._timer.timeout.connect(self.update)
         self.style = "disk"
         self._mask: MaskDrone | None = None

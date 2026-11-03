@@ -51,7 +51,7 @@ BODY_POSES = {
     "listening": {"energy": 0.45, "lean": -0.03}, "thinking": {"energy": 0.2, "squat": 0.06},
     "speaking": {"mouth": 1.0}, "happy": {"energy": 0.6, "reach": 0.35}, "confused": {"energy": 0.25, "lean": -0.06},
 }
-IDLE_FPS = 30                         # idle tick rate (her hair sways at this) - repaints only when something changes
+IDLE_FPS = 15                         # idle tick rate (her hair sways at this) - repaints only when something changes
 TALK_FPS = 60                         # while she talks, or moves from one pose to another: smooth
 SMOOTH_TAU = 0.11                     # seconds: how quickly she eases from one pose into the next
 BLINK_SECONDS = 0.17
@@ -98,15 +98,7 @@ class CharacterWindow(OverlayWindow):
         self._paint_failed = False
         self.acts = IdleActs()                  # gaming / watching / calls with D / glitching while idle
         self._timer = QTimer(self)
-        self._timer.setTimerType(Qt.TimerType.PreciseTimer)   # frames on time (no Windows 15.6 ms judder)
         self._timer.setInterval(int(1000 / IDLE_FPS))
-        from .glitch import DragSway, RealGlitch
-        self.glitch_every = 180                 # seconds between her real glitches (0 = never): Settings
-        self.body_look = "neon"                 # her figure: "neon" or "full" (Settings -> Character -> Body)
-        self.real_glitch = RealGlitch(every=lambda: self.glitch_every)
-        self.sway = DragSway()                  # she dangles while you drag her
-        self._sway_at = time.monotonic()
-        self._next_drag_glitch = 0.0
         self._frame_key = None
         self._timer.timeout.connect(self._tick)
         self._look_painter = None
@@ -361,7 +353,7 @@ class CharacterWindow(OverlayWindow):
         return time.monotonic() < self._blink_until
 
     def _update_timer(self) -> None:
-        fast = self.talking or (self.mode == "body" and (self._moving or self._blinking())) or self._special()
+        fast = self.talking or (self.mode == "body" and (self._moving or self._blinking()))
         fps = TALK_FPS if fast else LOOK_FPS if self.mode == "look" else ACT_FPS if self.acts.act else IDLE_FPS
         self._timer.setInterval(int(1000 / fps))
         if self._animating():
@@ -380,43 +372,8 @@ class CharacterWindow(OverlayWindow):
             self.acts.stop(time.monotonic())
         self._timer.stop()          # hidden = no CPU at all
 
-    # -- held / glitching ----------------------------------------------------------------
-    def set_held(self, held: bool) -> None:
-        """You picked her up (dragging) / let go: she dangles and swings."""
-        if held:
-            self.sway.grab()
-            self._next_drag_glitch = time.monotonic() + 0.35
-        else:
-            self.sway.drop()
-        self._update_timer()
-
-    def held_at(self, x: float) -> None:
-        self.sway.moved(x)
-
-    def glitch_now(self, light: bool = False) -> None:
-        self.real_glitch.start(light)
-        self._update_timer()
-
-    def _special(self) -> bool:
-        """Something that needs full-speed frames right now: a glitch, or her swinging."""
-        return self.real_glitch.active or self.sway.swinging
-
     def _tick(self) -> None:
         now = time.monotonic()
-        dt, self._sway_at = min(0.05, now - self._sway_at), now
-        if self.sway.swinging:
-            self.sway.step(dt)
-            if self.sway.held and now >= self._next_drag_glitch:       # a little flicker while you carry her
-                self._next_drag_glitch = now + self._rng.uniform(0.6, 1.4)
-                self.real_glitch.start(light=True)
-        if self.real_glitch.due(self.isVisible() and not self.talking and self.mode != "classic" and self.state
-                                not in (State.LISTENING, State.PROCESSING, State.LAUNCHING, State.SPEAKING)):
-            self.real_glitch.start()
-        if self._special():
-            if self._timer.interval() != int(1000 / TALK_FPS):
-                self._update_timer()
-            self.update()
-            return
         if self.idle_animation and not self.talking and self.state is State.IDLE:
             if now >= self._next_blink:
                 self._blink_until = now + BLINK_SECONDS
@@ -435,17 +392,17 @@ class CharacterWindow(OverlayWindow):
         if self.mode == "body" and self._timer.interval() != int(1000 / (ACT_FPS if self.acts.act else IDLE_FPS)):
             self._update_timer()                             # settled: back to the light idle rate
         # At rest, only repaint when something visible changed: pose, breathing bob, hair boil step.
-        key = (self.pose_name(), round(self._bob() * 8), self._hair_step(), self.acts.frame_key(now),
+        key = (self.pose_name(), self._bob(), self._hair_step(), self.acts.frame_key(now),
                int(self._t() * LOOK_FPS) if self.mode == "look" else 0)      # looks move all the time
         if key != self._frame_key:
             self._frame_key = key
             self.update()
 
-    def _bob(self) -> float:
-        """Breathing: a gentle, sub-pixel rise and fall."""
+    def _bob(self) -> int:
+        """Breathing: a 1-pixel rise and fall (no image re-filtering, so it costs nothing)."""
         if not self.idle_animation:
-            return 0.0
-        return 1.4 * math.sin(self._t() * 2 * math.pi / 3.6)
+            return 0
+        return round(math.sin(self._t() * 2 * math.pi / 3.6))
 
     def _hair_step(self) -> int:
         if self.wild_hair <= 0:
@@ -497,22 +454,8 @@ class CharacterWindow(OverlayWindow):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         try:
-            draw = {"classic": self._paint_classic, "portrait": self._paint_portrait, "body": self._paint_body,
-                    "lying": self._paint_lying, "look": self._paint_look}[self.mode]
-            if self.real_glitch.active:                       # a real glitch: her picture, then broken up
-                dpr = self.devicePixelRatioF()
-                snap = QImage(round(self.width() * dpr), round(self.height() * dpr),
-                              QImage.Format.Format_ARGB32_Premultiplied)
-                snap.setDevicePixelRatio(dpr)
-                snap.fill(0)
-                q = QPainter(snap)
-                q.setRenderHint(QPainter.RenderHint.Antialiasing)
-                q.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-                draw(q)
-                q.end()
-                self.real_glitch.paint(p, snap, QRectF(self.content_rect()), max(0.5, self.display_height / 420))
-            else:
-                draw(p)
+            {"classic": self._paint_classic, "portrait": self._paint_portrait, "body": self._paint_body,
+             "lying": self._paint_lying, "look": self._paint_look}[self.mode](p)
         except Exception:
             # Never leave her invisible (and the panel floating over nothing): log it once, draw her plainly.
             if not self._paint_failed:
@@ -621,18 +564,10 @@ class CharacterWindow(OverlayWindow):
         self.acts._tints.clear()
         self.acts._puppet = None
 
-    def set_body_look(self, look: str) -> None:
-        if look != self.body_look:
-            self.body_look = look
-            self._rig_full = self._rig_small = self._rig_key = None
-            self._lying_neon = None
-            self.update()
-
     def figure_rig(self) -> Rig:
         """Her full-body figure, pre-scaled for this size and screen (rebuilt if either changes)."""
         if self._rig_full is None:
-            from .neon import body_image
-            self._rig_full = Rig(body_image(self.sprites.frame("standing"), self.body_look),
+            self._rig_full = Rig(self.sprites.frame("standing"),
                                  self.hair_style if self.hair_style in HAIR_STYLES else "storm")
         dpr = self.devicePixelRatioF()
         key = (self._figure_h, dpr)
@@ -653,14 +588,7 @@ class CharacterWindow(OverlayWindow):
             moves["mouth"] = min(1.0, 0.25 + self.level) if self.level > 0.08 else 0.0
         elif self.acts.act:
             moves["mouth"] = self.acts.mouth(now)                  # her turn on the call with D
-        if self.sway.held:                                         # dangling from your cursor
-            held = self.sway.pose_moves(now)
-            held.pop("lean", None)
-            moves.update(held)
         smooth = self._ease_towards(moves, now)
-        if self.sway.swinging:
-            smooth = dict(smooth)
-            smooth["lean"] = smooth.get("lean", 0.0) + self.sway.angle
         blink = 0.0
         if now < self._blink_until:                                # closes and opens, not on / off
             blink = math.sin(math.pi * min(1.0, 1 - (self._blink_until - now) / BLINK_SECONDS))
@@ -759,14 +687,8 @@ class CharacterWindow(OverlayWindow):
 
     def _paint_lying_figure(self, p: QPainter, jolt: QPointF) -> tuple[QRectF, QRectF | None]:
         src = self.sprites.lying
-        if self.body_look == "neon":                        # lying on the panel in the same look
-            if getattr(self, "_lying_neon", None) is None:
-                from .neon import neon_array
-                from .rig import _to_array, _to_image
-                self._lying_neon = _to_image(neon_array(_to_array(src)))
-            src = self._lying_neon
         sw, sh = round(src.width() * self._scale), round(src.height() * self._scale)
-        image = self._scaled("lying:" + self.body_look, src, sw, sh, cover=False)
+        image = self._scaled("lying", src, sw, sh, cover=False)
         x = float(self._margin[0]) + jolt.x()
         y = float(self.height() - 2 - sh) + self._bounce() + self._bob() + jolt.y()
         p.save()

@@ -64,7 +64,6 @@ class _Flash(OverlayWindow):
         self._rng = random.Random()
         self._timer = QTimer(self)
         self._timer.setInterval(16)
-        self._timer.setTimerType(Qt.TimerType.PreciseTimer)   # frames on time
         self._timer.timeout.connect(self._tick)
 
     def fire(self, at: QPoint) -> None:

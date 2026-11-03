@@ -151,7 +151,6 @@ class RigFigure(OverlayWindow):
         self._t0 = time.monotonic()
         self._timer = QTimer(self)
         self._timer.setInterval(16)                              # 60 fps for the few seconds it's up
-        self._timer.setTimerType(Qt.TimerType.PreciseTimer)      # frames on time
         self._timer.timeout.connect(self.update)
 
     def content_rect(self) -> QRect:
