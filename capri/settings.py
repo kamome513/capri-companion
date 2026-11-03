@@ -16,6 +16,9 @@ from PySide6.QtCore import QStandardPaths
 log = logging.getLogger("capri")
 
 
+INT_LIMITS = {"clip_length": (5, 120), "clip_fps": (15, 60), "watch_every": (30, 3600)}   # whole-number settings
+
+
 @dataclass
 class SavedPosition:
     """Where Capri stands, relative to the bottom-right of a screen's work area.
@@ -63,6 +66,23 @@ class Settings:
     speech_pitch: float = 0.78         # 0 = deep, 0.5 = the voice's own pitch, 1 = very high
     speech_expression: float = 0.6     # how much her voice goes up and down (0 = a steady tone)
     elevenlabs_voice: str = ""         # ElevenLabs voice ID ("" = a standard one); the key is kept in secrets
+    fish_voice: str = ""               # Fish Audio voice ID or link ("" = their default); the key is in secrets
+    throwable: bool = True             # flick her and let go: she's thrown (and slams into the screen's edge)
+    roam: bool = True                  # now and then she walks somewhere else along the bottom of the screen
+    clips: bool = False                # "Clip my games": keep the last 2 minutes recording, "clip that" saves it
+    clip_when: str = "games"           # "games" (only while you play) / "always"
+    clip_length: int = 30              # seconds "clip that" saves
+    clip_fps: int = 30
+    clip_resolution: str = "auto"      # auto (up to 1080p) / 720p / 1080p / full
+    clip_sound: bool = True            # what your speakers play goes in too
+    clip_folder: str = ""              # "" = Videos/Capri Clips
+    clip_moments: bool = False         # "Save big moments": triple kills, aces and wins get clipped by themselves
+    watch_screen: bool = False         # "Watch my screen": she glances at it now and then (picture -> your AI)
+    watch_every: int = 120             # seconds between looks
+    watch_remember: bool = True        # she keeps her last few comments (on your PC) to follow on from them
+    mic_voice_device: str = ""         # "Her voice in your mic": also play her voice here (a virtual cable)
+    head_pats: bool = True             # click her head: she reacts
+    extras_offered: bool = False       # the "Extras" welcome (turn on what you want) was shown
     # Assistant (Stage 5)
     weather_city: str = ""             # home city for "what's the weather"
     weather_units: str = "metric"      # metric | imperial
@@ -140,6 +160,10 @@ class Settings:
             elif isinstance(default, float):
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     setattr(settings, f.name, min(1.0, max(0.0, float(value))))
+            elif isinstance(default, int):
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    low, high = INT_LIMITS.get(f.name, (0, 1_000_000))
+                    setattr(settings, f.name, int(min(high, max(low, value))))
             elif isinstance(default, str) and isinstance(value, str):
                 setattr(settings, f.name, value)
             elif f.name == "wake_variants" and isinstance(value, list):

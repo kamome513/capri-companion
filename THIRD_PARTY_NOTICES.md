@@ -14,6 +14,8 @@ bundles, other people's work under their own licenses:
 | espeak-ng (via espeakng-loader) | GPL-3.0 | Pronunciation for the neural voice. Bundled in Capri.exe. |
 | phonemizer | GPL-3.0 | Pronunciation for the neural voice. Bundled in Capri.exe. |
 | NumPy, psutil, sounddevice, comtypes, anthropic | BSD / MIT | Helpers. |
+| soundcard | BSD-3-Clause | Clips: the sound your speakers play (Windows). |
+| FFmpeg (via the imageio-ffmpeg package) | GPL-3.0 | Clips. Not bundled: on Windows it downloads from PyPI when you turn clips on; on Linux your own ffmpeg is used. |
 
 Because espeak-ng and phonemizer are GPL-3.0, the **Windows installer as a whole** is shared
 under the GPL-3.0's terms: its full source is this repository, and anyone may rebuild it with

@@ -25,6 +25,13 @@ binaries += v_binaries
 hiddenimports += v_hidden
 if sys.platform == "win32":
     hiddenimports += collect_submodules("comtypes")     # Windows voices (SAPI)
+    try:                                                # clips: what your speakers play (WASAPI loopback)
+        sc_datas, sc_binaries, sc_hidden = collect_all("soundcard")
+        datas += sc_datas
+        binaries += sc_binaries
+        hiddenimports += sc_hidden
+    except Exception:
+        pass
 
 # Her neural voice (Kokoro): ONNX runtime + the espeak-ng phonemiser it ships with.
 # Parakeet hearing (sherpa-onnx; the 480 MB model itself downloads from Settings).

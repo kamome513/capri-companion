@@ -23,6 +23,7 @@ class OverlayWindow(QWidget):
     drag_started = Signal()
     drag_moved = Signal(QPoint)
     drag_finished = Signal()
+    clicked = Signal(QPoint)                 # a click without a drag (global position)
 
     def __init__(self, always_on_top: bool = True) -> None:
         super().__init__(None)
@@ -89,3 +90,5 @@ class OverlayWindow(QWidget):
         self.unsetCursor()
         if was_dragging:
             self.drag_finished.emit()
+        else:
+            self.clicked.emit(event.globalPosition().toPoint())

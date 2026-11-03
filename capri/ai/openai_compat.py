@@ -29,6 +29,8 @@ PRESETS = {
     "groq": ("Groq (free tier, very fast)", "https://api.groq.com/openai/v1", "llama-3.1-8b-instant", True),
     "openrouter": ("OpenRouter (hundreds of models)", "https://openrouter.ai/api/v1", "openai/gpt-5-nano", True),
     "gemini": ("Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-flash-latest", True),
+    "nvidia": ("NVIDIA (build.nvidia.com, free credits)", "https://integrate.api.nvidia.com/v1",
+               "meta/llama-3.3-70b-instruct", True),
     "deepseek": ("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat", True),
     "mistral": ("Mistral", "https://api.mistral.ai/v1", "mistral-small-latest", True),
     "xai": ("xAI (Grok)", "https://api.x.ai/v1", "grok-3-mini", True),
@@ -36,6 +38,17 @@ PRESETS = {
     "custom": ("Custom (any OpenAI-compatible address)", "", "", True),
 }
 DEFAULT_PRESET = "openai"
+# Where each service hands out keys (shown in the key box).
+KEY_HINTS = {
+    "openai": "ChatGPT: platform.openai.com -> API keys",
+    "groq": "console.groq.com -> API Keys",
+    "openrouter": "openrouter.ai -> Keys",
+    "gemini": "aistudio.google.com -> Get API key (free)",
+    "nvidia": "build.nvidia.com -> pick a model -> Get API Key (starts nvapi-)",
+    "deepseek": "platform.deepseek.com -> API keys",
+    "mistral": "console.mistral.ai -> API Keys",
+    "xai": "console.x.ai -> API Keys",
+}
 log = logging.getLogger(__name__)
 FREE_TIP = " Or use a free Google Gemini key (aistudio.google.com) - pick Google Gemini in my Settings."
 TIMEOUT = 30.0
@@ -243,6 +256,37 @@ class OpenAIBrain:
                     f"{self.label()}'s rate limited. Give it a minute.")
         said = self._detail(exc).strip().rstrip(".")
         return f"{self.label()} refused: {said[:120]}." if said else f"{self.label()} glitched out ({exc.status})."
+
+    def look(self, prompt: str, jpeg_b64: str) -> AIReply:
+        """One look at a picture (your screen), no history and no tools. Blocking."""
+        key = self._key().strip()
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        model = self.model()
+        body = {"model": model, "messages": [
+            {"role": "system", "content": system_prompt(self._slang(), self._persona())},
+            {"role": "user", "content": [{"type": "text", "text": prompt},
+                                         {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + jpeg_b64}}]}]}
+        if "api.openai.com" in self.base():
+            body["max_completion_tokens"] = 1500 if reasoning_model(model) else 300
+        else:
+            body["max_tokens"] = 1024
+        if reasoning_model(model):
+            body["reasoning_effort"] = "minimal"
+        try:
+            data = self._fetch("POST", self.base() + "/chat/completions", json_body=body, headers=headers,
+                               timeout=TIMEOUT) or {}
+        except http.HttpError as exc:
+            detail = (self._detail(exc) or exc.body or "").lower()
+            if exc.status in (400, 404, 415, 422) and any(w in detail for w in ("image", "vision", "multimodal",
+                                                                                 "image_url", "content type")):
+                return AIReply(f"{model} can't see pictures. Pick a model that can (GPT-4o mini, Gemini Flash...).",
+                               error=True, blind=True)
+            return AIReply(self._problem(exc), error=True)
+        except OSError:
+            return AIReply(f"Can't reach {self.label()} right now.", error=True)
+        choice = (data.get("choices") or [{}])[0]
+        feeling, said = emotions.split_tag(_text((choice.get("message") or {}).get("content")))
+        return AIReply(said.strip(), emotion=feeling)
 
     def _tools(self) -> list[dict] | None:
         """OpenAI itself: her strict tools. Everyone else: the portable ones. A service that refused

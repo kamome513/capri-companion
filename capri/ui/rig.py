@@ -73,6 +73,54 @@ def arm_masks(alpha: np.ndarray) -> dict[str, np.ndarray]:
     return masks
 
 
+def split_legs(lower: np.ndarray, waist: int):
+    """Her lower body cut into hips + a left and a right leg, from the gap between her legs.
+    Returns (hips mask, {"left", "right": leg mask}, {"left", "right": hip joint}) or None."""
+    h, w = lower.shape
+    rows = [y for y in range(waist, h) if lower[y].any()]
+    if not rows:
+        return None
+    centre = w / 2
+
+    def gap(y: int) -> float | None:
+        runs = _runs(lower[y])
+        if len(runs) < 2:
+            return None
+        pairs = [(runs[i][1], runs[i + 1][0]) for i in range(len(runs) - 1)]
+        best = min(pairs, key=lambda g: abs((g[0] + g[1]) / 2 - centre))
+        mid = (best[0] + best[1]) / 2
+        return mid if abs(mid - centre) < w * 0.2 else None
+    crotch = None
+    for y in rows:
+        if all(gap(yy) is not None for yy in range(y, min(h, y + 12))):
+            crotch = y
+            break
+    if crotch is None or crotch > rows[-1] - h * 0.2:
+        return None
+    overlap = max(3, int(h * 0.01))
+    top_mid = gap(crotch)
+    mids = np.full(h, top_mid)
+    last = top_mid
+    for y in range(crotch, h):
+        g = gap(y)
+        last = g if g is not None else last
+        mids[y] = last
+    xs = np.arange(w)[None, :]
+    left_side = xs < mids[:, None]
+    legs_rows = np.zeros_like(lower)
+    legs_rows[crotch - overlap:] = True
+    hips = lower.copy()
+    hips[crotch + overlap:] = False
+    left, right = lower & legs_rows & left_side, lower & legs_rows & ~left_side
+    joints = {}
+    for side, m in (("left", left), ("right", right)):
+        cols = np.flatnonzero(m[crotch])
+        if len(cols) == 0:
+            return None
+        joints[side] = QPointF(float(cols.mean()), float(crotch - overlap))
+    return hips, {"left": left, "right": right}, joints
+
+
 @dataclass
 class Pose:
     lean: float = 0.0          # -1..1: bend at the waist (+ = toward the picture's right)
@@ -88,6 +136,7 @@ class Pose:
     wild: float = 1.0          # the hair storm's size (Settings -> Character -> Wild hair)
     blink: float = 0.0         # 0..1: eyes closing
     mouth: float = 0.0         # 0..1: mouth open (lip-sync)
+    stride: float = 0.0        # -1..1: walking - which leg is up (+ = the picture's right leg), arms swinging
 
 
 LEAN_DEGREES = 56
@@ -97,6 +146,9 @@ SWEEP_DEGREES = 28
 UPPER_ARM_WAVE = 72          # a wave: the upper arm out to the side...
 FOREARM_WAVE = 100           # ...the forearm straight up from the elbow...
 WAG_DEGREES = 22             # ...and the hand swinging side to side
+LEG_LIFT = 0.2               # walking: the raised leg is this much shorter (her knee comes up)
+LEG_SWAY = 6                 # ...and both legs tilt a little with the step
+ARM_SWING = 9                # her arms swing with her steps
 
 
 class Rig:
@@ -118,6 +170,13 @@ class Rig:
             out[~mask] = 0
             return _to_image(out)
         self.upper, self.lower = part(upper), part(lower)
+        # her legs, each on its own below the crotch, so she can walk (None: this figure's legs don't separate)
+        self.hips, self.legs, self.hip_joints = None, None, None
+        split = split_legs(lower, waist)
+        if split is not None:
+            hips_mask, leg_masks, self.hip_joints = split
+            self.hips = part(hips_mask)
+            self.legs = {side: part(m) for side, m in leg_masks.items()}
         self.arms = {side: part(m) for side, m in arms.items()}
         # each arm again in two pieces, at the elbow, so a wave bends like a real arm
         self.upper_arms, self.forearms = {}, {}
@@ -217,6 +276,10 @@ class Rig:
         out.upper_arms = {side: small(img) for side, img in self.upper_arms.items()}
         out.forearms = {side: small(img) for side, img in self.forearms.items()}
         kx, ky = out.w / self.w, out.h / self.h
+        out.hips = small(self.hips) if self.hips is not None else None
+        out.legs = {side: small(img) for side, img in self.legs.items()} if self.legs else None
+        out.hip_joints = {side: QPointF(pt.x() * kx, pt.y() * ky) for side, pt in self.hip_joints.items()} \
+            if self.hip_joints else None
         out.head = QRectF(self.head.x() * kx, self.head.y() * ky, self.head.width() * kx, self.head.height() * ky)
         out.feet = QPointF(self.feet.x() * kx, self.feet.y() * ky)
         out.hair_style, out.hair = self.hair_style, make_hair(self.hair_style, seed=33)
@@ -246,6 +309,7 @@ class Rig:
         else:                                                  # the other arm tucks in a little
             world += out * -6 * pose.reach
         world += lead * SWEEP_DEGREES * pose.sweep             # both trail behind the dash
+        world += ARM_SWING * pose.stride * (1 if arm == "right" else -1) * 0.6 + ARM_SWING * pose.stride * 0.4
         return world - LEAN_DEGREES * pose.lean * 0.92         # and hang with gravity, not the lean
 
     def _arm(self, arm: str, pose: Pose, side: str) -> QTransform:
@@ -353,7 +417,20 @@ class Rig:
         p.translate(0, self.feet.y())
         p.scale(1, squash)
         p.translate(0, -self.feet.y())
-        p.drawImage(QPointF(0, 0), self.lower)
+        if pose.stride and self.legs:                   # walking: each leg on its own
+            p.drawImage(QPointF(0, 0), self.hips)
+            for side in ("left", "right"):
+                up = max(0.0, pose.stride if side == "right" else -pose.stride)
+                joint = self.hip_joints[side]
+                p.save()
+                p.translate(joint)
+                p.rotate(LEG_SWAY * pose.stride)
+                p.scale(1, 1 - LEG_LIFT * up)
+                p.translate(-joint)
+                p.drawImage(QPointF(0, 0), self.legs[side])
+                p.restore()
+        else:
+            p.drawImage(QPointF(0, 0), self.lower)
         p.restore()
         p.setTransform(self._upper(pose), True)         # everything above the waist bends
         bald = hair and pose.wild > 0 and self.hair_style == "storm"   # (the traced hair replaces her own)

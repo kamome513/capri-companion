@@ -12,3 +12,6 @@ try:
     print("making sound right now:", nd.windows_sounding())
 except OSError as exc:
     print("no speakers on this machine:", exc)
+
+import soundcard  # noqa: E402,F401  (clips: speaker sound - its C headers must be there)
+print("soundcard ok")

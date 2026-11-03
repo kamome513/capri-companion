@@ -70,10 +70,66 @@ def speech_chunks(text: str, first: int = 45) -> list[str]:
     return [head] + (split_sentences(rest) if rest else [])
 
 
+mic_device: Callable[[], str] = lambda: ""     # "Her voice in your mic": a second output (a virtual cable)
+
+
+def output_devices() -> list[str]:
+    """Names of the PC's speakers / headphones / virtual cables (for "Her voice in your mic")."""
+    try:
+        import sounddevice as sd
+        names = []
+        for d in sd.query_devices():
+            if d.get("max_output_channels", 0) > 0 and d["name"] not in names:
+                names.append(d["name"])
+        return names
+    except Exception:
+        return []
+
+
+def _play_on(name: str, samples, rate: int) -> Callable[[], None]:
+    """Also play her line on the device called `name` (resampled to what it wants). Returns stop()."""
+    if not name:
+        return lambda: None
+    import numpy as np
+    import sounddevice as sd
+    index = next((i for i, d in enumerate(sd.query_devices())
+                  if d["name"] == name and d.get("max_output_channels", 0) > 0), None)
+    if index is None:
+        return lambda: None
+    target = int(sd.query_devices(index).get("default_samplerate") or rate)
+    data = np.asarray(samples, dtype=np.float32).reshape(-1)
+    if target != rate and len(data):
+        n = int(len(data) * target / rate)
+        data = np.interp(np.linspace(0, len(data) - 1, n), np.arange(len(data)), data).astype(np.float32)
+    stop = threading.Event()
+
+    def run() -> None:
+        try:
+            with sd.OutputStream(device=index, samplerate=target, channels=1, dtype="float32") as out:
+                block = max(256, target // 50)
+                for at in range(0, len(data), block):
+                    if stop.is_set():
+                        break
+                    out.write(data[at:at + block].reshape(-1, 1))
+        except Exception as exc:
+            log.info("speech: couldn't play on %r: %s", name, exc)
+    threading.Thread(target=run, daemon=True, name="capri-voice-mic").start()
+    return stop.set
+
+
 def _sounddevice_player(samples, rate):
     import sounddevice as sd
     sd.play(samples, rate)
-    return sd.stop
+    try:
+        also = _play_on(mic_device(), samples, rate)       # her voice in your mic, too
+    except Exception as exc:
+        log.info("speech: no second output: %s", exc)
+        also = lambda: None                              # noqa: E731
+
+    def stop() -> None:
+        sd.stop()
+        also()
+    return stop
 
 
 log = logging.getLogger("capri")

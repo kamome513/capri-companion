@@ -30,6 +30,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 log = logging.getLogger("capri")
 
 PORT = 3271
+BIG_MOMENTS = {"triple", "quad", "ace", "match_win"}      # saved as clips with "Save big moments"
 RANK = ["encourage", "kill", "first_blood", "headshot", "double", "triple", "quad", "ace", "round_win", "match_win"]
 BURST_MS = 900            # kills this close together become one line ("Triple!")
 MIN_GAP = 2.0             # seconds between her lines
@@ -242,6 +243,7 @@ class GameHype(QObject):
         self._server: ThreadingHTTPServer | None = None
         self._pending: list[str] = []
         self._last_said = -1e9
+        self.on_big_moment: Callable[[str], None] | None = None   # a triple kill, an ace, a win
         self._flush = QTimer(self)
         self._flush.setSingleShot(True)
         self._flush.timeout.connect(self._say_best)
@@ -367,10 +369,17 @@ class GameHype(QObject):
 
     def _say_best(self) -> None:
         events, self._pending = self._pending, []
-        if not events or self.busy() or self.clock() - self._last_said < MIN_GAP:
+        if not events:
             return
         best = max(events, key=lambda e: RANK.index(e) if e in RANK else -1)
         if best == "kill" and events.count("kill") >= 2:
             best = "double" if events.count("kill") == 2 else "triple"
+        if best in BIG_MOMENTS and self.on_big_moment is not None:
+            try:
+                self.on_big_moment(best)                      # "Save big moments": a clip of it
+            except Exception:
+                log.exception("game hype: big moment")
+        if self.busy() or self.clock() - self._last_said < MIN_GAP:
+            return
         self._last_said = self.clock()
         self.say(line(best, getattr(self.settings, "personality", "edgerunner")))

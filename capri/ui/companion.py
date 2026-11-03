@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QPoint, QRect, QTimer, Signal
-from PySide6.QtGui import QGuiApplication, QScreen
+import time
+from typing import Callable
+
+from PySide6.QtCore import QObject, QPoint, QPointF, QRect, QTimer, Signal
+from PySide6.QtGui import QCursor, QGuiApplication, QScreen
 
 from .. import emotions
 from ..controller import CompanionController
@@ -28,6 +31,7 @@ LOUNGE_OVERLAP = 7   # px of Capri's body resting over the panel's top edge when
 class Companion(QObject):
     context_menu_requested = Signal(QPoint)
     settings_changed = Signal()
+    patted = Signal(str)                  # "head" (a head pat) / "body" (a poke): click her
     drone_changed = Signal(bool)          # game mode on / off (the app frees memory for your game)
     perch_dropped = Signal()              # you dragged her off the window she was sitting on
 
@@ -41,6 +45,7 @@ class Companion(QObject):
         self.hidden = False   # "Hide Capri" is temporary, never saved
         self.drone = False    # game mode: she's a little flying disk (never saved)
         self.busy_elsewhere = False   # a show (dash, greeting) has her out of her window for a moment
+        self.on_throw: Callable[[QPointF], bool] | None = None   # a flick-and-let-go: fling.ThrowShow
         self._lying_raised = False
         self.perch_rect: QRect | None = None  # the window she's sitting on ("Sit on windows")
         self._panel_home = QPoint()
@@ -71,6 +76,8 @@ class Companion(QObject):
         for window in (self.character, self.panel, self.drone_window, self.sit_window):
             window.context_menu_requested.connect(self.context_menu_requested)
             window.set_click_through(settings.click_through)
+        self.character.clicked.connect(self._clicked)
+        self._last_pat = -1e9
         for window in (self.character, self.panel):
             window.drag_started.connect(self._drag_start)
             window.drag_moved.connect(self._drag_move)
@@ -252,13 +259,37 @@ class Companion(QObject):
         self.settings.save()
 
     # -- dragging -------------------------------------------------------------------
+    def _clicked(self, at: QPoint) -> None:
+        """A click on her: her head (the top third of her) is a pat, the rest a poke. Not every millisecond."""
+        if self.hidden or self.drone or not getattr(self.settings, "head_pats", True):
+            return
+        if time.monotonic() - self._last_pat < 1.2:
+            return
+        body = self.content_geometry()
+        if not body.contains(at):
+            return
+        self._last_pat = time.monotonic()
+        self.patted.emit("head" if at.y() < body.top() + body.height() * 0.33 else "body")
+
     def _drag_start(self) -> None:
         self._drag_origin = self.character.pos()
+        self._drag_samples = [(time.monotonic(), QPointF(QCursor.pos()))]
 
     def _drag_move(self, delta: QPoint) -> None:
         self._move_character(self._drag_origin + delta)
+        samples = getattr(self, "_drag_samples", [])
+        samples.append((time.monotonic(), QPointF(QCursor.pos())))
+        del samples[:-12]
 
     def _drag_end(self) -> None:
+        """Let go: thrown if you flicked her (see fling.py), else she stays where you put her."""
+        from .fling import speed_of
+        samples = getattr(self, "_drag_samples", [])
+        if samples and time.monotonic() - samples[-1][0] > 0.06:
+            samples = []                                    # you stopped before letting go: no throw
+        self._drag_samples = []
+        if self.on_throw is not None and samples and self.on_throw(speed_of(samples)):
+            return
         self._remember_position()
 
     # -- options (each one is saved) -------------------------------------------------------

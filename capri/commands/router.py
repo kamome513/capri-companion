@@ -141,6 +141,10 @@ class Services:
     restart: Callable[[], None] | None = None   # "restart yourself": a fresh Capri (installs a waiting update)
     doctor: Any = None              # ai.doctor.AIDoctor: "set up your brain"
     ollama_setup: Callable[[Callable[[str], None]], Any] | None = None   # progress -> ai.ollama_setup.OllamaSetup
+    roam: Any | None = None             # ui.roam.RoamShow: "go for a walk"
+    clips: Any | None = None            # integrations.clips.ClipRecorder: "clip that"
+    screen_watch: Any | None = None     # integrations.screen_watch.ScreenWatch: "what do you see?"
+    clips_turn_on: Callable[[Callable[[str], None]], None] | None = None   # progress -> turn clips on (downloads)
 
 
 class _Bridge(QObject):
@@ -398,7 +402,7 @@ class CommandRouter(QObject):
             Kind.PC_INFO: self._pc_info, Kind.SCREENSHOT: self._screenshot, Kind.PERSONALITY: self._personality,
             Kind.SCREEN: self._screen, Kind.REPEAT: self._repeat, Kind.MOVE: self._move, Kind.AI_SETUP: self._ai_setup,
             Kind.SHORTCUT: self._shortcut, Kind.FORGET: self._forget, Kind.MUSIC_SERVICE: self._music_service,
-            Kind.LEARN_BUTTON: self._learn_button, Kind.FORGET_BUTTON: self._forget_button, Kind.TYPE: self._type, Kind.HAIR: self._hair, Kind.SETTINGS: self._settings, Kind.UPDATE: self._update, Kind.RESTART_APP: self._restart_app,
+            Kind.LEARN_BUTTON: self._learn_button, Kind.FORGET_BUTTON: self._forget_button, Kind.TYPE: self._type, Kind.HAIR: self._hair, Kind.SETTINGS: self._settings, Kind.UPDATE: self._update, Kind.RESTART_APP: self._restart_app, Kind.ROAM: self._roam, Kind.CLIP: self._clip, Kind.LOOK: self._look, Kind.WATCH: self._watch,
             Kind.QUIET: self._quiet, Kind.VOICE: self._voice, Kind.TIMER: self._timer,
             Kind.PERCH_ON: lambda i: self._perch(True), Kind.PERCH_OFF: lambda i: self._perch(False),
             Kind.HYPE_ON: lambda i: self._hype(True), Kind.HYPE_OFF: lambda i: self._hype(False),
@@ -2065,6 +2069,98 @@ class CommandRouter(QObject):
             return self.assistant.show_result(State.ERROR, "My settings aren't available here.")
         opener()
         self.assistant.show_result(State.SUCCESS, "Here are my settings.", emotion="happy")
+
+    def _clip(self, intent: Intent) -> None:
+        """'Clip that' / 'clip the last minute': the last seconds of your screen (and sound) as a video."""
+        clips, s = self.services.clips, self.services.settings
+        if clips is None or s is None:
+            return self.assistant.show_result(State.ERROR, "I can't record clips here.")
+        if not s.clips:
+            def answer(yes: bool) -> None:
+                if not yes:
+                    return self.assistant.show_result(State.IDLE, "Okay. It's in my Settings if you change your mind.")
+                self._clips_on()
+            return self.assistant.confirm("Clips are off, so I didn't catch that one. Want me to start keeping the "
+                                          "last two minutes of your games? Say yes or no.", answer)
+        if not clips.recording:
+            why = "I only record while you're in a game" if s.clip_when == "games" else \
+                f"I'm not recording right now{' (' + clips.problem + ')' if clips.problem else ''}"
+            return self.assistant.show_result(State.ERROR, f"{why}, so there's nothing to clip.")
+        seconds = int(intent.query) if intent.query.isdigit() else int(s.clip_length)
+        self.controller.set_state(State.PROCESSING, "Clipping...")
+
+        def done(result) -> None:
+            if isinstance(result, Exception):
+                return self.assistant.show_result(State.ERROR, f"Couldn't clip that: {result}.")
+            self.controller.log("Clip", result.name)
+            span = "minute" if seconds == 60 else f"{seconds // 60} minutes" if seconds % 60 == 0 else f"{seconds} seconds"
+            self.assistant.show_result(State.SUCCESS, f"Clipped! The last {span}, in your clips folder.",
+                                       emotion="happy")
+        self._background(lambda: clips.save(seconds), done)
+
+    def _look(self, intent: Intent) -> None:
+        """'What do you see?' / 'look at my screen': a picture of your screen to her AI, and her answer."""
+        watch = self.services.screen_watch
+        if watch is None:
+            return self.assistant.show_result(State.ERROR, "I can't see your screen here.")
+        self.controller.set_state(State.PROCESSING, "Looking...")
+        watch.ask(intent.query, lambda text, emotion: self.assistant.show_result(
+            State.SUCCESS if emotion != "confused" else State.ERROR, text, emotion=emotion))
+
+    def _watch(self, intent: Intent) -> None:
+        """'Watch my screen' / 'stop watching my screen'."""
+        s = self.services.settings
+        if s is None:
+            return self.assistant.show_result(State.ERROR, "I can't watch your screen here.")
+        s.watch_screen = intent.query == "on"
+        s.save()
+        if s.watch_screen:
+            every = int(s.watch_every)
+            span = f"{every // 60} minutes" if every >= 120 else "minute"
+            return self.assistant.show_result(State.SUCCESS, f"Watching. I'll glance at your screen every {span} - "
+                                                             "it goes to your AI to see it.", emotion="playful")
+        self.assistant.show_result(State.SUCCESS, "Okay, I'll stop watching your screen.")
+
+    def _clips_on(self) -> None:
+        turn_on = self.services.clips_turn_on
+        if turn_on is None:
+            return self.assistant.show_result(State.ERROR, "I can't record clips here.")
+        self.controller.set_state(State.PROCESSING, "Setting up clips...")
+
+        def progress(text: str) -> None:
+            self._bridge.done.emit(lambda t: self.controller.set_state(State.PROCESSING, t), text)
+
+        def done(result) -> None:
+            if isinstance(result, Exception):
+                from ..net import friendly
+                return self.assistant.show_result(State.ERROR, f"Clips didn't turn on: {friendly(result)}.")
+            self.assistant.show_result(State.SUCCESS, "Clips are on. I keep the last two minutes of your games - "
+                                                      "say clip that and I'll save it.", emotion="happy")
+        self._background(lambda: turn_on(progress), done)
+
+    def _roam(self, intent: Intent) -> None:
+        """'Go for a walk' (now), 'stay there' (no more roaming), 'start roaming' (roam again)."""
+        roam, s = self.services.roam, self.services.settings
+        if roam is None or s is None:
+            return self.assistant.show_result(State.ERROR, "I can't walk around here.")
+        if intent.query == "stay":
+            s.roam = False
+            s.save()
+            roam.stop()
+            return self.assistant.show_result(State.SUCCESS, "Okay, I'll stay put.")
+        if intent.query == "on":
+            s.roam = True
+            s.save()
+            return self.assistant.show_result(State.SUCCESS, "I'll wander around now and then.")
+        self.assistant.show_result(State.SUCCESS, "Stretching my legs.")
+        tries = [0]
+
+        def go() -> None:                    # once she's done saying it (she only walks when idle)
+            if roam.walk() or tries[0] >= 12:
+                return
+            tries[0] += 1
+            QTimer.singleShot(500, go)
+        QTimer.singleShot(600, go)
 
     def _restart_app(self, intent: Intent) -> None:
         """'Restart yourself': close and start again (a downloaded update installs on the way)."""

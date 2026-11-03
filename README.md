@@ -153,6 +153,38 @@ open Chrome") or pause after her name. Her frame turns green while she's listeni
 | "click subscribe" / "click that" | Clicks a button you can see on screen |
 | "highlight hello" / "copy that" / "right click that" / "scroll down" | Hands on your screen |
 
+**Clips**
+
+| Say | What happens |
+|---|---|
+| "clip that" / "clip it" | Saves the last 30 seconds of your screen and sound as a video (Videos\Capri Clips) |
+| "clip the last minute" / "clip the last 2 minutes" / "save the last 45 seconds" | Saves that much (up to 2 minutes) |
+
+Turn on **Clip my games** in Settings → PC & chat first. While it's on, she keeps the last two minutes
+recording (only while you're in a game, unless you pick *Always*), on your PC. On Windows the recorder
+(ffmpeg, about 31 MB) downloads once when you turn it on. On Linux install ffmpeg first
+(`sudo apt install ffmpeg`).
+
+**Your screen**
+
+| Say | What happens |
+|---|---|
+| "what do you see?" / "look at my screen" / "what am I doing?" / "what do you think of this?" | She looks at your screen and answers |
+| "watch my screen" / "stop watching my screen" | She glances at your screen every few minutes and comments |
+
+Needs an AI that can see pictures (ChatGPT, Gemini, Claude, or Ollama with `gemma3` / `llava`). The picture
+goes to that AI. With Ollama it stays on your PC. She won't look while a password manager, bank, sign-in
+page or private window is in front.
+
+**Moving her around**
+
+| Do / say | What happens |
+|---|---|
+| Drag her | Moves her |
+| Flick her and let go | Throws her. Hit a wall hard and she slams into it, slides down, sees stars and gets up |
+| Click her head | A head pat (click her body: a poke) |
+| "go for a walk" / "stay there" / "start roaming" | She walks somewhere else along the bottom, or stays put |
+
 **Timers, time and weather**
 
 | Say | What happens |
@@ -303,16 +335,17 @@ install something.
 | **Spoken replies** | Talk out loud or not |
 | **Night City slang** | "Preem, choom." On or off |
 | **Personality** | How she talks |
-| **Voice** | Her neural "Capri" voice, Windows voices (Linux: espeak-ng), ElevenLabs or beeps |
+| **Voice** | Her neural "Capri" voice, Windows voices (Linux: espeak-ng), ElevenLabs, Fish Audio or beeps |
 | **Download Capri's voice** | Her neural voice (120 MB, once) |
 | **ElevenLabs key / voice** | Use an ElevenLabs voice (needs their key) |
+| **Fish Audio key / voice** | Use a Fish Audio voice (sign up free at fish.audio, they give free credits). Paste a voice's link or ID from their library |
 | **Style, Volume, Speed, Pitch, Expression** | Tune how she sounds |
 | **Test voice** / **Capri preset** | Hear her / reset to her default sound |
 | **Home city, Units, Test weather** | For "what's the weather" |
 | **Play music on** | Spotify, YouTube Music, SoundCloud, YouTube... |
 | **Client ID, Connect, Disconnect, Test Spotify** | Connect Spotify (Premium) so she can start exact songs and say what's playing |
 | **Chatbot** | Chat with her about anything |
-| **AI, Address, API key** | Pick an AI and paste its key. A free Google Gemini key works |
+| **AI, Address, API key** | Pick an AI and paste its key: ChatGPT, Gemini (free key), Groq, NVIDIA (build.nvidia.com, free credits), OpenRouter, DeepSeek, Mistral, xAI, Claude, Ollama... |
 | **Set up Ollama for me** | A free AI that runs on your PC, no key needed: installs Ollama, downloads a model that suits your PC (about 3 GB) and switches her to it. Or say "set up your brain" |
 | **Model** / **Show my models** | Pick from the models your key (or Ollama) actually has. Empty = a sensible default |
 | **Test AI** / **Last try** | Checks the AI works, and shows what happened last time |
@@ -331,6 +364,11 @@ install something.
 | **Update automatically** / **Check for updates now** | Daily check for a new Capri: downloads it and installs it on her next start. Off = she only tells you |
 | **Restart Capri** | Closes and starts her again (installs a downloaded update) |
 | **Game hype** (cheer for kills, say something when I die, watch my screen, encourage me) / **Preview** | Hype while you play: CS2, Dota 2 and League directly, any game by reading your screen |
+| **Clip my games** / Record / "Clip that" saves / Frame rate / Resolution / With sound / Save big moments | Clips (see Clips above). *Save big moments* clips triple kills, aces and wins by itself (needs Game hype) |
+| **Choose folder / Open clips folder** | Where clips go (Videos\Capri Clips) |
+| **Watch my screen and comment** / How often / Remember what she sees | She glances at your screen and comments (see Your screen above) |
+| **Throw her** / **Roam around** / **Head pats** | Flick-and-throw, little walks along the bottom of the screen, reacting to clicks |
+| **Also play her voice on** | Her voice in your mic: pick a virtual cable (VB-Audio "CABLE Input", free) or "Steam Streaming Speakers", then pick the matching mic in Discord or Roblox. Your friends hear her |
 | **Toggle Mute / Deafen keybind** | Your Discord keybinds, if you changed Discord's defaults |
 | **Show "Playing Capri" on my Discord profile** | Your friends see animated Capri on your profile with **Get Capri** and **Join her Discord** buttons (Discord hides your own buttons from you; friends see them). It says **Plugged in**, or **Vibing to music** while a music app or music site plays (never which song). While you're in a game she steps off Discord, so your game shows instead. She's back when it closes |
 | **Your voice channel** / **Leave call keybind** / **Join it now** | For "join call" and "leave call". Right-click the channel in Discord → Copy Link |
@@ -349,6 +387,10 @@ install something.
   (never which song). While you're in a game she isn't shown at all. Nothing else about what you do is shown. To check for music, she
   asks Windows' sound mixer (Linux: your media players) which apps are making sound. Turn it off in
   Settings → PC & chat (Discord's own Activity Privacy setting also applies).
+- **Watch my screen** and "what do you see?" send a picture of your screen to the AI you picked (with Ollama it
+  stays on your PC). It's off until you turn it on, and she won't look at password managers, banks, sign-in
+  pages or private windows.
+- **Clips** are recorded and saved on your PC only.
 - She never runs commands an AI makes up. She can only do the fixed actions in this manual, and
   shutting down, restarting or sleeping always asks you first.
 

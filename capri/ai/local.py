@@ -107,6 +107,23 @@ class LocalBrain:
             self.reset()
             return AIReply(f"Can't reach Ollama at {self._base()}. Is the Ollama app running?", error=True)
 
+    def look(self, prompt: str, jpeg_b64: str) -> AIReply:
+        """One look at a picture (your screen) - needs a model that can see (llava, gemma3, llama3.2-vision...)."""
+        body = {"model": self._use_model(), "stream": False, "keep_alive": "3m",
+                "messages": [{"role": "system", "content": system_prompt(self._slang(), self._persona())},
+                             {"role": "user", "content": prompt, "images": [jpeg_b64]}]}
+        try:
+            data = self._fetch("POST", self._base() + "/api/chat", timeout=TIMEOUT * 2, json_body=body) or {}
+        except http.HttpError as exc:
+            if "image" in (exc.body or "").lower() or "vision" in (exc.body or "").lower():
+                return AIReply(f"{self._use_model()} can't see pictures. Try: ollama pull gemma3", error=True,
+                               blind=True)
+            return AIReply(f"My local AI glitched ({exc.status}).", error=True)
+        except OSError:
+            return AIReply(f"Can't reach Ollama at {self._base()}.", error=True)
+        feeling, said = emotions.split_tag(((data.get("message") or {}).get("content") or "").strip())
+        return AIReply(said.strip(), emotion=feeling)
+
     def _loop(self) -> AIReply:
         system = system_prompt(self._slang(), self._persona())
         last = next((m.get("content", "") for m in reversed(self.messages) if m.get("role") == "user"), "")
@@ -209,6 +226,13 @@ class Brains:
                 return AIReply(f"{why} I'm on my built-in chat till then.", error=True, missing=True)
             return AIReply("", error=True, missing=True)
         return brain.ask(text)
+
+    def look(self, prompt: str, jpeg_b64: str) -> AIReply:
+        """Show the picked AI a picture. No AI: missing=True."""
+        brain = self._pick()
+        if brain is None:
+            return AIReply("", error=True, missing=True)
+        return brain.look(prompt, jpeg_b64)
 
     def reset(self) -> None:
         for brain in (self.claude, self.local, self.openai):

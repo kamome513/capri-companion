@@ -198,6 +198,7 @@ class AIReply:
     missing: bool = False          # no AI reachable (no Ollama running, no Claude key): use small talk
     intents: list = field(default_factory=list)   # several actions in a row ("open Notepad, then type hi")
     detail: str = ""               # on an error: the service's own words ("You exceeded your current quota...")
+    blind: bool = False            # look(): this AI can't take pictures (pick a model that can see)
 
 
 class ClaudeBrain:
@@ -265,6 +266,38 @@ class ClaudeBrain:
                 return AIReply("My Claude key has no credit. Add some at console.anthropic.com, under Billing.",
                                error=True, detail=str(exc)[:200])
             return AIReply(f"The AI glitched out ({exc.status_code}).", error=True, detail=str(exc)[:200])
+
+    def look(self, prompt: str, jpeg_b64: str) -> AIReply:
+        """One look at a picture (your screen), no history and no tools. Blocking - call from a worker thread."""
+        try:
+            import anthropic
+        except ImportError:
+            return AIReply("My AI module isn't installed. Run setup again.", error=True)
+        key = self._api_key()
+        if self._client is None or key != self._client_key:
+            self._client, self._client_key = self._client_factory(key), key
+        try:
+            response = self._client.beta.messages.create(
+                model=MODEL, max_tokens=2000, betas=[FALLBACK_BETA], fallbacks="default",
+                output_config={"effort": "low"},
+                system=system_prompt(self._slang(), self._persona()),
+                messages=[{"role": "user", "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": jpeg_b64}},
+                    {"type": "text", "text": prompt}]}],
+            )
+        except anthropic.AuthenticationError:
+            return AIReply("My AI key doesn't work. Check it in Settings.", error=True)
+        except anthropic.RateLimitError:
+            return AIReply("The AI's rate limited. Give it a minute.", error=True)
+        except anthropic.APIConnectionError:
+            return AIReply("Can't reach the AI right now.", error=True)
+        except anthropic.APIStatusError as exc:
+            return AIReply(f"The AI glitched out ({exc.status_code}).", error=True, detail=str(exc)[:200])
+        if response.stop_reason == "refusal":
+            return AIReply("", error=True)
+        said = " ".join(b.text for b in response.content if b.type == "text").strip()
+        feeling, said = emotions.split_tag(said)
+        return AIReply(said.strip(), emotion=feeling)
 
     def _loop(self) -> AIReply:
         for _ in range(4):   # at most a few info-tool round trips per question

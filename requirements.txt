@@ -4,6 +4,7 @@ sounddevice>=0.4.6
 psutil>=5.9
 numpy>=1.26
 comtypes>=1.2; sys_platform == "win32"
+soundcard==0.4.5; sys_platform == "win32"      # clips: the sound your speakers play
 python-xlib>=0.33; sys_platform == "linux"      # Linux: windows, typing, hotkeys (X11 / XWayland)
 anthropic>=2.3,<3
 # Secure downloads on every PC: check certificates the way Windows / browsers do (antivirus HTTPS scanning)

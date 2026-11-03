@@ -1,3 +1,3 @@
 """Capri - a cyberpunk desktop companion."""
 
-__version__ = "1.38.2"
+__version__ = "1.39.0"

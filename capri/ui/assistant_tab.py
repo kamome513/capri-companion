@@ -33,6 +33,8 @@ def voice_label(name: str) -> str:
         return f"Beeps - {kind} (no words, like old Pok\u00e9mon games)"
     if name.startswith("elevenlabs: "):
         return "ElevenLabs (online, your key)"
+    if name.startswith("fish: "):
+        return "Fish Audio (online, your key)"
     return name
 
 
@@ -127,6 +129,15 @@ class AssistantTab(QWidget):
         self.eleven_voice = QLineEdit(s.elevenlabs_voice)
         self.eleven_voice.setPlaceholderText("voice ID (Voice Library -> a voice -> copy its ID); empty = a standard voice")
         form.addRow("ElevenLabs voice", self.eleven_voice)
+        # Fish Audio: like ElevenLabs, with free credits to start (fish.audio -> API keys)
+        self.fish_key = QLineEdit(secrets.get("fish_audio_api_key"))
+        self.fish_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.fish_key.setPlaceholderText("Fish Audio API key (fish.audio -> sign in -> API Keys)")
+        self.fish_key.editingFinished.connect(self._fish_key_entered)
+        form.addRow("Fish Audio key", self.fish_key)
+        self.fish_voice = QLineEdit(s.fish_voice)
+        self.fish_voice.setPlaceholderText("a voice's link or ID (fish.audio/m/...); empty = their default voice")
+        form.addRow("Fish Audio voice", self.fish_voice)
         # Her neural voice: natural and expressive instead of the robotic Windows voices.
         self.neural_status = QLabel()
         self.neural_status.setObjectName("hint")
@@ -340,6 +351,15 @@ class AssistantTab(QWidget):
             if new_key:                                # you just added a key: that's the voice you want
                 self.voice.setCurrentIndex(self.voice.findData(ElevenLabsEngine.NAME))
         s.elevenlabs_voice = self.eleven_voice.text().strip()
+        from ..speech.engines import FishAudioEngine
+        fish_key = self.fish_key.text().strip()
+        if fish_key != secrets.get("fish_audio_api_key"):
+            secrets.set_many({"fish_audio_api_key": fish_key})
+            if fish_key and self.voice.findData(FishAudioEngine.NAME) < 0:
+                self.voice.addItem(voice_label(FishAudioEngine.NAME), FishAudioEngine.NAME)
+            if fish_key:
+                self.voice.setCurrentIndex(self.voice.findData(FishAudioEngine.NAME))
+        s.fish_voice = FishAudioEngine.voice_from(self.fish_voice.text())
         s.speech_voice = self.voice.currentData()
         s.speech_style = self.style_box.currentData()
         s.speech_volume = self.volume.value() / 100
@@ -404,7 +424,7 @@ class AssistantTab(QWidget):
 
     def _ai_picked(self) -> None:
         """Only the boxes the chosen AI needs: no Ollama model when you picked ChatGPT, and so on."""
-        from ..ai.openai_compat import PRESETS
+        from ..ai.openai_compat import KEY_HINTS, PRESETS
         picked = self.ai_pick.currentData() or "auto"
         preset = picked.split(":", 1)[1] if picked.startswith("openai:") else ""
         _label, url, model, needs_key = PRESETS.get(preset, PRESETS["custom"])
@@ -416,8 +436,8 @@ class AssistantTab(QWidget):
             self._ai_form.setRowVisible(widget, visible)
         self.ai_url.setPlaceholderText(url or "https://.../v1")
         self.ai_model.setPlaceholderText(model or "the model's name")
-        self.ai_key.setPlaceholderText("your API key (ChatGPT: platform.openai.com -> API keys)"
-                                       if preset in ("openai", "") else "your API key from the service's website")
+        self.ai_key.setPlaceholderText(f"your API key ({KEY_HINTS.get(preset or 'openai')})"
+                                       if (preset or "openai") in KEY_HINTS else "your API key from the service's website")
         self.ai_hint.setText({
             "auto": "Uses ChatGPT (or another service) if you've added its key, else Claude with a key, else Ollama.",
             "claude": "Your own key from console.anthropic.com. Paid per use.",
@@ -559,6 +579,14 @@ class AssistantTab(QWidget):
             return
         self.apply()
         if self.eleven_key.text().strip():
+            self._test_voice()
+
+    def _fish_key_entered(self) -> None:
+        """You pasted a Fish Audio key: switch her to that voice and let you hear it (or why not)."""
+        if self.fish_key.text().strip() == secrets.get("fish_audio_api_key"):
+            return
+        self.apply()
+        if self.fish_key.text().strip():
             self._test_voice()
 
     def _music_picked(self) -> None:

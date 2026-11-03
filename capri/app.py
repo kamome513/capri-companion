@@ -57,7 +57,7 @@ from .integrations.weather import Weather
 from .session import SessionWatcher
 from .settings import Settings
 from .states import State
-from .speech.engines import ElevenLabsEngine, VoiceBox
+from .speech.engines import ElevenLabsEngine, FishAudioEngine, VoiceBox
 from .speech.speaker import Speaker
 from .ui.art import CharacterArt
 from .ui.assistant_tab import AssistantTab
@@ -272,6 +272,8 @@ def main(argv: list[str] | None = None) -> int:
     service.set_learned(settings.wake_variants)          # how she hears your voice say her name (taught)
     ElevenLabsEngine.key = staticmethod(lambda: secrets.get("elevenlabs_api_key"))
     ElevenLabsEngine.voice_id = staticmethod(lambda: settings.elevenlabs_voice)
+    FishAudioEngine.key = staticmethod(lambda: secrets.get("fish_audio_api_key"))
+    FishAudioEngine.voice_id = staticmethod(lambda: settings.fish_voice)
     speaker = Speaker(settings, VoiceBox)
     assistant = Assistant(controller, settings, service, speaker)
     assistant.typing = TypingWatch()          # ignores what the mic "hears" while you're typing
@@ -373,6 +375,36 @@ def main(argv: list[str] | None = None) -> int:
     services.zap = lambda name, pids, then: zapper.zap(name, pids, then) if settings.teleport else then()
 
     visit_show = VisitShow(companion)
+
+    def figure_rig():                          # her full-body figure at her current size (dash, throw, walk)
+        visit_show.fh = companion.character.figure_height()
+        return visit_show.rig()
+    from .ui.fling import ThrowShow
+    throw_show = ThrowShow(companion, figure_rig, lambda text, emotion: assistant.say(text, emotion=emotion),
+                           enabled=lambda: settings.throwable)
+    companion.on_throw = throw_show.throw     # flick her and let go: she flies (and slams into the wall)
+    app._throw_show = throw_show
+    import random as _random
+    PATS = {"head": ["Hehe. Okay, that's nice.", "Pat accepted.", "Mm. Again.", "Don't mess up my hair. ...Fine, once more.",
+                     "Purring in binary.", "You're sweet, choom."],
+            "body": ["Hey! Rude.", "That tickles.", "Poke me again and I bite.", "What? I'm working.", "Yes? Need something?"]}
+
+    def patted(where: str) -> None:           # click her head: a pat; anywhere else: a poke
+        if assistant._busy or controller.state in (State.LISTENING, State.PROCESSING):
+            return
+        line = _random.choice(PATS[where])
+        controller.log("Pat" if where == "head" else "Poke", line)
+        controller.set_state(State.SUCCESS, line, emotion="happy" if where == "head" else "surprised")
+        assistant.say(line, emotion="happy" if where == "head" else "surprised")
+    companion.patted.connect(patted)
+    from .speech import speaker as speaker_mod
+    speaker_mod.mic_device = lambda: settings.mic_voice_device     # "Her voice in your mic"
+    from .ui.roam import RoamShow
+    roam_show = RoamShow(companion, figure_rig, enabled=lambda: settings.roam,
+                         idle=lambda: not assistant._busy and not throw_show.active and not visit_show.active)
+    roam_show.start()                         # a little walk along the bottom of the screen now and then
+    services.roam = roam_show
+    app._roam_show = roam_show
 
     def zap_button(rect, pids: list[int], then, kind: str = "mute") -> None:
         """She dashes right up to Discord's Mute / Deafen button and zaps it (pressed on impact).
@@ -492,6 +524,89 @@ def main(argv: list[str] | None = None) -> int:
     status = now_doing.StatusWatch(presence.set_doing, gaming, music,
                                    wanted=lambda: settings.discord_presence and presence.available)
     services.games.changed.connect(lambda on: status.tick())   # a game opened / closed: right away
+    # Clips: the last two minutes of your game, on disk, while it should be recording ("clip that" saves it)
+    from .integrations import clips as clipmod
+    clips = clipmod.ClipRecorder(settings)
+    services.clips = clips
+    clip_state = {"starting": False}
+
+    def clips_tick() -> None:
+        try:
+            want = settings.clips and (settings.clip_when == "always" or gaming())
+        except Exception:
+            want = False
+        clips.check()
+        if want and not clips.recording and not clip_state["starting"]:
+            clip_state["starting"] = True
+
+            def go() -> None:
+                try:
+                    clips.start()
+                finally:
+                    clip_state["starting"] = False
+            threading.Thread(target=go, daemon=True, name="capri-clips-start").start()
+        elif not want and clips.recording:
+            clips.stop()
+    clip_timer = QTimer(app)
+    clip_timer.setInterval(4000)
+    clip_timer.timeout.connect(clips_tick)
+    clip_timer.start()
+    app.aboutToQuit.connect(clips.stop)
+
+    def clips_turn_on(progress) -> None:      # (a background thread) the recorder first, if it's missing
+        if not clipmod.find_ffmpeg():
+            if sys.platform != "win32":
+                raise OSError("install ffmpeg first (sudo apt install ffmpeg), then try again")
+            progress("Downloading the clip recorder... 0%")
+            clipmod.download_ffmpeg(lambda pct: progress(f"Downloading the clip recorder... {pct}%"))
+        settings.clips = True
+        settings.save()
+    services.clips_turn_on = clips_turn_on
+
+    def big_moment(what: str) -> None:        # "Save big moments": a few seconds later (so the moment's in it)
+        if not (settings.clips and settings.clip_moments and clips.recording):
+            return
+
+        def save() -> None:
+            try:
+                path = clips.save(30)
+                log.info("clips: saved a big moment (%s): %s", what, path.name)
+            except OSError as exc:
+                log.info("clips: couldn't save a big moment: %s", exc)
+        QTimer.singleShot(4000, lambda: threading.Thread(target=save, daemon=True).start())
+    hype.on_big_moment = big_moment
+
+    # Watch my screen: a glance now and then (to your AI, which must be able to see pictures), and "what do you see?"
+    from .integrations.screen_watch import ScreenWatch, SeenMemory
+
+    def screen_picture():
+        from PySide6.QtGui import QGuiApplication, QImage
+        if sys.platform == "win32":
+            from .integrations.screen_click import grab
+            sc = clipmod.primary_screen()
+            rgb = grab((sc.x, sc.y, sc.x + sc.width, sc.y + sc.height))
+            if rgb is None:
+                return QImage()
+            import numpy as np
+            h, w = rgb.shape[:2]
+            rgba = np.ascontiguousarray(np.dstack([rgb, np.full((h, w), 255, np.uint8)]))
+            return QImage(rgba.tobytes(), w, h, 4 * w, QImage.Format.Format_RGBA8888).copy()
+        screen = QGuiApplication.primaryScreen()
+        return screen.grabWindow(0).toImage() if screen is not None else QImage()
+
+    def front_title() -> str:
+        try:
+            return desktop.window_title(desktop.foreground())
+        except Exception:
+            return ""
+    from .logs import log_dir
+    watch = ScreenWatch(settings, brain, screen_picture, front_title,
+                        lambda text, emotion: (controller.log("Watch", text[:60]), assistant.say(text, emotion=emotion)),
+                        busy=lambda: assistant._busy or controller.state in (State.LISTENING, State.PROCESSING),
+                        memory=SeenMemory(log_dir() / "seen.json"),
+                        notice=lambda text: assistant.show_result(State.ERROR, text, emotion="confused"))
+    watch.start()
+    services.screen_watch = watch
     status.start()                            # music -> her Discord status; gaming -> she steps aside for your game
     app._status_watch = status
     app.aboutToQuit.connect(status.stop)
@@ -523,7 +638,8 @@ def main(argv: list[str] | None = None) -> int:
                                                          lambda: greet(preview=True), game_hype=hype,
                                                          join_now=lambda: router.handle("join call"),
                                                          updates=services.updates,
-                                                         restart=services.restart), "PC && chat")])
+                                                         restart=services.restart,
+                                                         clips_turn_on=services.clips_turn_on), "PC && chat")])
         win = windows["settings"]
         win.load_rows()
         win.show()
@@ -674,6 +790,14 @@ def main(argv: list[str] | None = None) -> int:
                 "Say \u201cHey Capri, open Discord\u201d. Right-click me (or this tray icon) for settings. "
                 "Your microphone audio is processed on this PC only.",
                 QSystemTrayIcon.MessageIcon.Information, 8000)
+    if not settings.extras_offered and not os.environ.get("CAPRI_NO_EXTRAS"):
+        def offer_extras() -> None:               # once: the things that start off (all in Settings too)
+            from .ui.extras import ExtrasDialog
+            dialog = ExtrasDialog(settings, assistant.settings_changed.emit, services.clips_turn_on)
+            windows["extras"] = dialog
+            dialog.show()
+            dialog.raise_()
+        QTimer.singleShot(9000 if args.startup else 4000, offer_extras)
     if settings.click_through and menu.tray:
         menu.tray.showMessage(
             "Capri", f"Click-through is on. Press {pretty(settings.hotkey_click_through)} "

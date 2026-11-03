@@ -388,6 +388,71 @@ class ElevenLabsEngine:
         return audio
 
 
+class FishAudioEngine:
+    """Fish Audio's online voices (fish.audio: free to sign up, with free credits for its API) - your API key
+    + a voice's ID from its library (fish.audio/m/<ID>), Settings -> Assistant -> Voice.
+    Only the line's text is sent, never audio. No key: not offered."""
+
+    PREFIX = "fish: "
+    NAME = PREFIX + "your Fish Audio voice"
+    URL = "https://api.fish.audio/v1/tts"
+    MODEL = "s1"
+    key: Callable[[], str] = staticmethod(lambda: "")
+    voice_id: Callable[[], str] = staticmethod(lambda: "")
+
+    def __init__(self, fetch=None) -> None:
+        self._fetch = fetch or ElevenLabsEngine._post
+
+    def voices(self) -> list[str]:
+        return [self.NAME] if (type(self).key() or "").strip() else []
+
+    @staticmethod
+    def voice_from(text: str) -> str:
+        """A pasted voice link (https://fish.audio/m/abc123/) or the bare ID -> the ID."""
+        text = (text or "").strip().rstrip("/")
+        if "/m/" in text:
+            text = text.split("/m/", 1)[1].split("/", 1)[0]
+        return text.split("?", 1)[0]
+
+    def synthesize(self, text: str, voice: str, speed: float, pitch: float = 0.0) -> Audio:
+        import io
+        import urllib.error
+        import wave
+        body = {"text": respell(text, plain=True), "format": "wav", "sample_rate": 24000, "latency": "balanced",
+                "prosody": {"speed": round(0.85 + 0.3 * max(0.0, min(1.0, speed)), 2)}}
+        voice_id = self.voice_from(type(self).voice_id())
+        if voice_id:
+            body["reference_id"] = voice_id
+        headers = {"Authorization": "Bearer " + type(self).key().strip(), "model": self.MODEL}
+        try:
+            raw = self._fetch(self.URL, body, headers)
+        except urllib.error.HTTPError as exc:
+            reason = {401: "the key doesn't work", 402: "out of credit", 403: "out of credit / not allowed",
+                      429: "too many requests", 404: "no voice with that ID",
+                      400: "it didn't take that voice ID", 422: "it didn't take that voice ID"}.get(exc.code,
+                                                                                               f"error {exc.code}")
+            raise RuntimeError(f"Fish Audio: {reason}") from None
+        except OSError as exc:
+            raise RuntimeError("Fish Audio: can't reach it") from exc
+        try:
+            with wave.open(io.BytesIO(raw)) as w:
+                rate, width, channels = w.getframerate(), w.getsampwidth(), w.getnchannels()
+                frames = w.readframes(w.getnframes())
+        except (wave.Error, EOFError) as exc:
+            raise RuntimeError("Fish Audio: sent something that isn't audio") from exc
+        if width != 2:
+            raise RuntimeError("Fish Audio: unexpected audio format")
+        samples = np.frombuffer(frames[: len(frames) // 2 * 2], np.int16)
+        if channels > 1:
+            samples = samples.reshape(-1, channels).mean(axis=1).astype(np.int16)
+        audio = _from_int16(samples.tobytes(), rate)
+        audio.pitched, audio.natural = True, True
+        return audio
+
+
+ONLINE = (ElevenLabsEngine, FishAudioEngine)
+
+
 def available_engines() -> list:
     engines = []
     for cls in (KokoroEngine,) + ((SapiEngine,) if sys.platform == "win32" else (EspeakEngine,)) + (PiperEngine,):
@@ -397,7 +462,7 @@ def available_engines() -> list:
                 engines.append(engine)
         except Exception:
             continue   # not installed / no voices: just not offered
-    return [ElevenLabsEngine()] + engines + [BeepEngine()]   # ElevenLabs: offered once you add a key
+    return [ElevenLabsEngine(), FishAudioEngine()] + engines + [BeepEngine()]   # online: once you add a key
 
 
 class VoiceBox:
@@ -418,7 +483,7 @@ class VoiceBox:
         try:
             audio = engine.synthesize(text, voice, speed, pitch)
         except RuntimeError as exc:
-            if not isinstance(engine, ElevenLabsEngine):
+            if not isinstance(engine, ONLINE):
                 raise
             fallback = self.default_voice()                  # online voice failed: her normal one, and say why
             engine = next(e for e in self.engines if fallback in e.voices())
@@ -439,7 +504,8 @@ class VoiceBox:
 
     def default_voice(self) -> str:
         """Her neural voice if installed, else another neural voice, else a female Windows voice."""
-        voices = [v for v in self.voices() if not v.startswith((BeepEngine.PREFIX, ElevenLabsEngine.PREFIX))] \
+        voices = [v for v in self.voices()
+                  if not v.startswith((BeepEngine.PREFIX, ElevenLabsEngine.PREFIX, FishAudioEngine.PREFIX))] \
             or self.voices()
         capri = KokoroEngine.PREFIX + KokoroEngine.CAPRI
         if capri in voices:

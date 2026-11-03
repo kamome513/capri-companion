@@ -49,6 +49,10 @@ class Kind(Enum):
     SETTINGS = "settings"         # "open your settings": her own Settings window
     UPDATE = "update"             # "check for updates" / "update yourself": a newer Capri from GitHub
     RESTART_APP = "restart_app"   # "restart yourself": Capri closes and starts again (not the PC!)
+    ROAM = "roam"                 # query: "walk" (go for a walk now) / "stay" (stop roaming) / "on" (roam again)
+    CLIP = "clip"                 # "clip that": save the last seconds of your screen; query = seconds ("" = usual)
+    LOOK = "look"                 # "what do you see?" / "look at my screen": query = your question
+    WATCH = "watch"               # "watch my screen" (on) / "stop watching my screen" (off): query "on" / "off"
     SHORTCUT = "shortcut"         # "when I say gaming time, open steam and discord": targets = (phrase, command)
     FORGET = "forget"             # "forget the shortcut gaming time": targets = (phrase,)
     TAB = "tab"                   # "switch tabs on opera": targets = (browser,) or (); query = the tab ("" = ask)
@@ -717,6 +721,44 @@ RESTART_SELF = (r"(?:(?:can you |could you |please |hey |yo )*)(?:restart|reboot
                 r"(?:yourself|capri|you|the app|your app|your program)(?: please| for me| now)*")
 
 
+_PLS = r"(?:(?:can you |could you |please |hey |yo |go and |wanna |want to )*)"
+_END = r"(?: please| for me| now| for a bit| a bit| for a while)*"
+_NUMBERS = {"one": 1, "a": 1, "two": 2, "three": 3, "five": 5, "ten": 10, "fifteen": 15, "twenty": 20, "thirty": 30,
+            "forty": 40, "forty five": 45, "fifty": 50, "sixty": 60, "ninety": 90, "half a": 0.5}
+_LAST = (rf"the last (?P<n>\d+|{'|'.join(sorted(_NUMBERS, key=len, reverse=True))})?\s*(?P<unit>seconds?|secs?|minutes?|mins?)"
+         rf"(?: of (?:that|it|the game|my game|my screen|gameplay))?")
+CLIP_WORDS = (rf"{_PLS}(?:(?:clip|record|grab|capture|save) {_LAST}|"
+              rf"(?:clip|record|grab|capture) (?:that|it|this|that one|the clip|that clip)|"
+              rf"save (?:the clip|that clip|a clip)|clip(?: it| that)?|(?:that'?s|that was) clip worthy)"
+              rf"(?: for me| please| now| real quick)*")
+
+
+LOOK_WORDS = (rf"{_PLS}(?:look at (?:my|the|this) screen|(?:take a )?look at (?:this|that)|what do you see|"
+              rf"what(?:'s|s| is) on (?:my|the) screen|(?:can you )?see (?:my|the|this) screen|what am i (?:doing|looking at)|"
+              rf"what do you think (?:of|about) (?:this|that|my screen)|check (?:out )?my screen|"
+              rf"what(?:'s|s| is) (?:this|that)(?: on my screen)?|read my screen|help me with (?:this|what'?s on my screen))"
+              rf"(?: right now| please| for me)*")
+WATCH_ON = rf"{_PLS}(?:watch|keep an eye on|keep watching) (?:my|the) screen(?: for me| please)*"
+WATCH_OFF = (rf"{_PLS}(?:stop|quit|don'?t keep) (?:watching|looking at) (?:my|the) screen(?: please)*|"
+             rf"{_PLS}don'?t watch (?:my|the) screen(?: anymore)?")
+
+
+def clip_seconds(n: str | None, unit: str | None) -> str:
+    """"30" + "seconds" -> "30"; "two" + "minutes" -> "120"; nothing -> "" (your usual length)."""
+    if not unit:
+        return ""
+    value = float(n) if n and n.isdigit() else _NUMBERS.get(n or "", 1)
+    return str(int(value * (60 if unit.startswith("m") else 1)))
+
+
+ROAM_WALK = (rf"{_PLS}(?:go (?:for|on) a (?:little )?walk|take a (?:little )?walk|walk around|go walk(?:ing)?(?: around)?|"
+             rf"roam(?: around)?|go roam(?:ing)?(?: around)?|wander(?: around)?|go wander(?:ing)?(?: around)?|"
+             rf"stretch your legs|walk somewhere else|move around){_END}")
+ROAM_STAY = (rf"{_PLS}(?:(?:stop|quit|no more) (?:roaming|walking|wandering)(?: around)?|stay (?:there|here|put|still)|"
+             rf"don'?t (?:walk|roam|wander)(?: around)?(?: anymore)?|stand still){_END}")
+ROAM_ON = rf"{_PLS}(?:(?:start|keep|you can|feel free to) (?:roaming|walking around|wandering|roam|wander|walk around)(?: around)?|roam again){_END}"
+
+
 RESTART_HER = re.compile(r"\b(?:restart|reboot|relaunch|reload)\s+(?:yourself|capri|the app|your app|your program)\b")
 
 
@@ -730,6 +772,18 @@ def parse(text: str) -> Intent:
         return Intent(Kind.TYPE, query=words)
     if re.fullmatch(RESTART_SELF, t):
         return Intent(Kind.RESTART_APP)                            # "restart yourself": her, not the PC
+    if re.fullmatch(WATCH_OFF, t):
+        return Intent(Kind.WATCH, query="off")
+    if re.fullmatch(WATCH_ON, t):
+        return Intent(Kind.WATCH, query="on")
+    if re.fullmatch(LOOK_WORDS, t):
+        return Intent(Kind.LOOK, query=(text or "").strip())        # "what do you see?" - asked as you said it
+    m = re.fullmatch(CLIP_WORDS, t)
+    if m:
+        return Intent(Kind.CLIP, query=clip_seconds(m.group("n"), m.group("unit")))   # "clip that"
+    for words, which in ((ROAM_STAY, "stay"), (ROAM_ON, "on"), (ROAM_WALK, "walk")):
+        if re.fullmatch(words, t):
+            return Intent(Kind.ROAM, query=which)                  # "go for a walk" / "stay there"
     if re.fullmatch(UPDATE_WORDS, t):
         return Intent(Kind.UPDATE)                                 # "check for updates": a newer Capri on GitHub
     if re.fullmatch(OPEN_SETTINGS, t) or re.fullmatch(rf"(?:capri )?{SETTINGS_WORDS}(?: please)?", t):
