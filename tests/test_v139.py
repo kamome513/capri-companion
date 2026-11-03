@@ -75,7 +75,7 @@ def test_fish_audio_voice(fish):
     audio = engine.synthesize("Hey choom.", FishAudioEngine.NAME, 0.5)
     url, body, headers = sent[0]
     assert url == "https://api.fish.audio/v1/tts" and headers["Authorization"] == "Bearer fa-key"
-    assert body["reference_id"] == "abc123def" and body["format"] == "wav" and body["text"] == "Hey chooom."
+    assert body["reference_id"] == "abc123def" and body["format"] == "wav" and body["text"] == "Hey choom."
     assert audio.rate == 24000 and len(audio.samples) == 2400 and audio.natural
 
 

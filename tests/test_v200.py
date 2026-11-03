@@ -132,3 +132,49 @@ def test_she_floats_up_when_your_mouse_is_on_her():
     for _ in range(120):
         ch._hover_step(1 / 60)
     assert ch._hover == 0.0
+
+
+
+# -- online voices: exactly as the service makes them -----------------------------------------------------------------
+def test_online_voices_get_no_effects_and_one_request_per_line():
+    import numpy as np
+    from capri.settings import Settings
+    from capri.speech.engines import Audio
+    from capri.speech.speaker import Speaker
+    sent = []
+    clean = (np.sin(np.arange(4410) / 7) * 0.3).astype(np.float32)
+
+    class Box:
+        last = ("fish: your Fish Audio voice", "")
+
+        def synthesize(self, text, voice, speed, pitch):
+            sent.append(text)
+            return Audio(clean.copy(), 22050, pitched=True, natural=True, as_is=True)
+
+        def voices(self):
+            return ["fish: your Fish Audio voice"]
+    played = []
+    s = Settings(speech_voice="fish: your Fish Audio voice", speech_style="glitch", speech_expression=1.0)
+    sp = Speaker(s, Box, player=lambda samples, rate: played.append(samples.copy()) or (lambda: None),
+                 sleep=lambda t: None)
+    sp.ready.wait(5)
+    sp._speak("Hey choom. This is a longer line, with more than one sentence. And a third one!")
+    assert len(sent) == 1                                        # the whole line in one request
+    assert np.allclose(played[0] / max(1e-9, abs(played[0]).max()), clean / abs(clean).max(), atol=1e-4)
+    sp.shutdown()
+
+
+def test_voice_options_hide_for_online_voices():
+    from test_v11 import FakeDesktop, rig
+    from test_v122 import _tab
+    r = rig(FakeDesktop())
+    tab = _tab(r)
+    tab.show()
+    tab.voice.addItem("Fish Audio (online, your key)", "fish: your Fish Audio voice")
+    tab.voice.setCurrentIndex(tab.voice.findData("fish: your Fish Audio voice"))
+    form = tab._voice_form
+    assert not form.isRowVisible(tab.style_box) and not form.isRowVisible(tab.expression)
+    assert not form.isRowVisible(tab.pitch) and tab.preset_btn.isHidden() and form.isRowVisible(tab.online_note)
+    tab.voice.addItem("beeps: retro", "beeps: retro")
+    tab.voice.setCurrentIndex(tab.voice.findData("beeps: retro"))
+    assert form.isRowVisible(tab.style_box) and form.isRowVisible(tab.expression)

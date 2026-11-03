@@ -1,6 +1,8 @@
-**Windows:** download `Capri-Setup-2.0.0.exe` below and run it. If you have 1.36 or newer, Capri updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (the installer isn't code-signed).
+**Windows:** download `Capri-Setup-2.0.1.exe` below and run it. If you have 1.36 or newer, Capri updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (the installer isn't code-signed).
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
+
+**2.0.1:** Fish Audio and ElevenLabs voices now sound exactly as the service makes them: none of Capri's voice effects on top, and each line read in one go. Their style / pitch / expression options are hidden while you use them.
 
 **Capri 2.0**
 - **She plays your games.** "Play this for me" / "your turn, get some wood": she looks at the game with your AI and plays - holding keys, turning the camera, clicking, with her own red cursor. Esc (or "my turn") stops her at once. Turn it on in Settings → Extras. She's slow and still learning.

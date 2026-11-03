@@ -262,7 +262,9 @@ class Speaker(QObject):
             self._logged_voice = used
             log.info("speech: voice %s%s", used or "?", f" ({note})" if note else "")
         self.spoke.emit(used, note)
-        natural = getattr(audio, "natural", False)        # ElevenLabs / beeps: their own ups and downs
+        if getattr(audio, "as_is", False):                # ElevenLabs / Fish Audio: exactly as they made it
+            return audio
+        natural = getattr(audio, "natural", False)        # beeps: their own ups and downs
         audio = apply_style(audio, s.speech_style, seed=len(part), pitch=pitch)
         persona = personality.get(getattr(s, "personality", "edgerunner"))
         if not natural:
@@ -278,7 +280,9 @@ class Speaker(QObject):
             raise RuntimeError("no text-to-speech voices available")
         speed, pitch, gain = prosody(self.settings, emotion)
         self._emotion = emotion
-        parts = speech_chunks(text)
+        from .engines import is_online
+        parts = [text] if is_online(getattr(self.settings, "speech_voice", "")) else speech_chunks(text)
+        # (an online voice says the whole line in one go: one request, one consistent read)
         talking = False
         try:
             upcoming = self._render(parts[0], speed, pitch)

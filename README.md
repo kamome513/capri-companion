@@ -356,6 +356,7 @@ install something.
 | **Download Capri's voice** | Her neural voice (120 MB, once) |
 | **ElevenLabs key / voice** | Use an ElevenLabs voice (needs their key) |
 | **Fish Audio key / voice** | Use a Fish Audio voice (sign up free at fish.audio, they give free credits). Paste a voice's link or ID from their library |
+| (online voices) | ElevenLabs and Fish Audio play exactly as the service makes them, so Style, Pitch and Expression are hidden while you use one |
 | **Style, Volume, Speed, Pitch, Expression** | Tune how she sounds |
 | **Test voice** / **Capri preset** | Hear her / reset to her default sound |
 | **Home city, Units, Test weather** | For "what's the weather" |

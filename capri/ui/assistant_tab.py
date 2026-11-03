@@ -155,6 +155,7 @@ class AssistantTab(QWidget):
         self.style_box.setCurrentIndex(max(0, self.style_box.findData(s.speech_style)))
         self.style_box.currentIndexChanged.connect(self._style_picked)   # takes effect right away
         form.addRow("Style", self.style_box)
+        self._voice_form = form
         self.volume = _slider(s.speech_volume)
         self.speed = _slider(s.speech_speed)
         self.pitch = _slider(s.speech_pitch)
@@ -175,11 +176,19 @@ class AssistantTab(QWidget):
         preset = QPushButton("Capri preset")
         preset.setToolTip("Her character's sound: her neural voice (if installed), higher, quicker and bright")
         preset.clicked.connect(self._capri_preset)
+        self.preset_btn = preset
         row = QHBoxLayout()
         row.addWidget(preset)
         row.addWidget(test, 1)
         form.addRow(row)
         form.addRow(self.voice_result)
+        self.online_note = QLabel("An online voice sounds exactly as the service makes it - so the style, pitch "
+                                  "and expression options are hidden.")
+        self.online_note.setObjectName("hint")
+        self.online_note.setWordWrap(True)
+        form.addRow(self.online_note)
+        self.voice.currentIndexChanged.connect(lambda _i: self._voice_options())
+        self._voice_options()
         root.addWidget(voice)
 
         # -- weather --
@@ -580,6 +589,15 @@ class AssistantTab(QWidget):
         self.apply()
         if self.eleven_key.text().strip():
             self._test_voice()
+
+    def _voice_options(self) -> None:
+        """Online voices (ElevenLabs, Fish Audio) play as they come: hide what wouldn't do anything."""
+        from ..speech.engines import is_online
+        online = is_online(self.voice.currentData() or "")
+        for widget in (self.style_box, self.pitch, self.expression):
+            self._voice_form.setRowVisible(widget, not online)
+        self.preset_btn.setVisible(not online)
+        self._voice_form.setRowVisible(self.online_note, online)
 
     def _fish_key_entered(self) -> None:
         """You pasted a Fish Audio key: switch her to that voice and let you hear it (or why not)."""

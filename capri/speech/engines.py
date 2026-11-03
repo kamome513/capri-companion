@@ -49,6 +49,7 @@ class Audio:
     rate: int
     pitched: bool = False # True if the engine already applied the requested pitch
     natural: bool = False # True if it already rises and falls by itself (ElevenLabs, beeps): no added intonation
+    as_is: bool = False   # True for online voices (ElevenLabs, Fish Audio): played exactly as they come - no effects
 
 
 def _from_int16(data: bytes, rate: int) -> Audio:
@@ -384,7 +385,7 @@ class ElevenLabsEngine:
         except OSError as exc:
             raise RuntimeError("ElevenLabs: can't reach it") from exc
         audio = _from_int16(raw[: len(raw) // 2 * 2], 22050)
-        audio.pitched, audio.natural = True, True          # their voice as it is
+        audio.pitched, audio.natural, audio.as_is = True, True, True    # their voice as it is
         return audio
 
 
@@ -418,7 +419,7 @@ class FishAudioEngine:
         import io
         import urllib.error
         import wave
-        body = {"text": respell(text, plain=True), "format": "wav", "sample_rate": 24000, "latency": "balanced",
+        body = {"text": text, "format": "wav", "sample_rate": 44100, "latency": "balanced",
                 "prosody": {"speed": round(0.85 + 0.3 * max(0.0, min(1.0, speed)), 2)}}
         voice_id = self.voice_from(type(self).voice_id())
         if voice_id:
@@ -446,11 +447,17 @@ class FishAudioEngine:
         if channels > 1:
             samples = samples.reshape(-1, channels).mean(axis=1).astype(np.int16)
         audio = _from_int16(samples.tobytes(), rate)
-        audio.pitched, audio.natural = True, True
+        audio.pitched, audio.natural, audio.as_is = True, True, True    # their voice as it is: no effects on it
         return audio
 
 
 ONLINE = (ElevenLabsEngine, FishAudioEngine)
+ONLINE_PREFIXES = ("elevenlabs: ", "fish: ")
+
+
+def is_online(voice: str) -> bool:
+    """An online voice (ElevenLabs / Fish Audio): it's played as it comes - Capri's voice options don't apply."""
+    return (voice or "").startswith(ONLINE_PREFIXES)
 
 
 def available_engines() -> list:
