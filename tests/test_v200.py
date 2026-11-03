@@ -44,36 +44,65 @@ def test_the_deck_buttons_press_media_keys():
     assert got == ["previous", "play_pause", "next"]
 
 
-class FakeCompanion:
-    hidden = drone = busy_elsewhere = False
-
-    def __init__(self):
-        self.screen = SimpleNamespace(availableGeometry=lambda: QRect(0, 0, 1600, 860))
-
-    def content_geometry(self):
-        return QRect(1400, 560, 90, 300)
-
-
-def test_the_deck_comes_and_goes_with_the_music():
+def test_the_deck_is_a_bar_she_stands_on_and_steps_off():
+    from capri.ui import music_deck as md
+    from test_v111 import companion
     t = [100.0]
+    c = companion()
+    c.place()
+    feet = c.content_geometry().bottom()
     deck = MusicDeck()
-    keeper = DeckKeeper(deck, FakeCompanion(), lambda: "Artist - Song", lambda: True, clock=lambda: t[0])
+    keeper = DeckKeeper(deck, c, lambda: "Artist - Song", lambda: True, clock=lambda: t[0])
     keeper.music_changed(True)
-    assert deck.isVisible() and deck.title == "Artist - Song"
-    assert deck.pos().x() + deck.width() <= 1400                  # beside her, not on her
+    t[0] += md.RISE
+    keeper._step()
+    assert deck.isVisible() and deck.title == "Artist - Song" and deck.width() > deck.height() * 3   # landscape
+    body = c.content_geometry()
+    assert body.bottom() == feet - (md.BODY - md.SINK)                 # up on it...
+    assert deck.y() == body.bottom() + 1 - md.SINK                     # ...feet on its top edge
+    area = c.screen.availableGeometry()
+    assert deck.x() <= body.left() and deck.geometry().right() >= body.right()          # under all of her
+    assert deck.geometry().right() <= area.right() and deck.y() + md.BODY <= area.bottom() + 1   # on screen
     keeper.music_changed(False)
+    t[0] += md.LINGER + 1
     keeper.tick()
-    assert deck.isVisible()                                      # stays a moment after the song
-    t[0] += 10
-    keeper.tick()
-    assert not deck.isVisible()
+    t[0] += md.RISE
+    keeper._step()
+    assert not deck.isVisible() and c.platform == 0 and c.content_geometry().bottom() == feet   # back on the floor
+
+
+def test_she_lies_on_the_deck_with_her_text_box_under_it():
+    from capri.ui import music_deck as md
+    from test_v111 import companion
+    t = [100.0]
+    c = companion(lounge=True)
+    c.set_lounge(True)
+    c.place()
+    deck = MusicDeck()
+    keeper = DeckKeeper(deck, c, lambda: "x", lambda: True, clock=lambda: t[0])
+    keeper.music_changed(True)
+    t[0] += md.RISE
+    keeper._step()
+    body = c.content_geometry()
+    assert c.lounging() and deck.y() == body.bottom() + 1 - md.SINK and deck.width() >= body.width()
+    assert c.panel.y() + 20 > deck.y() + md.BODY - 20                    # the text box below the deck
 
 
 def test_deck_off_in_settings():
+    from test_v111 import companion
     deck = MusicDeck()
-    keeper = DeckKeeper(deck, FakeCompanion(), lambda: "x", lambda: False)
+    keeper = DeckKeeper(deck, companion(), lambda: "x", lambda: False)
     keeper.music_changed(True)
-    assert not deck.isVisible()
+    assert not deck.isVisible() and keeper.companion.platform == 0
+
+
+def test_turn_the_deck_on_and_off_by_voice():
+    from capri.commands.parser import Kind, parse
+    for said, which in (("hide the music bar", "off"), ("turn off the music deck", "off"), ("turn the music bar off", "off"),
+                        ("show the music bar", "on"), ("bring back the music deck", "on")):
+        got = parse(said)
+        assert got.kind == Kind.MUSIC_DECK and got.query == which, said
+    assert parse("pause the music").kind == Kind.MEDIA and parse("close spotify").kind == Kind.CLOSE
 
 
 # -- her text box: what you said, TYPE / TALK ----------------------------------------------------------------------

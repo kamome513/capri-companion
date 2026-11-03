@@ -16,7 +16,8 @@ from PySide6.QtCore import QStandardPaths
 log = logging.getLogger("capri")
 
 
-INT_LIMITS = {"clip_length": (5, 120), "clip_fps": (15, 60), "watch_every": (30, 3600), "glitches": (0, 3600)}   # whole-number settings
+INT_LIMITS = {"clip_length": (5, 120), "clip_fps": (15, 60), "watch_every": (30, 3600), "glitches": (0, 3600),
+              "size": (50, 200)}   # whole-number settings
 
 
 @dataclass
@@ -35,8 +36,10 @@ class SavedPosition:
 class Settings:
     always_on_top: bool = True
     compact: bool = False
+    size: int = 100                    # her size in % (right-click -> Size): 50 tiny ... 200 huge
     show_panel: bool = True
     panel_popup: bool = False          # the text box only pops up when she talks back (then hides again)
+    panel_on_name: bool = False        # ...and only when you called her by name (not for her own remarks)
     panel_chat: bool = True            # the text box shows what you said, and TYPE / TALK buttons
     show_log: bool = True
     log_style: str = "panel"           # activity log: "panel" (lines under her message) | "cards" (call cards above)
@@ -85,7 +88,7 @@ class Settings:
     mic_voice_device: str = ""         # "Her voice in your mic": also play her voice here (a virtual cable)
     head_pats: bool = True             # click her head: she reacts
     game_play: bool = False            # "play this for me": she presses keys / clicks in the game in front
-    music_deck: bool = True            # a little music deck beside her while music plays
+    music_deck: bool = True            # while music plays, she stands on her music deck (a neon bar)
     glitches: int = 0                  # seconds between her random glitches (0 = never - the default)
     extras_offered: bool = False       # the "Extras" welcome (turn on what you want) was shown
     # Assistant (Stage 5)

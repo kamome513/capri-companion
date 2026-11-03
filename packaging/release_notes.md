@@ -1,19 +1,14 @@
-**Windows:** download `Capri-Setup-2.0.1.exe` below and run it. If you have 1.36 or newer, Capri updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (the installer isn't code-signed).
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. When she updates, she replaces that same file, so it stays the same app. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). Already have Capri installed with the installer? It keeps updating itself, or switch to Capri.exe whenever you like. `Capri-Setup-2.1.0.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
 
-**2.0.1:** Fish Audio and ElevenLabs voices now sound exactly as the service makes them: none of Capri's voice effects on top, and each line read in one go. Their style / pitch / expression options are hidden while you use them.
-
-**Capri 2.0**
-- **She plays your games.** "Play this for me" / "your turn, get some wood": she looks at the game with your AI and plays - holding keys, turning the camera, clicking, with her own red cursor. Esc (or "my turn") stops her at once. Turn it on in Settings → Extras. She's slow and still learning.
-- **Music deck.** While music plays, a slim deck floats beside her: a spinning data ring, the song running up its spine, and previous / play-pause / next.
-- **A chattier text box.** It shows what she heard you say, with TYPE and TALK buttons right on it. Or have it only pop up when she talks back, or never.
-- **Hover over her** and she floats up and leans toward your cursor. **Drag her** and she dangles and swings.
-- **Teleporting.** Roaming is a teleport now: her power closes in around her, then she tears apart and reappears somewhere else.
-- **Bouncier throws.** Slam her into a wall: impact flash, cracks, sparks, a shockwave - then she bounces off and gets back up. One "ow" per throw.
-- **Smoother.** Her animations run on precise frame timers (no more Windows timer judder).
-- Settings → Extras has everything optional. No more opening screen.
-- Fixed from 1.40.0: old pictures of her staying on screen after a throw.
-- If she ever crashes, `crash.log` and `capri.log` (in her settings folder) say why.
+**What's in this one**
+- **One app.** `Capri.exe` is all of Capri in one file. Updates replace that same file in the same place: same shortcut, same taskbar pin, same "Start with Windows".
+- **A new icon.** Her red USB shard with its green circuits, on a dark neon tile with a glitch running through it. It's on the app, the taskbar, the tray and the Linux apps menu.
+- **She stands on her music deck.** While music plays, a neon bar slides under her feet and she rises onto it: the song scrolling along it, a spinning ring, equaliser bars and previous / play-pause / next. Lying down, she lies on it. It now shows the right song, and keeps up when the next one starts. Turn it on or off in the tray menu (Capri → Music deck), Settings → Extras, or say "hide the music bar" / "show the music bar".
+- **Change her size.** Right-click her → **Size**: Tiny, Small, Normal, Big, Bigger or Huge (or Bigger / Smaller one step at a time). Or say "make yourself bigger", "make yourself tiny", "normal size". Her feet stay where they are.
+- **Text box only when you say her name.** New Settings → Extras → Text box option: it pops up when you say "hey Capri" and stays for that chat, but not for things she says by herself.
+- **Fewer "AI error 400"s.** When an AI service refuses a request, she now starts a fresh conversation (or drops the option it won't take) and asks again by herself. If it still says no, she tells you the service's actual reason, and it's written to `capri.log`. Screen watching waits longer after each problem instead of asking again every glance.
+- **Crazier wall slams.** When she slams into the edge of the screen it overloads instead of cracking: electric arcs crawl out of the impact, the screen tears into glitchy RGB-split bands, manga impact lines burst out, and dead pixels and bits of error text fly off.
 
 Join the Capri Discord: https://discord.gg/FBxdDSCaA7

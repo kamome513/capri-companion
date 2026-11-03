@@ -49,6 +49,8 @@ class Kind(Enum):
     SETTINGS = "settings"         # "open your settings": her own Settings window
     UPDATE = "update"             # "check for updates" / "update yourself": a newer Capri from GitHub
     RESTART_APP = "restart_app"   # "restart yourself": Capri closes and starts again (not the PC!)
+    SIZE = "size"                 # query: "bigger" / "smaller" / "tiny" / "small" / "normal" / "big" / "huge"
+    MUSIC_DECK = "music_deck"     # query: "on" / "off" - the bar she stands on while music plays
     ROAM = "roam"                 # query: "walk" (go for a walk now) / "stay" (stop roaming) / "on" (roam again)
     CLIP = "clip"                 # "clip that": save the last seconds of your screen; query = seconds ("" = usual)
     LOOK = "look"                 # "what do you see?" / "look at my screen": query = your question
@@ -769,6 +771,20 @@ ROAM_STAY = (rf"{_PLS}(?:(?:stop|quit|no more) (?:roaming|walking|wandering)(?: 
 ROAM_ON = rf"{_PLS}(?:(?:start|keep|you can|feel free to) (?:roaming|walking around|wandering|roam|wander|walk around)(?: around)?|roam again){_END}"
 
 
+_DECK = r"(?:the |your |that |this )?(?:music|song|songs|spotify|now playing) (?:deck|bar|thing|widget|platform|board|panel)"
+DECK_OFF = rf"{_PLS}(?:(?:turn|switch|shut) off|hide|disable|get rid of|remove|close|no more|stop (?:showing|using)) {_DECK}{_END}|{_PLS}(?:turn|switch) {_DECK} off{_END}"
+DECK_ON = rf"{_PLS}(?:(?:turn|switch) on|show|enable|bring back|use) {_DECK}(?: again)?{_END}|{_PLS}(?:turn|switch) {_DECK} (?:back )?on{_END}"
+
+
+_HER = r"(?:yourself|urself|capri|her|you)"
+SIZE_WORDS = (rf"{_PLS}(?:make|get|turn) {_HER} (?:a (?:bit|little) |even |much |way )?(?P<size>bigger|larger|smaller|tinier|"
+              rf"tiny|small|normal|regular|normal size|big|huge|giant|massive|large)(?: again)?{_END}|"
+              rf"{_PLS}(?P<size2>grow|shrink)(?: {_HER})?(?: a (?:bit|little))?{_END}|"
+              rf"{_PLS}(?:reset|go back to) (?:your|her|capri'?s?) size{_END}")
+SIZE_MEANS = {"larger": "bigger", "tinier": "smaller", "regular": "normal", "normal size": "normal", "giant": "huge",
+              "massive": "huge", "large": "big", "grow": "bigger", "shrink": "smaller"}
+
+
 RESTART_HER = re.compile(r"\b(?:restart|reboot|relaunch|reload)\s+(?:yourself|capri|the app|your app|your program)\b")
 
 
@@ -782,6 +798,14 @@ def parse(text: str) -> Intent:
         return Intent(Kind.TYPE, query=words)
     if re.fullmatch(RESTART_SELF, t):
         return Intent(Kind.RESTART_APP)                            # "restart yourself": her, not the PC
+    m = re.fullmatch(SIZE_WORDS, t)
+    if m:
+        which = m.group("size") or m.group("size2") or "normal"
+        return Intent(Kind.SIZE, query=SIZE_MEANS.get(which, which))   # "make yourself bigger"
+    if re.fullmatch(DECK_OFF, t):
+        return Intent(Kind.MUSIC_DECK, query="off")                # "hide the music bar"
+    if re.fullmatch(DECK_ON, t):
+        return Intent(Kind.MUSIC_DECK, query="on")
     if re.fullmatch(STOP_PLAYING, t):
         return Intent(Kind.STOP_GAME)
     m = re.fullmatch(PLAY_FOR_ME, t)

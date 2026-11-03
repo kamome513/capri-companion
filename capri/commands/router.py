@@ -403,7 +403,7 @@ class CommandRouter(QObject):
             Kind.PC_INFO: self._pc_info, Kind.SCREENSHOT: self._screenshot, Kind.PERSONALITY: self._personality,
             Kind.SCREEN: self._screen, Kind.REPEAT: self._repeat, Kind.MOVE: self._move, Kind.AI_SETUP: self._ai_setup,
             Kind.SHORTCUT: self._shortcut, Kind.FORGET: self._forget, Kind.MUSIC_SERVICE: self._music_service,
-            Kind.LEARN_BUTTON: self._learn_button, Kind.FORGET_BUTTON: self._forget_button, Kind.TYPE: self._type, Kind.HAIR: self._hair, Kind.SETTINGS: self._settings, Kind.UPDATE: self._update, Kind.RESTART_APP: self._restart_app, Kind.ROAM: self._roam, Kind.CLIP: self._clip, Kind.LOOK: self._look, Kind.WATCH: self._watch,
+            Kind.LEARN_BUTTON: self._learn_button, Kind.FORGET_BUTTON: self._forget_button, Kind.TYPE: self._type, Kind.HAIR: self._hair, Kind.SETTINGS: self._settings, Kind.UPDATE: self._update, Kind.RESTART_APP: self._restart_app, Kind.ROAM: self._roam, Kind.MUSIC_DECK: self._music_deck, Kind.SIZE: self._size, Kind.CLIP: self._clip, Kind.LOOK: self._look, Kind.WATCH: self._watch,
             Kind.PLAY_GAME: self._play_game, Kind.STOP_GAME: self._stop_game,
             Kind.QUIET: self._quiet, Kind.VOICE: self._voice, Kind.TIMER: self._timer,
             Kind.PERCH_ON: lambda i: self._perch(True), Kind.PERCH_OFF: lambda i: self._perch(False),
@@ -2194,6 +2194,38 @@ class CommandRouter(QObject):
             tries[0] += 1
             QTimer.singleShot(500, go)
         QTimer.singleShot(600, go)
+
+    def _size(self, intent: Intent) -> None:
+        """'Make yourself bigger' / 'make yourself tiny' / 'normal size'."""
+        companion, s = getattr(self, "companion", None), self.services.settings
+        if companion is None or s is None or not hasattr(companion, "set_size"):
+            return self.assistant.show_result(State.ERROR, "I can't change my size here.")
+        from ..ui.companion import SIZES
+        from ..ui.tray import _step
+        named = {"tiny": 60, "small": 80, "normal": 100, "big": 125, "huge": 200}
+        now = getattr(s, "size", 100)
+        size = _step(now, +1) if intent.query == "bigger" else _step(now, -1) if intent.query == "smaller" \
+            else named.get(intent.query, 100)
+        if size == now:
+            return self.assistant.show_result(State.SUCCESS, "This is as big as I get." if intent.query == "bigger"
+                                              else "Any smaller and you'd lose me." if intent.query == "smaller"
+                                              else "I'm already that size.")
+        companion.set_size(size)
+        label = dict(SIZES).get(size, f"{size}%")
+        self.assistant.show_result(State.SUCCESS, "Bigger. Better." if size > now else "Smaller. Still cute.",
+                                   emotion="happy")
+        self.controller.log("Size", label)
+
+    def _music_deck(self, intent: Intent) -> None:
+        """'Hide the music bar' / 'show the music bar': the deck she stands on while music plays."""
+        s = self.services.settings
+        if s is None:
+            return self.assistant.show_result(State.ERROR, "I can't change that here.")
+        s.music_deck = intent.query != "off"
+        s.save()
+        if s.music_deck:
+            return self.assistant.show_result(State.SUCCESS, "Music deck's back. I'll stand on it while you listen.")
+        self.assistant.show_result(State.SUCCESS, "Okay, no music deck.")
 
     def _restart_app(self, intent: Intent) -> None:
         """'Restart yourself': close and start again (a downloaded update installs on the way)."""

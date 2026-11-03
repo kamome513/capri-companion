@@ -3,7 +3,8 @@ afterimage trail behind her.
 
 When she hits the edge of the screen:
 * hard: a SLAM. A split-second freeze (hit-stop) with a white impact frame, she squashes flat against it,
-  the "wall" cracks and bits of it break off, sparks and a shockwave ring fly out, she glitches (RGB split)
+  the screen OVERLOADS where she hit: electric arcs crawl out of it, the screen tears into glitchy bands, manga
+  impact lines burst out, dead pixels and bits of error text fly, sparks and a shockwave ring, she glitches (RGB split)
   and everything shakes. Then she BOUNCES off it, tumbling, and keeps bouncing (smaller each time) until she
   ends up lying on the floor seeing stars - and gets back up with a little spring.
 * softly: she bounces off, or lands on her feet.
@@ -504,7 +505,7 @@ class ThrowShow(QObject):
         e.sparks(at, out, 1.25, int(22 + 26 * strength), (260, 1100 * (0.6 + 0.6 * strength)), now)
         e.sparks(at, out, 0.5, 8, (700, 1500), now, colours=(WHITE,), life=(0.12, 0.22), size=(2.5, 4))
         e.shards(at, out, int(8 + 10 * strength), now, f.fh)
-        e.crack(at, normal, now, f.fh * (0.5 + 0.45 * strength))
+        e.burst(at, normal, now, f.fh * (0.6 + 0.5 * strength))            # overload: arcs, tear, impact lines
         flat = 0.3 if wall in ("top", "bottom") else 3.0
         e.ring(at, now, f.fh * (0.55 + 0.4 * strength), CYAN, 0.42, flat=flat, width=4)
         e.ring(at, now, f.fh * (0.35 + 0.3 * strength), RED, 0.32, flat=flat, width=3)

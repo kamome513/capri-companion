@@ -187,7 +187,8 @@ def folders() -> list[Path]:
     """Built-in looks, then yours (a "looks" folder next to run.bat / Capri.exe)."""
     import sys
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
-    mine = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[2]
+    from ..portable import app_folder
+    mine = app_folder()
     return [base / "assets" / "looks", mine / "looks"]
 
 

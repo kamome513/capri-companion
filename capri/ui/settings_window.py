@@ -61,7 +61,8 @@ class SettingsWindow(QDialog):
         self.settings = settings
         self.apply_voice = apply_voice
         self.setWindowTitle("Capri - Settings")
-        self.setWindowIcon(QIcon(QPixmap.fromImage(icon)))
+        from .app_icon import app_icon
+        self.setWindowIcon(app_icon())
         self.setStyleSheet(STYLE)
         self.resize(1060, 600)
 

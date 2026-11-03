@@ -21,6 +21,15 @@ def companion_has_lying(c: Companion) -> bool:
     return c.sprites is not None and c.sprites.lying is not None and c.settings.character_style != "classic"
 
 
+def _step(size: int, direction: int) -> int:
+    """The next size up / down from where she is (a size you set some other way snaps to the list)."""
+    from .companion import SIZES
+    steps = [p for p, _ in SIZES]
+    if direction > 0:
+        return next((p for p in steps if p > size), steps[-1])
+    return next((p for p in reversed(steps) if p < size), steps[0])
+
+
 class CompanionMenu(QObject):
     def __init__(self, companion: Companion, icon: QImage, assistant: Assistant | None = None,
                  open_settings: Callable[[], None] | None = None, open_chat: Callable[[], None] | None = None) -> None:
@@ -39,6 +48,16 @@ class CompanionMenu(QObject):
         self.a_voice = self.a_mute = None
         if assistant is not None:
             menu.addAction(f"Listen now  ({pretty(s.hotkey_listen)})", assistant.listen_now)
+        size = self._sub(menu, "Size")                     # right-click her -> Size: right at the top
+        size_group = QActionGroup(size)
+        self.sizes = {}
+        from .companion import SIZES
+        for pct, label in SIZES:
+            self.sizes[pct] = self._check(f"{label}  ({pct}%)", lambda on, p=pct: on and companion.set_size(p), size)
+            self.sizes[pct].setActionGroup(size_group)
+        size.addSeparator()
+        size.addAction("Bigger", lambda: companion.set_size(_step(companion.settings.size, +1)))
+        size.addAction("Smaller", lambda: companion.set_size(_step(companion.settings.size, -1)))
         menu.addSeparator()
         # everything else sorted into folders
         if assistant is not None:
@@ -54,6 +73,7 @@ class CompanionMenu(QObject):
         self.design_menu.aboutToShow.connect(self._fill_designs)
         self.a_lounge = self._check("Lie on the panel", companion.set_lounge, capri)
         self.a_perch = self._check("Sit on windows", companion.set_perch_windows, capri)
+        self.a_deck = self._check("Music deck (she stands on it while music plays)", self._set_music_deck, capri)
         self.a_compact = self._check("Compact mode", companion.set_compact, capri)
         hair = self._sub(capri, "Hair")
         hair_group = QActionGroup(hair)
@@ -114,7 +134,8 @@ class CompanionMenu(QObject):
 
         self.tray: QSystemTrayIcon | None = None
         if self.tray_available:
-            self.tray = QSystemTrayIcon(QIcon(QPixmap.fromImage(icon)))
+            from .app_icon import app_icon
+            self.tray = QSystemTrayIcon(app_icon())
             self.tray.setToolTip("Capri")
             self.tray.setContextMenu(menu)
             self.tray.activated.connect(self._on_tray_activated)
@@ -176,6 +197,11 @@ class CompanionMenu(QObject):
         action.toggled.connect(lambda on: self._apply(slot, on))
         return action
 
+    def _set_music_deck(self, on: bool) -> None:
+        s = self.companion.settings
+        s.music_deck = on
+        s.save()
+
     def _set_auto_drone(self, on: bool) -> None:
         s = self.companion.settings
         s.auto_game_drone = on
@@ -201,8 +227,11 @@ class CompanionMenu(QObject):
                 action.setChecked(s.hair_style == key)
             self.a_log.setEnabled(s.show_panel and (not s.compact or s.log_style == "cards"))   # compact: no room
             self.a_compact.setChecked(s.compact)
+            for pct, action in self.sizes.items():
+                action.setChecked(getattr(s, "size", 100) == pct)
             self.a_lounge.setChecked(s.lounge)
             self.a_perch.setChecked(s.perch_windows)
+            self.a_deck.setChecked(getattr(s, "music_deck", True))
             for key, action in self.personalities.items():
                 action.setChecked(s.personality == key)
             for key, action in self.drone_looks.items():

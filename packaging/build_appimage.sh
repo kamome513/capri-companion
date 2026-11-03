@@ -13,8 +13,8 @@ APPDIR="$WORK/Capri.AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/lib"
 cp -a "$DIST/Capri" "$APPDIR/usr/lib/capri"
-cp assets/capri/icon.png "$APPDIR/capri.png"
-cp assets/capri/icon.png "$APPDIR/.DirIcon"
+cp assets/capri/app_icon.png "$APPDIR/capri.png"
+cp assets/capri/app_icon.png "$APPDIR/.DirIcon"
 
 cat > "$APPDIR/capri.desktop" <<'EOF'
 [Desktop Entry]

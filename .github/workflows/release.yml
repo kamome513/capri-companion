@@ -1,4 +1,4 @@
-# Builds Capri-Setup-<version>.exe on GitHub's own Windows machine and publishes it as a release,
+# Builds Capri.exe (the one-file app) and Capri-Setup-<version>.exe on GitHub's own Windows machine and publishes it as a release,
 # whenever the version in capri/__init__.py changes on main (or when started by hand: Actions tab ->
 # "Build and release" -> Run workflow). Capri's auto-update then offers it to everyone.
 name: Build and release
@@ -71,6 +71,42 @@ jobs:
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=${{ steps.v.outputs.version }}" packaging\capri.iss
           Get-Item "dist\Capri-Setup-${{ steps.v.outputs.version }}.exe"
 
+      - name: Build the one-file Capri.exe (Capri packed inside a small launcher)
+        if: steps.exists.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build, dist\portable | Out-Null
+          Set-Content -NoNewline -Encoding ascii build\version.txt "${{ steps.v.outputs.version }}"
+          python tools/pack_portable.py dist/Capri build/capri.zip
+          & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /optimize+ /target:winexe `
+            /out:dist\portable\Capri.exe /win32icon:assets\capri\app_icon.ico `
+            /resource:build\capri.zip,capri.zip /resource:build\version.txt,version.txt `
+            /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Windows.Forms.dll `
+            /r:System.Drawing.dll packaging\launcher\CapriLauncher.cs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-Item dist\portable\Capri.exe
+
+      - name: Check the one-file Capri.exe unpacks and starts her
+        if: steps.exists.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $v = "${{ steps.v.outputs.version }}"
+          $p = Start-Process dist\portable\Capri.exe -ArgumentList "--extract-only" -Wait -PassThru
+          if ($p.ExitCode) { Write-Error "unpacking failed ($($p.ExitCode))"; exit 1 }
+          if (-not (Test-Path "$env:LOCALAPPDATA\Capri\app\$v\Capri\Capri.exe")) { Write-Error "not unpacked"; exit 1 }
+          Start-Process dist\portable\Capri.exe
+          $log = "$env:LOCALAPPDATA\Capri\capri.log"
+          $ok = $false
+          foreach ($i in 1..60) {
+            Start-Sleep 1
+            if ((Test-Path $log) -and (Select-String -Path $log -Pattern "one-file Capri.exe" -Quiet)) { $ok = $true; break }
+          }
+          Start-Sleep 8
+          Get-Process Capri -ErrorAction SilentlyContinue | Stop-Process -Force
+          if (Test-Path $log) { Get-Content $log }
+          if (-not $ok) { Write-Error "she didn't start from the one-file Capri.exe"; exit 1 }
+          if (Select-String -Path $log -Pattern "Traceback" -Quiet) { Write-Error "she crashed"; exit 1 }
+
       - name: Describe it for Capri's updater (latest.json)
         if: steps.exists.outputs.skip != 'true'
         shell: pwsh
@@ -79,7 +115,10 @@ jobs:
           $file = "Capri-Setup-$v.exe"
           $item = Get-Item "dist\$file"
           $hash = (Get-FileHash $item.FullName -Algorithm SHA256).Hash.ToLower()
-          @{ version = $v; file = $file; size = $item.Length; sha256 = $hash } |
+          $one = Get-Item dist\portable\Capri.exe
+          $oneHash = (Get-FileHash $one.FullName -Algorithm SHA256).Hash.ToLower()
+          @{ version = $v; file = $file; size = $item.Length; sha256 = $hash
+             portable = @{ file = "Capri.exe"; size = $one.Length; sha256 = $oneHash } } |
             ConvertTo-Json | Set-Content -Encoding utf8NoBOM dist\latest.json
           Get-Content dist\latest.json
 
@@ -90,7 +129,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${{ steps.v.outputs.version }}"
-          gh release create "v$v" "dist/Capri-Setup-$v.exe" dist/latest.json --target "$GITHUB_SHA" \
+          gh release create "v$v" dist/portable/Capri.exe "dist/Capri-Setup-$v.exe" dist/latest.json --target "$GITHUB_SHA" \
             --title "Capri $v" --notes-file packaging/release_notes.md
 
   linux:

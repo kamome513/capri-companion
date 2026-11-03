@@ -23,6 +23,9 @@ STARTUP_FLAG = "--startup"   # tells Capri it was started by Windows at sign-in 
 
 
 def launch_command() -> str:
+    from . import portable
+    if portable.exe():                           # the one-file Capri.exe (the unpacked copy changes every update)
+        return f'"{portable.exe()}" {STARTUP_FLAG}'
     if getattr(sys, "frozen", False):            # packaged Capri.exe
         return f'"{sys.executable}" {STARTUP_FLAG}'
     # From source: run the launcher script with pythonw.exe (no console window).

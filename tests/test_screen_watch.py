@@ -130,7 +130,7 @@ def test_no_ai_or_a_blind_one_is_told_once():
                   AIReply("llama3.2 can't see pictures. Try: ollama pull gemma3", error=True, blind=True))
     w, said, notices, clock = watcher(brain)
     for _ in range(3):
-        clock[0] += 200
+        clock[0] += 2000                                        # (she backs off after each problem)
         w.tick()
     assert said == [] and len(notices) == 2 and "need an AI that can see" in notices[0] and "gemma3" in notices[1]
 

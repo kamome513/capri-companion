@@ -106,7 +106,7 @@ exe = EXE(
     exclude_binaries=True,
     name="Capri",
     console=False,                              # no console window; problems go to capri.log
-    icon=str(ROOT / "assets" / "capri" / "icon.ico"),
+    icon=str(ROOT / "assets" / "capri" / "app_icon.ico"),
     version=version_file,
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="Capri")

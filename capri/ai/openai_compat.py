@@ -334,9 +334,22 @@ class OpenAIBrain:
                     continue                              # retired / renamed model: ask again with the new one
                 dropped = next((o for o in ("reasoning_effort", "max_completion_tokens", "max_tokens")
                                 if o in body and o not in self._skip and exc.status == 400), None)
-                if dropped is None:
+                if dropped is not None:
+                    self._skip.add(dropped)
+                    continue
+                if exc.status != 400:
                     raise
-                self._skip.add(dropped)
+                log.warning("ai: %s refused the request (400): %s", self.label(), (detail or body)[:300])
+                last = self.messages[-1] if self.messages else None
+                if len(self.messages) > 1 and last and last.get("role") == "user":
+                    self.messages = [last]                # the history may be what it won't take: start fresh
+                    log.info("ai: asking %s again in a fresh conversation", self.label())
+                    continue
+                if self._tools() is not None:             # still no: try without her tools (commands still work)
+                    self._skip.add("tools")
+                    log.info("ai: asking %s again without her tools", self.label())
+                    continue
+                raise
         return self._fetch("POST", self.base() + "/chat/completions", json_body=self._body(system),
                            headers=headers, timeout=TIMEOUT) or {}
 
@@ -354,7 +367,8 @@ class OpenAIBrain:
                 self._skip.update({"max_tokens", "max_completion_tokens"})
                 log.info("ai: %s used every token thinking - asking again without a limit", self.label())
                 continue
-            self.messages.append({"role": "assistant", "content": said or None,
+            # (never null: stricter services - NVIDIA, Groq, Mistral... - then refuse every later message with a 400)
+            self.messages.append({"role": "assistant", "content": said or "",
                                   **({"tool_calls": calls} if calls else {})})
             feeling, said = emotions.split_tag(said)
             said = said.strip()

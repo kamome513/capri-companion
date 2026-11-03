@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen, QPolygonF, QRadialGradient
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen, QPolygonF, QRadialGradient
 
 from .rig import Pose, Rig
 
@@ -130,6 +130,25 @@ class Crack:
     life: float = 2.4
 
 
+@dataclass
+class Burst:
+    """Her slam overloading the screen where she hit: electric arcs crawling out of the impact, the screen tearing
+    into glitchy bands, anime impact lines. It flickers at camera speed (STEPS a second), like a real glitch."""
+    at: QPointF
+    out: float                       # the angle pointing away from the wall
+    born: float
+    size: float
+    seed: int
+    life: float = 0.95
+    STEPS = 30
+
+    def step(self, now: float) -> int:
+        return int((now - self.born) * self.STEPS)
+
+
+GLYPHS = ("01", "10", "ERR", "0x7F", "//", "NULL", "!!", "#", "SYS")
+
+
 class Effects:
     """All the bits flying about, and the part of the screen they cover."""
 
@@ -138,10 +157,11 @@ class Effects:
         self.particles: list[Particle] = []
         self.rings: list[Ring] = []
         self.cracks: list[Crack] = []
+        self.bursts: list[Burst] = []
         self.flashes: list[tuple[float, QPointF, float, float]] = []   # (born, at, radius, life)
 
     def clear(self) -> None:
-        self.particles, self.rings, self.cracks, self.flashes = [], [], [], []
+        self.particles, self.rings, self.cracks, self.bursts, self.flashes = [], [], [], [], []
 
     # -- making them -------------------------------------------------------------------------------------------
     def sparks(self, at: QPointF, direction: float, spread: float, count: int, speed: tuple[float, float],
@@ -207,6 +227,26 @@ class Effects:
         lines.append(ring)
         self.cracks.append(Crack(QPointF(at), lines, now))
 
+    def burst(self, at: QPointF, normal: QPointF, now: float, size: float) -> None:
+        """The slam's overload: arcs, screen tear and impact lines, plus dead-pixel blocks and error glyphs flying."""
+        r = self.rng
+        out = math.atan2(normal.y(), normal.x())
+        self.bursts.append(Burst(QPointF(at), out, now, size, r.randrange(1 << 30)))
+        for _ in range(r.randint(14, 20)):                     # dead pixels: square chunks that blink
+            a = out + r.uniform(-1.3, 1.3)
+            v = r.uniform(200, 900)
+            self.particles.append(Particle(QPointF(at), QPointF(math.cos(a) * v, math.sin(a) * v - 140), now,
+                                           r.uniform(0.5, 1.0), QColor(r.choice((RED, CYAN, WHITE, GREEN))),
+                                           size * r.uniform(0.018, 0.045), "block", gravity=0.45))
+        for _ in range(r.randint(5, 8)):                       # bits of error text, glitching away
+            a = out + r.uniform(-1.0, 1.0)
+            v = r.uniform(120, 420)
+            p = Particle(QPointF(at), QPointF(math.cos(a) * v, math.sin(a) * v - 60), now, r.uniform(0.6, 1.0),
+                         QColor(r.choice((RED, CYAN, GREEN))), max(11.0, size * r.uniform(0.08, 0.12)), "glyph",
+                         gravity=0.05)
+            p.shape = [r.choice(GLYPHS)]
+            self.particles.append(p)
+
     def dust(self, at: QPointF, now: float, size: float, count: int = 6) -> None:
         r = self.rng
         for i in range(count):
@@ -221,11 +261,12 @@ class Effects:
         self.particles = [p for p in self.particles if now - p.born < p.life]
         self.rings = [g for g in self.rings if now - g.born < g.life]
         self.cracks = [c for c in self.cracks if now - c.born < c.life]
+        self.bursts = [b for b in self.bursts if now - b.born < b.life]
         self.flashes = [f for f in self.flashes if now - f[0] < f[3]]
 
     def busy(self, now: float) -> bool:
         self.prune(now)
-        return bool(self.particles or self.rings or self.cracks or self.flashes)
+        return bool(self.particles or self.rings or self.cracks or self.bursts or self.flashes)
 
     def bounds(self, now: float) -> QRectF:
         """Where they all are right now (to repaint just that)."""
@@ -240,13 +281,100 @@ class Effects:
             for line in c.lines:
                 for pt in line:
                     box = box.united(QRectF(pt.x() - 8, pt.y() - 8, 16, 16))
+        for b in self.bursts:
+            r = b.size * 1.7
+            box = box.united(QRectF(b.at.x() - r, b.at.y() - r, 2 * r, 2 * r))
         for _t, at, radius, _l in self.flashes:
             box = box.united(QRectF(at.x() - radius, at.y() - radius, 2 * radius, 2 * radius))
         return box
 
     # -- drawing -----------------------------------------------------------------------------------------------------
+    def _paint_tear(self, p: QPainter, b: Burst, now: float) -> None:
+        """The screen tearing where she hit: bands of glitch (with an RGB split), re-torn every camera step, and
+        anime impact lines bursting out for the first moment."""
+        age = now - b.born
+        rng = random.Random(b.seed * 7919 + b.step(now))
+        s, out = b.size, b.out
+        side = abs(math.cos(out)) > 0.5                        # a side wall (else the ceiling / floor)
+        p.setPen(Qt.PenStyle.NoPen)
+        if age < 0.6:
+            fade = 1 - age / 0.6
+            for _ in range(rng.randint(6, 11)):
+                h = s * rng.uniform(0.015, 0.07)
+                length = s * rng.uniform(0.3, 1.5) * (0.4 + 0.6 * fade)
+                if side:
+                    y = b.at.y() + rng.gauss(0, s * 0.45)
+                    x = b.at.x() if math.cos(out) > 0 else b.at.x() - length
+                else:
+                    y = b.at.y() + math.sin(out) * s * rng.uniform(0, 0.7)
+                    x = b.at.x() + rng.gauss(0, s * 0.5) - length / 2
+                split = s * 0.045 * (1 + fade)
+                for colour, dx, alpha in ((RED, -split, 190), (CYAN, split, 170), (WHITE, 0, 45)):
+                    p.setBrush(QColor(colour.red(), colour.green(), colour.blue(), int(alpha * fade)))
+                    p.drawRect(QRectF(x + dx, y, length, h))
+                if rng.random() < 0.5:                         # noise along the band: dead pixels in a row
+                    p.setBrush(QColor(8, 4, 12, int(200 * fade)))
+                    for _ in range(rng.randint(2, 5)):
+                        w = s * rng.uniform(0.02, 0.08)
+                        p.drawRect(QRectF(x + rng.uniform(0, max(1.0, length - w)), y, w, h))
+        if age < 0.2:                                          # impact lines, like a manga panel
+            fade = 1 - age / 0.2
+            grow = ease_out(age / 0.08)
+            for k in range(22):
+                a = out + rng.uniform(-1.45, 1.45)
+                inner = s * (0.2 + 0.25 * grow)
+                outer = s * rng.uniform(0.8, 1.7) * (0.5 + 0.5 * grow)
+                wide = rng.uniform(0.012, 0.035)
+                tip = b.at + QPointF(math.cos(a), math.sin(a)) * outer
+                l = b.at + QPointF(math.cos(a - wide), math.sin(a - wide)) * inner
+                rr = b.at + QPointF(math.cos(a + wide), math.sin(a + wide)) * inner
+                colour = WHITE if k % 3 else RED
+                p.setBrush(QColor(colour.red(), colour.green(), colour.blue(), int(220 * fade)))
+                p.drawPolygon(QPolygonF([l, tip, rr]))
+
+    def _paint_arcs(self, p: QPainter, b: Burst, now: float) -> None:
+        """Electric arcs crawling out of where she hit, flickering (Blackwall red, now and then a cyan one)."""
+        age = now - b.born
+        if age >= b.life - 0.1:
+            return
+        rng = random.Random(b.seed * 104729 + b.step(now))
+        fade = 1 - age / (b.life - 0.1)
+        if rng.random() > 0.35 + 0.65 * fade:                  # flicker off for a step now and then
+            return
+        reach = b.size * (0.45 + 0.9 * ease_out(age / 0.25))
+        bolts = []
+        for _ in range(rng.randint(4, 7)):
+            a = b.out + rng.uniform(-1.4, 1.4)
+            length = reach * rng.uniform(0.5, 1.0)
+            pts, pt, steps = [QPointF(b.at)], QPointF(b.at), rng.randint(6, 9)
+            for _ in range(steps):
+                a += rng.uniform(-0.7, 0.7)
+                pt = pt + QPointF(math.cos(a), math.sin(a)) * (length / steps)
+                pts.append(QPointF(pt))
+            bolts.append(pts)
+            if rng.random() < 0.6:                             # a branch off it
+                k = rng.randint(2, len(pts) - 2)
+                ba, bp, branch = a + rng.choice((-1, 1)) * rng.uniform(0.5, 1.1), QPointF(pts[k]), [QPointF(pts[k])]
+                for _ in range(3):
+                    ba += rng.uniform(-0.6, 0.6)
+                    bp = bp + QPointF(math.cos(ba), math.sin(ba)) * (length / steps)
+                    branch.append(QPointF(bp))
+                bolts.append(branch)
+        cyan = rng.random() < 0.3
+        glow = CYAN if cyan else RED
+        for width, colour, alpha in ((10.0, glow, 60), (4.0, glow, 210), (1.6, WHITE, 255)):
+            p.setPen(QPen(QColor(colour.red(), colour.green(), colour.blue(), int(alpha * (0.4 + 0.6 * fade))),
+                          width * (0.6 + 0.4 * fade), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
+                          Qt.PenJoinStyle.RoundJoin))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            for pts in bolts:
+                p.drawPolyline(QPolygonF(pts))
+
     def paint_under(self, p: QPainter, now: float) -> None:
-        """Behind her: cracks, dust, rings."""
+        """Behind her: the slam's screen tear, cracks, dust, rings."""
+        for b in self.bursts:
+            if 0 <= now - b.born < b.life:
+                self._paint_tear(p, b, now)
         for c in self.cracks:
             age = now - c.born
             if not 0 <= age < c.life:
@@ -287,7 +415,10 @@ class Effects:
                 p.drawEllipse(g.at, rx, ry)
 
     def paint_over(self, p: QPainter, now: float) -> None:
-        """In front of her: sparks, shards, motes, flashes."""
+        """In front of her: the slam's arcs, sparks, shards, dead pixels, error glyphs, motes, flashes."""
+        for b in self.bursts:
+            if 0 <= now - b.born < b.life:
+                self._paint_arcs(p, b, now)
         p.setBrush(Qt.BrushStyle.NoBrush)
         for pt in self.particles:
             if pt.kind == "dust":
@@ -302,6 +433,31 @@ class Effects:
                 tail = pos - pt.velocity(now) * 0.022
                 p.setPen(QPen(c, pt.size * (1 - age) + 0.7, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
                 p.drawLine(tail, pos)
+            elif pt.kind == "block":                                      # a dead pixel: blinks at camera speed
+                if int((now - pt.born) * 30 + pt.size) % 4 == 0:
+                    continue
+                c.setAlphaF(max(0.0, min(1.0, (1 - age) * 1.6)))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(c)
+                p.drawRect(QRectF(round(pos.x()), round(pos.y()), pt.size, pt.size))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+            elif pt.kind == "glyph":                                      # error text, jittering sideways
+                step = int((now - pt.born) * 30)
+                if step % 5 == 3:
+                    continue
+                jitter = ((step * 37) % 7 - 3) * pt.size * 0.12
+                font = QFont("Consolas")
+                font.setStyleHint(QFont.StyleHint.Monospace)
+                font.setPixelSize(max(6, int(pt.size)))
+                font.setBold(True)
+                p.setFont(font)
+                text = pt.shape[0] if pt.shape else "01"
+                for colour, dx in ((RED, -2.0), (CYAN, 2.0), (WHITE, 0.0)):
+                    k = QColor(colour if colour is not WHITE else c)
+                    k.setAlphaF(max(0.0, (1 - age)) * (0.55 if colour is not WHITE else 1.0))
+                    p.setPen(k)
+                    p.drawText(QPointF(pos.x() + jitter + dx, pos.y()), text)
+                p.setBrush(Qt.BrushStyle.NoBrush)
             elif pt.kind == "shard":
                 c.setAlphaF(max(0.0, min(1.0, (1 - age) * 1.4)))
                 p.save()

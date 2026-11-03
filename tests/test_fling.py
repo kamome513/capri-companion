@@ -114,7 +114,7 @@ def test_thrown_at_the_wall_she_slams_slides_and_gets_up(clock):
     assert any(e == "angry" for _t, e in said)                          # "Ow! Rude."
 
 
-def test_the_slam_cracks_the_wall_and_sparks_fly(clock):
+def test_the_slam_overloads_the_screen_and_sparks_fly(clock):
     show, c, _ = make()
     show.throw(QPointF(-3500, 0))
     for _ in range(600):
@@ -124,9 +124,9 @@ def test_the_slam_cracks_the_wall_and_sparks_fly(clock):
         show._tick()
     fx = show.fx
     e = fx.effects
-    assert e.cracks and e.rings and e.flashes and fx.glitch > 0.5 and fx.stars > 0.5 and fx.impact > 0.5
+    assert e.bursts and not e.cracks and e.rings and e.flashes and fx.glitch > 0.5 and fx.stars > 0.5 and fx.impact > 0.5
     assert any(p.kind == "shard" for p in e.particles) and any(p.kind == "spark" for p in e.particles)
-    assert all(-1 <= pt.x() for line in e.cracks[0].lines for pt in line[:1])
+    assert any(p.kind == "block" for p in e.particles) and any(p.kind == "glyph" for p in e.particles)
     clock.t += 0.15
     show._tick()
     left = fx.body.centre.x() - fx.fh * fling.WIDTH * fx.body.squash[0]
@@ -216,9 +216,31 @@ def test_old_effects_never_break_a_frame(clock):
     fx.effects.dust(QPointF(500, 800), clock.t - 5, 250)               # long dead, not pruned yet
     fx.effects.sparks(QPointF(500, 800), 0, 1, 5, (100, 200), clock.t - 5)
     fx.effects.ring(QPointF(500, 800), clock.t - 5, 100)
+    fx.effects.burst(QPointF(0, 500), QPointF(1, 0), clock.t - 5, 250)    # a slam long over
     from capri.ui import fx as fxmod
     real = fxmod.time if hasattr(fxmod, "time") else None
     img = QImage(1600, 900, QImage.Format.Format_ARGB32_Premultiplied)
     img.fill(0)
     fx.resize(1600, 900)
     fx.render(img)                                                      # no TypeError, no half-drawn frame
+
+
+def test_the_overload_flickers_and_paints_every_moment(clock):
+    """Arcs, tear, impact lines, dead pixels and glyphs: drawn at every age without breaking a frame."""
+    from capri.ui import fx as fxmod
+    e = fxmod.Effects()
+    e.burst(QPointF(0, 400), QPointF(1, 0), 10.0, 260)
+    e.burst(QPointF(800, 0), QPointF(0, 1), 10.0, 260)
+    img = QImage(1600, 900, QImage.Format.Format_ARGB32_Premultiplied)
+    drawn = set()
+    from PySide6.QtGui import QPainter
+    for i in range(70):
+        now = 10.0 + i / 60
+        img.fill(0)
+        p = QPainter(img)
+        e.paint_under(p, now)
+        e.paint_over(p, now)
+        p.end()
+        drawn.add(img.pixelColor(20, 400).alpha() > 0 or img.pixelColor(40, 420).alpha() > 0)
+    assert True in drawn                                                # it shows...
+    assert not e.busy(10.0 + 2.0)                                       # ...and it's all gone after

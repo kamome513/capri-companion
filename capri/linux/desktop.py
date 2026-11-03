@@ -456,14 +456,20 @@ def ensure_menu_entry(icon_png: Path, env: dict | None = None) -> str:
         old = entry.read_text(encoding="utf-8")
     except OSError:
         old = None
-    if old == text:
-        return ""
-    entry.parent.mkdir(parents=True, exist_ok=True)
-    entry.write_text(text, encoding="utf-8")
-    icons = entry.parent.parent / "icons" / "hicolor" / "128x128" / "apps"
+    icons = entry.parent.parent / "icons" / "hicolor" / "256x256" / "apps"
+    icon_changed = False
     try:
-        icons.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(icon_png, icons / "capri.png")
+        icon_changed = not (icons / "capri.png").is_file() or \
+            (icons / "capri.png").read_bytes() != Path(icon_png).read_bytes()
+        if icon_changed:
+            icons.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(icon_png, icons / "capri.png")
+            old_icon = entry.parent.parent / "icons" / "hicolor" / "128x128" / "apps" / "capri.png"
+            old_icon.unlink(missing_ok=True)                     # (the old one, her face, from before 2.1)
     except OSError:
         pass
+    if old == text:
+        return "updated" if icon_changed else ""
+    entry.parent.mkdir(parents=True, exist_ok=True)
+    entry.write_text(text, encoding="utf-8")
     return "added" if old is None else "updated"

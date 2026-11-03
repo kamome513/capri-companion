@@ -1,3 +1,5 @@
+<img src="assets/capri/app_icon.png" width="96" align="right" alt="Capri's icon: her red shard">
+
 # Capri
 
 A cyberpunk desktop companion. Capri stands in the corner of your screen, listens for
@@ -11,16 +13,23 @@ Everything she hears is processed on your PC.
 ### Install (easiest)
 
 1. Go to the [latest release](https://github.com/kamome513/capri-companion/releases/latest) and download
-   `Capri-Setup-<version>.exe`.
-2. Run it. It installs for your user only, with no admin rights and no Python needed.
-3. If Windows shows **"Windows protected your PC"**, click **More info**, then **Run anyway**. The
-   installer isn't code-signed, so Windows doesn't recognise it.
+   **`Capri.exe`**. That one file is the whole app: no installer, no admin rights, no Python.
+2. Put it wherever you like (Desktop, Documents...) and double-click it. The first time each version
+   runs, it sets itself up for a few seconds (a small window shows the progress). After that she starts
+   straight away.
+3. If Windows shows **"Windows protected your PC"**, click **More info**, then **Run anyway**.
+   Capri.exe isn't code-signed, so Windows doesn't recognise it.
 4. Capri starts in the bottom-right corner. On the first start she downloads her speech model
    (about 40 MB, once).
 5. Say **"Hey Capri, open Chrome"** (or any app you have).
 
-Works on Windows 10 and 11. **She updates herself:** once a day she checks for a new version,
-downloads it, and installs it the next time she starts.
+Works on Windows 10 and 11. **She updates herself:** once a day she checks for a new version and
+downloads it. Next time she starts, the new version replaces that same `Capri.exe`, so your shortcuts,
+taskbar pin and "Start with Windows" keep working. Her own files are unpacked into
+`%LOCALAPPDATA%\Capri\app\` and old versions there are cleaned up for you.
+
+Prefer a normal install with a Start-menu entry? `Capri-Setup-<version>.exe` is still on every release
+and updates itself the same way.
 
 ### Run from the code instead
 
@@ -195,7 +204,8 @@ learning: simple goals work best.
 | Do / say | What happens |
 |---|---|
 | Drag her | Moves her |
-| Flick her and let go | Throws her. Hit a wall hard and she slams into it (the wall cracks, sparks fly), bounces off, sees stars and gets up |
+| Right-click her → **Size** / "make yourself bigger" / "make yourself tiny" / "normal size" | Tiny, Small, Normal, Big, Bigger or Huge (her feet stay put) |
+| Flick her and let go | Throws her. Hit a wall hard and she slams into it (the screen overloads: electric arcs, glitch tearing, impact lines, dead pixels), bounces off, sees stars and gets up |
 | Click her head | A head pat (click her body: a poke) |
 | Move your mouse over her | She floats up a little and leans toward your cursor |
 | Drag her | She dangles from your cursor, swinging behind the way you move |
@@ -391,10 +401,10 @@ install something.
 
 | Setting | What it does |
 |---|---|
-| **Text box** | Always there, only when she talks back (it pops up, then hides again), or never (just her) |
+| **Text box** | Always there, only when she talks back (it pops up, then hides again), only when you say her name ("hey Capri": not for things she says by herself), or never (just her) |
 | **Show what you said, and TYPE / TALK buttons** | Her text box shows "YOU ›" what she heard; TYPE opens the chat to type to her, TALK makes her listen now |
 | **She glitches** | Never (the default), or every 1, 3, 5 or 10 minutes her picture glitches like a broken video feed |
-| **Music deck** | While music plays, a slim deck beside her: the song, and previous / play-pause / next |
+| **Music deck** | While music plays, she stands on a neon bar (lying down, she lies on it): the song, and previous / play-pause / next. Also in the tray menu (Capri → Music deck), or say "hide the music bar" / "show the music bar" |
 | **Let her play games** | "Play this for me" (see She plays your game above) |
 | **Clip my games** / Record / "Clip that" saves / Frame rate / Resolution / With sound / Save big moments | Clips (see Clips above). *Save big moments* clips triple kills, aces and wins by itself (needs Game hype) |
 | **Choose folder / Open clips folder** | Where clips go (Videos\Capri Clips) |
@@ -433,6 +443,7 @@ install something.
 | She can't find an app | Settings → Apps → **Add app or game...**, or add what she hears to **Also say** |
 | I want a free AI without a key | Settings → Assistant → AI → **Set up Ollama for me**, or say "Hey Capri, set up your brain". She does the rest |
 | "I don't have Ollama installed" but you do | Open the Ollama app once (it sits by the clock), then say "set up your brain". If you changed Ollama's address, put it in Settings → Assistant → Address |
+| She keeps saying the AI turned something down (400) | She already retries by herself. If it keeps happening, the reason she reads out (and the line in `capri.log`) says what the service didn't like. Often it's a model that can't do pictures (for *Watch my screen*) or doesn't support her tools: pick another model in Settings → Assistant |
 | The AI says a model "doesn't exist" | Settings → Assistant → **Show my models** and pick one from the list |
 | She crashed (Linux) | Send `crash.log` and `capri.log` from `~/.config/Capri` - since 1.40 they say why |
 | "Mute me" doesn't work | Put your Discord keybinds in Settings → PC & chat. Don't run Discord "as administrator" |

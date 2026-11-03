@@ -7,6 +7,8 @@ release of Capri is. If it's newer than her:
   checks it's exactly the file GitHub lists (size, and its SHA-256 when GitHub gives one), and
   installs it the next time she starts - quietly, then starts again. "Update now" does it straight
   away. With Settings -> PC & chat -> "Update automatically" off, she only tells you.
+* The one-file Capri.exe: she downloads the new Capri.exe the same way, puts it in place of the one you
+  run (same file, same place - your shortcuts and taskbar pin keep working) and starts it.
 * Running from the code (run.bat / run.sh): she can't replace your folder, so she tells you and
   opens the release page.
 
@@ -30,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import __version__
+from . import __version__, portable
 
 log = logging.getLogger("capri")
 
@@ -45,6 +47,7 @@ INSTALLING_SECONDS = 120   # an installer started this recently is still running
 PAGE = f"https://github.com/{REPO}/releases/latest"
 DOWNLOADS = f"https://github.com/{REPO}/releases/download/"
 WINDOWS_ASSET = re.compile(r"^Capri-Setup-[\w.\-]+\.exe$", re.I)
+PORTABLE_ASSET = re.compile(r"^Capri\.exe$", re.I)     # Windows: the one-file Capri.exe, same name every release
 LINUX_ASSET = re.compile(r"^Capri-x86_64\.AppImage$")      # Linux: one AppImage, same name every release
 ASSET = WINDOWS_ASSET
 LINUX = sys.platform.startswith("linux")             # which release file this Capri updates from
@@ -73,11 +76,15 @@ def frozen() -> bool:
     if LINUX:
         path = appimage()
         return bool(path) and os.path.isfile(path) and os.access(os.path.dirname(path) or ".", os.W_OK)
+    if portable.exe():
+        return os.access(os.path.dirname(portable.exe()) or ".", os.W_OK)
     return bool(getattr(sys, "frozen", False)) and sys.platform == "win32"
 
 
 def asset_pattern():
-    return LINUX_ASSET if LINUX else WINDOWS_ASSET
+    if LINUX:
+        return LINUX_ASSET
+    return PORTABLE_ASSET if portable.exe() else WINDOWS_ASSET
 
 
 @dataclass
@@ -101,8 +108,9 @@ def _from_latest_json(info: dict, current: str) -> Update | None | bool:
     """latest.json -> an Update / None (up to date) / False (not a latest.json - ask the API)."""
     if not isinstance(info, dict) or "version" not in info or "file" not in info:
         return False
-    if LINUX:                                            # the AppImage's own entry
-        section = info.get("linux")
+    own = "linux" if LINUX else "portable" if portable.exe() else ""
+    if own:                                              # the AppImage's / the one-file Capri.exe's own entry
+        section = info.get(own)
         if not isinstance(section, dict) or "file" not in section:
             return False
         info = {"version": info["version"], **section}
@@ -220,7 +228,8 @@ def clear(folder: Path | None = None) -> None:
     if not folder.is_dir():
         return
     for p in folder.iterdir():
-        if p.is_file() and (WINDOWS_ASSET.match(p.name) or LINUX_ASSET.match(p.name) or p.suffix == ".part"
+        if p.is_file() and (WINDOWS_ASSET.match(p.name) or LINUX_ASSET.match(p.name) or PORTABLE_ASSET.match(p.name)
+                            or p.suffix == ".part"
                             or p.name == "ready.json"):
             try:
                 p.unlink()
@@ -278,6 +287,31 @@ def _install_appimage(new: Path, run: Callable, folder: Path | None) -> bool:
     return True
 
 
+def _install_portable(new: Path, run: Callable, folder: Path | None) -> bool:
+    """The one-file Capri.exe: put the checked new Capri.exe in place of the one you run, then start it.
+    (That file isn't in use: it only unpacks and starts her, then closes.) The new one waits for this Capri to
+    close first (--after-update)."""
+    target = portable.exe()
+    _note_try(folder or new.parent)
+    tmp = target + ".new"
+    try:
+        shutil.copyfile(new, tmp)
+        os.replace(tmp, target)
+    except OSError as exc:
+        log.warning("update: couldn't replace %s: %s", target, exc)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return False
+    try:
+        run([target, "--after-update"], close_fds=True, creationflags=0x00000008)   # DETACHED_PROCESS
+    except OSError as exc:
+        log.warning("update: replaced, but couldn't start the new Capri: %s", exc)
+    clear(folder or new.parent)
+    return True
+
+
 def installer_running() -> bool:
     """Is a Capri-Setup installer running right now? (Inno Setup runs as Capri-Setup-x.exe / .tmp)"""
     try:
@@ -302,6 +336,8 @@ def install(installer: Path, run: Callable = subprocess.Popen, folder: Path | No
         return False
     if LINUX:
         return _install_appimage(installer, run, folder)
+    if portable.exe():
+        return _install_portable(installer, run, folder)
     app_dir = app_dir or os.path.dirname(sys.executable)
     _note_try(folder or installer.parent)
     try:

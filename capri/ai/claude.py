@@ -12,6 +12,7 @@ confirmations. Generated text is never executed.
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass, field
@@ -22,6 +23,8 @@ from ..about_you import scrub
 from ..lines import SLANG_PROMPT
 from ..commands.parser import SEARCH_WHERE, Intent, Kind
 from ..personality import PERSONALITIES as PERSONALITY_KEYS
+
+log = logging.getLogger("capri")
 
 MODEL = "claude-opus-5-5"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"   # re-runs a declined request on another model
@@ -212,6 +215,7 @@ class ClaudeBrain:
         self._clock = clock
         self._client = None
         self._client_key = None
+        self._no_fallback = False         # this key / account turned down the fallback option (400): sent without it
         self.reset()
 
     @staticmethod
@@ -265,7 +269,35 @@ class ClaudeBrain:
             if "credit balance" in str(exc).lower():
                 return AIReply("My Claude key has no credit. Add some at console.anthropic.com, under Billing.",
                                error=True, detail=str(exc)[:200])
-            return AIReply(f"The AI glitched out ({exc.status_code}).", error=True, detail=str(exc)[:200])
+            log.warning("ai: Claude refused the request (HTTP %s): %s", exc.status_code, str(exc)[:400])
+            return AIReply(f"Claude turned that down ({exc.status_code}: {self._why(exc)}).", error=True,
+                           detail=str(exc)[:200])
+
+    def _create(self, **request):
+        """One request. Refused (400) because of the refusal-fallback option (an older account or SDK): drop it
+        for good and send it again."""
+        import anthropic
+        if not self._no_fallback:
+            try:
+                return self._client.beta.messages.create(betas=[FALLBACK_BETA], fallbacks="default", **request)
+            except anthropic.BadRequestError as exc:
+                text = str(exc).lower()
+                if "fallback" not in text and "beta" not in text:
+                    raise
+                log.warning("ai: Claude turned down the fallback option - sending without it: %s", str(exc)[:300])
+                self._no_fallback = True
+            except TypeError as exc:                     # an SDK too old to know the option
+                log.warning("ai: this SDK has no refusal fallbacks (%s) - sending without them", exc)
+                self._no_fallback = True
+        return self._client.beta.messages.create(**request)
+
+    @staticmethod
+    def _why(exc) -> str:
+        """The API's own reason for a refused request, short (for her line and the log)."""
+        body = getattr(exc, "body", None)
+        err = body.get("error") if isinstance(body, dict) else None
+        message = err.get("message") if isinstance(err, dict) else None
+        return str(message or getattr(exc, "message", "") or exc).strip().rstrip(".")[:160]
 
     def look(self, prompt: str, jpeg_b64: str) -> AIReply:
         """One look at a picture (your screen), no history and no tools. Blocking - call from a worker thread."""
@@ -277,8 +309,8 @@ class ClaudeBrain:
         if self._client is None or key != self._client_key:
             self._client, self._client_key = self._client_factory(key), key
         try:
-            response = self._client.beta.messages.create(
-                model=MODEL, max_tokens=2000, betas=[FALLBACK_BETA], fallbacks="default",
+            response = self._create(
+                model=MODEL, max_tokens=2000,
                 output_config={"effort": "low"},
                 system=system_prompt(self._slang(), self._persona()),
                 messages=[{"role": "user", "content": [
@@ -292,26 +324,44 @@ class ClaudeBrain:
         except anthropic.APIConnectionError:
             return AIReply("Can't reach the AI right now.", error=True)
         except anthropic.APIStatusError as exc:
-            return AIReply(f"The AI glitched out ({exc.status_code}).", error=True, detail=str(exc)[:200])
+            log.warning("ai: Claude refused a look (HTTP %s): %s", exc.status_code, str(exc)[:400])
+            return AIReply(f"Claude turned that down ({exc.status_code}: {self._why(exc)}).", error=True,
+                           detail=str(exc)[:200])
         if response.stop_reason == "refusal":
             return AIReply("", error=True)
         said = " ".join(b.text for b in response.content if b.type == "text").strip()
         feeling, said = emotions.split_tag(said)
         return AIReply(said.strip(), emotion=feeling)
 
+    def _send(self):
+        """The chat request. A 400 with history behind it: the history may be what it won't take (a turn cut off
+        half-way, say) - start the conversation fresh from what you just said and try once more."""
+        import anthropic
+
+        def send():
+            return self._create(model=MODEL, max_tokens=8000,
+                                output_config={"effort": "low"},     # quick chat replies
+                                cache_control={"type": "ephemeral"},
+                                system=system_prompt(self._slang(), self._persona()),
+                                tools=TOOLS, messages=self.messages)
+        try:
+            return send()
+        except anthropic.BadRequestError as exc:
+            log.warning("ai: Claude refused the request (400): %s", str(exc)[:400])
+            last = self.messages[-1] if self.messages else None
+            if last is None or len(self.messages) <= 1 or last.get("role") != "user":
+                raise
+            text = [b for b in last.get("content") or [] if isinstance(b, dict) and b.get("type") == "text"]
+            if not text:
+                raise
+            self.messages = [{"role": "user", "content": text}]
+            self._pending_results = []
+            log.info("ai: asking again in a fresh conversation")
+            return send()
+
     def _loop(self) -> AIReply:
         for _ in range(4):   # at most a few info-tool round trips per question
-            response = self._client.beta.messages.create(
-                model=MODEL,
-                max_tokens=8000,
-                betas=[FALLBACK_BETA],
-                fallbacks="default",
-                output_config={"effort": "low"},     # quick chat replies
-                cache_control={"type": "ephemeral"},
-                system=system_prompt(self._slang(), self._persona()),
-                tools=TOOLS,
-                messages=self.messages,
-            )
+            response = self._send()
             if response.stop_reason == "refusal":
                 self.reset()
                 return AIReply("Not touching that one.")

@@ -159,6 +159,9 @@ def restart_command() -> tuple[str, list[str], str]:
     """(program, arguments, folder) that start Capri again: Capri.exe, or python -m capri from the code."""
     if os.environ.get("APPIMAGE"):                 # Linux AppImage: the file itself, not its unpacked insides
         return os.environ["APPIMAGE"], [], str(Path(os.environ["APPIMAGE"]).parent)
+    from . import portable
+    if portable.exe():                             # the one-file Capri.exe: start that, not the unpacked copy
+        return portable.exe(), [], str(Path(portable.exe()).parent)
     if getattr(sys, "frozen", False):
         return sys.executable, [], str(Path(sys.executable).parent)
     root = Path(__file__).resolve().parent.parent
@@ -191,6 +194,8 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName("Capri")
     app.setOrganizationName("")   # settings live in ...\AppData\Local\Capri
     app.setQuitOnLastWindowClosed(False)
+    from .ui.app_icon import app_icon
+    app.setWindowIcon(app_icon())   # her USB shard, in the taskbar
 
     # Only one Capri at a time. Starting her again (Start menu, run.bat) just brings her back.
     lock_dir = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.TempLocation))
@@ -208,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
     if os.environ.get("APPIMAGE") and sys.platform.startswith("linux"):
         try:
             from .linux.desktop import ensure_menu_entry
-            ensure_menu_entry(asset_root() / "capri" / "icon.png")   # Capri in your apps menu
+            ensure_menu_entry(asset_root() / "capri" / "app_icon.png")   # Capri in your apps menu
         except Exception:
             pass
     first_run = not Settings.path().exists()
@@ -227,6 +232,9 @@ def main(argv: list[str] | None = None) -> int:
     controller = CompanionController()
     log_path = logs.setup(on_crash=lambda message: controller.log("Error", "glitched - see capri.log"))
     log.info("Capri %s starting (log: %s)", __version__, log_path)
+    from . import portable
+    if portable.exe():
+        log.info("one-file Capri.exe: %s (unpacked in %s)", portable.exe(), Path(sys.executable).parent)
     companion = Companion(controller, art, settings, sprites)
     d_picture = asset_root() / "d" / "d.png"                 # D, for her video calls (idle activity)
     if d_picture.is_file():
@@ -531,8 +539,8 @@ def main(argv: list[str] | None = None) -> int:
     sounding = now_doing.sounding_for_platform()
     music = now_doing.MusicWatch(sounding, lambda: now_doing.browser_titles(system.processes, desktop)) \
         if sounding else None
-    # Her music deck: a slim data spine beside her while music plays (media keys for the buttons)
-    from .ui.music_deck import DeckKeeper, MusicDeck, tidy_title
+    # Her music deck: a neon bar she stands on while music plays (media keys for the buttons)
+    from .ui.music_deck import DeckKeeper, MusicDeck, song_from
     music_deck = MusicDeck()
     def deck_button(name: str) -> None:
         try:
@@ -545,12 +553,13 @@ def main(argv: list[str] | None = None) -> int:
         try:
             procs = system.processes()
             players = [p for p in procs if now_doing.is_music_app(p.name or Path(p.exe or "").name)]
-            for title in (desktop.window_title(w) for w in desktop.windows_for([p.pid for p in players])):
-                if title and tidy_title(title) not in ("Music", ""):
-                    return tidy_title(title)
-            for title in now_doing.browser_titles(system.processes, desktop):
-                if now_doing.music_site([title]):
-                    return tidy_title(title)
+            song = song_from(desktop.window_title(w) for w in desktop.windows_for([p.pid for p in players]))
+            if song:
+                return song
+            song = song_from(t for t in now_doing.browser_titles(system.processes, desktop)
+                             if now_doing.music_site([t]))
+            if song:
+                return song
         except Exception:
             pass
         return "Now playing"

@@ -42,9 +42,10 @@ class ExtrasTab(QWidget):
         form = QFormLayout(look)
         self.panel_mode = QComboBox()
         for key, label in (("always", "Always there"), ("popup", "Only when she talks back (pops up)"),
-                           ("never", "Never (just her)")):
+                           ("name", "Only when you say her name (pops up)"), ("never", "Never (just her)")):
             self.panel_mode.addItem(label, key)
-        mode = "never" if not s.show_panel else "popup" if s.panel_popup else "always"
+        mode = "never" if not s.show_panel else ("name" if s.panel_on_name else "popup") if s.panel_popup \
+            else "always"
         self.panel_mode.setCurrentIndex(self.panel_mode.findData(mode))
         form.addRow("Text box", self.panel_mode)
         self.panel_chat = QCheckBox("Show what you said, and TYPE / TALK buttons on it")
@@ -138,7 +139,7 @@ class ExtrasTab(QWidget):
         self.roam.setChecked(s.roam)
         form.addRow(self.roam)
         form.addRow(_hint("Say “teleport” / “go for a walk” or “stay there”."))
-        self.music_deck = QCheckBox("Music deck: while music plays, a little deck beside her (song, play / pause, skip)")
+        self.music_deck = QCheckBox("Music deck: while music plays, she stands on a neon bar (song, play / pause, skip)")
         self.music_deck.setChecked(s.music_deck)
         form.addRow(self.music_deck)
         self.game_play = QCheckBox("Let her play games: say “play this for me” (she presses keys and clicks in the "
@@ -181,7 +182,7 @@ class ExtrasTab(QWidget):
     def apply(self) -> bool:
         s = self.settings
         mode = self.panel_mode.currentData()
-        s.show_panel, s.panel_popup = mode != "never", mode == "popup"
+        s.show_panel, s.panel_popup, s.panel_on_name = mode != "never", mode in ("popup", "name"), mode == "name"
         s.panel_chat = self.panel_chat.isChecked()
         s.glitches = int(self.glitch_every.currentData())
         s.clip_when = self.clip_when.currentData()

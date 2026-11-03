@@ -128,6 +128,7 @@ class ScreenWatch(QObject):
         self.looking = False
         self._last = clock()
         self._told: set[str] = set()                    # problems already told to you (once each)
+        self._fails = 0                     # AI problems in a row: she waits longer between glances
         self._bridge = _Bridge()
         self._bridge.done.connect(lambda then, reply: then(reply))
         self.timer = QTimer(self)
@@ -151,7 +152,10 @@ class ScreenWatch(QObject):
         if reply is None:
             return
         if self._problem(reply):
+            self._fails += 1                         # a refusing AI isn't asked again every glance: back off
+            self._last = self.clock() + min(1800, 60 * 2 ** self._fails)
             return
+        self._fails = 0
         line = cleaned(reply.text)
         if not line:
             return

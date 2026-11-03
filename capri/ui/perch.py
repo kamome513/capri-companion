@@ -110,7 +110,8 @@ class SitWindow(OverlayWindow):
     opens up and nothing shows a gap as they swing. She breathes a little, pivoting on her
     seat, so she stays put on the edge."""
 
-    def __init__(self, always_on_top: bool = True, compact: bool = False, art: Path = ART) -> None:
+    def __init__(self, always_on_top: bool = True, compact: bool = False, art: Path = ART,
+                 size: int = 100) -> None:
         super().__init__(always_on_top)
         self.art = art
         info = json.loads((art / "sit.json").read_text())
@@ -124,10 +125,10 @@ class SitWindow(OverlayWindow):
         self._timer = QTimer(self)
         self._timer.setInterval(1000 // FPS)
         self._timer.timeout.connect(self.update)
-        self.set_compact(compact)
+        self.set_compact(compact, size)
 
-    def set_compact(self, compact: bool) -> None:
-        self.height_px = SIT_HEIGHT[compact]
+    def set_compact(self, compact: bool, size: int = 100) -> None:
+        self.height_px = round(SIT_HEIGHT[compact] * size / 100)
         self.s = self.height_px / self.art_h
         self.setFixedSize(QSize(round(self.art_w * self.s) + PAD * 2, self.height_px + PAD * 2))
         self.update()

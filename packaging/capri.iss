@@ -8,7 +8,7 @@
 
 #define AppName "Capri"
 #ifndef AppVersion
-  #define AppVersion "2.0.1"
+  #define AppVersion "2.1.0"
 #endif
 
 [Setup]
@@ -22,7 +22,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\dist
 OutputBaseFilename=Capri-Setup-{#AppVersion}
-SetupIconFile=..\assets\capri\icon.ico
+SetupIconFile=..\assets\capri\app_icon.ico
 UninstallDisplayIcon={app}\Capri.exe
 Compression=lzma2/max
 SolidCompression=yes

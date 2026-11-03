@@ -257,7 +257,8 @@ class ChatWindow(QWidget):
         self.settings = getattr(assistant, "settings", None)
         self.setObjectName("chat")
         self.setWindowTitle("Capri - Chat")
-        self.setWindowIcon(QIcon(QPixmap.fromImage(icon)))
+        from .app_icon import app_icon
+        self.setWindowIcon(app_icon())
         self.resize(460, 600)
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 10, 12, 12)

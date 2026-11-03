@@ -24,7 +24,12 @@ from .status_panel import StatusPanel
 SCREEN_MARGIN = 2    # default gap between Capri and the screen edge / taskbar: the very corner
 PANEL_GAP = 2        # gap between the panel's tail tip and Capri
 TAIL_AT = 0.78       # preferred tail position across the panel width
-CHARACTER_HEIGHT = {False: 190, True: 105}   # normal / compact
+CHARACTER_HEIGHT = {False: 190, True: 105}   # normal / compact (at size 100%)
+SIZES = ((60, "Tiny"), (80, "Small"), (100, "Normal"), (125, "Big"), (150, "Bigger"), (200, "Huge"))
+
+
+def her_height(compact: bool, size: int) -> int:
+    return max(40, round(CHARACTER_HEIGHT[compact] * max(50, min(200, int(size or 100))) / 100))
 LOUNGE_OVERLAP = 7   # px of Capri's body resting over the panel's top edge when lying on it
 
 
@@ -48,12 +53,15 @@ class Companion(QObject):
         self.on_throw: Callable[[QPointF], bool] | None = None   # a flick-and-let-go: fling.ThrowShow
         self._popup_until = 0.0                    # popup text box: shown until then
         self._popup_message = ""
+        self._called = False                       # "only when you say her name": you're talking to her right now
         self._panel_fading = False
         self._popup_timer = QTimer(self)
         self._popup_timer.setSingleShot(True)
         self._popup_timer.timeout.connect(lambda: None if self.drone else self._apply_visibility())
         self._lying_raised = False
         self.perch_rect: QRect | None = None  # the window she's sitting on ("Sit on windows")
+        self.platform = 0                     # px she stands up on her music deck (0: on the floor)
+        self.moved: list = []                 # called after she's moved (the music deck follows her feet)
         self._panel_home = QPoint()
         self.talking = False
         self.viseme = ""
@@ -63,7 +71,7 @@ class Companion(QObject):
         self.panel.set_compact(settings.compact)
         self.panel.set_show_log(settings.show_log and settings.log_style != "cards")
         self.panel.set_static(settings.panel_static)
-        self.character = CharacterWindow(art, CHARACTER_HEIGHT[settings.compact], top, sprites,
+        self.character = CharacterWindow(art, her_height(settings.compact, settings.size), top, sprites,
                                          settings.character_style)
         self.character.set_look(settings.wild_hair, settings.idle_animation, settings.hair_style)
         self.character.acts.enabled = settings.idle_acts
@@ -75,7 +83,7 @@ class Companion(QObject):
 
         self.drone_window = DroneWindow(top)
         self.drone_window.set_style(settings.drone_look)
-        self.sit_window = SitWindow(top, settings.compact)
+        self.sit_window = SitWindow(top, settings.compact, size=settings.size)
         self.feed = FeedWindow(controller, top, colours=self._call_colours)   # the chat skin's colours
         self.feed.resized.connect(self._place_feed)
         controller.changed.connect(self._on_changed)
@@ -161,10 +169,24 @@ class Companion(QObject):
         # Keep *her* on screen; her window's transparent hair/glow margin may hang off the edge,
         # so she can stand right against the side of the screen.
         x = max(area.left() - c.x(), min(target.x(), area.right() + 1 - (c.x() + c.width())))
-        below = self._lounge_extra()     # lying on the panel: the panel hangs under her
+        below = self._lounge_extra() + self.platform   # lying on the panel / standing on her music deck
         y = max(area.top() - c.y(), min(target.y(), area.bottom() + 1 - (c.y() + c.height()) - below))
         ch.move(x, y)
         self._place_panel()
+        for follow in list(self.moved):
+            follow()
+
+    def set_platform(self, height: int) -> None:
+        """Stand her up on her music deck (height px) or back down (0). Only lifts her if she's on the floor:
+        dragged up the screen, the deck just slides under her feet."""
+        height = max(0, int(height))
+        old, self.platform = self.platform, height
+        if height == old or self.drone or self.perched or self.busy_elsewhere:
+            return
+        ch, c = self.character, self.character.content_rect()
+        floor = self.screen.availableGeometry().bottom() + 1 - (c.y() + c.height()) - self._lounge_extra()
+        if ch.y() >= floor - old - 12:                    # she was on the floor (or on the deck at the floor)
+            self._move_character(QPoint(ch.x(), ch.y() + old - height))
 
     def lounging(self) -> bool:
         return self.character.mode == "lying"
@@ -232,7 +254,7 @@ class Companion(QObject):
             x = round(self.content_geometry().center().x() - panel.width() / 2)
             x = max(area.left(), min(x, area.right() + 1 - panel.width()))
             panel.set_tail(panel.width() / 2, up=False, visible=False)
-            spot = QPoint(x, ch.y() + ch.height() - LOUNGE_OVERLAP - PANEL_GLOW)
+            spot = QPoint(x, ch.y() + ch.height() - LOUNGE_OVERLAP - PANEL_GLOW + self.platform)   # (under her deck)
             if spot != panel.pos() or not self._lying_raised:
                 panel.move(spot)
                 ch.raise_()                                # her on top of the panel - only when it moved,
@@ -257,11 +279,10 @@ class Companion(QObject):
         if self.perched:                                  # her spot is home, not the window she's on
             return
         area, c = self.screen.availableGeometry(), self.content_geometry()
-        self.settings.position = SavedPosition(
-            self.screen.name(),
-            area.right() + 1 - (c.x() + c.width()),
-            area.bottom() + 1 - (c.y() + c.height()),
-        )
+        bottom = area.bottom() + 1 - (c.y() + c.height())
+        if self.platform and bottom <= self.platform + self._lounge_extra() + 1:
+            bottom = max(0, bottom - self.platform)        # up on her music deck: home is the floor under it
+        self.settings.position = SavedPosition(self.screen.name(), area.right() + 1 - (c.x() + c.width()), bottom)
         self.settings.save()
 
     # -- dragging -------------------------------------------------------------------
@@ -306,9 +327,14 @@ class Companion(QObject):
         self.settings.save()
         self.settings_changed.emit()
 
+    def set_size(self, size: int) -> None:
+        """Right-click -> Size: make her bigger or smaller (her feet stay where they are)."""
+        self.settings.size = max(50, min(200, int(size)))
+        self.set_compact(self.settings.compact)
+
     def set_compact(self, compact: bool) -> None:
         self.settings.compact = compact
-        self.sit_window.set_compact(compact)
+        self.sit_window.set_compact(compact, self.settings.size)
         window = self.perch_rect
         if window is not None:
             self.leave_perch()
@@ -316,7 +342,7 @@ class Companion(QObject):
         anchor = self.content_geometry().bottomRight()   # keep her feet where they are
         self.panel.set_compact(compact)
         ch.lying_width = self._lying_width()
-        ch.set_display_height(CHARACTER_HEIGHT[compact])
+        ch.set_display_height(her_height(compact, self.settings.size))
         self._move_character(anchor - ch.content_rect().bottomRight(), self.screen)
         self._remember_position()
         self._save()
@@ -428,7 +454,9 @@ class Companion(QObject):
         if self.drone:
             self._apply_visibility()
         elif getattr(self.settings, "panel_popup", False):          # popup text box: up while she talks,
-            if not on:                                                # and a few seconds after
+            if not on and self._name_only() and not self._called:
+                pass                                                  # (her own remark: no box for it)
+            elif not on:                                              # and a few seconds after
                 self._popup_until = max(self._popup_until, time.monotonic() + self.POPUP_SECONDS)
                 self._popup_timer.start(int(self.POPUP_SECONDS * 1000) + 50)
             self._apply_visibility()
@@ -518,12 +546,25 @@ class Companion(QObject):
     # -- the text box: always, or only popping up when she talks back ------------------------------------------
     POPUP_SECONDS = 6.0                       # it stays this long after she's done (longer for long replies)
 
+    def _name_only(self) -> bool:
+        """Text box mode "only when you say her name": it pops up when you call her ("hey Capri", the TALK
+        hotkey) and stays for that conversation - not for things she says by herself (screen comments, hype...)."""
+        return bool(getattr(self.settings, "panel_popup", False) and getattr(self.settings, "panel_on_name", False))
+
     def _panel_wanted(self) -> bool:
         if not getattr(self.settings, "panel_popup", False) or self.lounging():
             return True                           # (lying on it: she needs it)
-        busy = self.talking or self.controller.state in (State.LISTENING, State.PROCESSING, State.LAUNCHING,
-                                                         State.SPEAKING)
-        return busy or time.monotonic() < self._popup_until
+        state = self.controller.state
+        if self._name_only():
+            if state is State.LISTENING:
+                self._called = True               # you said her name (or pressed TALK)
+            if not self._called:
+                return False
+        busy = self.talking or state in (State.LISTENING, State.PROCESSING, State.LAUNCHING, State.SPEAKING)
+        if busy or time.monotonic() < self._popup_until:
+            return True
+        self._called = False                      # that conversation's over
+        return False
 
     def _show_panel(self, visible: bool) -> None:
         """Show / hide the text box - popping in and fading out in popup mode."""
@@ -563,6 +604,14 @@ class Companion(QObject):
         if not getattr(self.settings, "panel_popup", False):
             return
         c = self.controller
+        if self._name_only():
+            if c.state is State.LISTENING:
+                self._called = True
+            elif not self._called:                               # she's talking by herself: no box
+                self._popup_message = c.message
+                if not self.drone:
+                    self._apply_visibility()
+                return
         if c.message != self._popup_message or self.talking or c.state in (State.LISTENING, State.PROCESSING,
                                                                             State.LAUNCHING, State.SPEAKING):
             if c.message != self._popup_message and c.state is State.IDLE and not self._popup_message:

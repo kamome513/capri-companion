@@ -415,11 +415,11 @@ def test_appimage_update_replaces_the_file_and_restarts(linux_updates, tmp_path)
 
 def test_appimage_adds_itself_to_the_apps_menu(tmp_path):
     env = {"APPIMAGE": "/home/u/Apps/Capri-x86_64.AppImage", "XDG_DATA_HOME": str(tmp_path), "HOME": str(tmp_path)}
-    icon = Path(__file__).resolve().parent.parent / "assets" / "capri" / "icon.png"
+    icon = Path(__file__).resolve().parent.parent / "assets" / "capri" / "app_icon.png"
     assert ldesk.ensure_menu_entry(icon, env) == "added"
     entry = tmp_path / "applications" / "capri.desktop"
     assert "Exec=/home/u/Apps/Capri-x86_64.AppImage" in entry.read_text()
-    assert (tmp_path / "icons" / "hicolor" / "128x128" / "apps" / "capri.png").is_file()
+    assert (tmp_path / "icons" / "hicolor" / "256x256" / "apps" / "capri.png").is_file()
     assert ldesk.ensure_menu_entry(icon, env) == ""                    # already right: left alone
     env["APPIMAGE"] = "/home/u/Downloads/Capri-x86_64.AppImage"        # you moved it
     assert ldesk.ensure_menu_entry(icon, env) == "updated"
