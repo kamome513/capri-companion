@@ -237,21 +237,31 @@ def test_brains_without_any_ai():
     assert brains.look("hi", "x").missing
 
 
-# -- the Extras welcome -----------------------------------------------------------------------------------------------
-def test_extras_welcome_turns_on_what_you_pick():
+# -- Settings -> Extras (it used to be a welcome screen) ----------------------------------------------------------------
+def test_the_extras_tab_turns_on_what_you_pick():
     from test_stage5 import settle
-    from capri.ui.extras import ExtrasDialog
-    s = Settings(watch_screen=False, clips=False, roam=True, throwable=True, voice_enabled=True)
+    from capri.ui.extras_tab import ExtrasTab
+    s = Settings(watch_screen=False, clips=False, roam=True, throwable=True, show_panel=True, panel_popup=False)
     s.save = lambda: None
     saved, turned = [], []
 
     def turn_on(progress):
         turned.append(1)
         s.clips = True
-    d = ExtrasDialog(s, lambda: saved.append(1), turn_on)
-    d.boxes["watch_screen"].setChecked(True)
-    d.boxes["roam"].setChecked(False)
-    d.boxes["clips"].setChecked(True)
-    d.accept()
+    tab = ExtrasTab(s, lambda: saved.append(1), turn_on)
+    tab.watch_on.setChecked(True)
+    tab.roam.setChecked(False)
+    tab.clip_on.setChecked(True)
+    tab.panel_mode.setCurrentIndex(tab.panel_mode.findData("popup"))
+    tab.glitch_every.setCurrentIndex(tab.glitch_every.findData(0))
+    tab.apply()
     assert settle(3, lambda: turned and s.clips)
-    assert s.watch_screen and not s.roam and s.extras_offered and saved
+    assert s.watch_screen and not s.roam and saved and s.show_panel and s.panel_popup and s.glitches == 0
+    tab.panel_mode.setCurrentIndex(tab.panel_mode.findData("never"))
+    tab.apply()
+    assert not s.show_panel
+
+
+def test_no_welcome_screen_any_more():
+    import importlib.util
+    assert importlib.util.find_spec("capri.ui.extras") is None

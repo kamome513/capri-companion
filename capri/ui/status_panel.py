@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QEasingCurve, QPointF, QRectF, Qt, QTimer, QVariantAnimation
+from PySide6.QtCore import QEasingCurve, QPointF, QRectF, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import QLinearGradient, QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPaintEvent, QPen
 
 from ..controller import CompanionController
@@ -50,8 +50,14 @@ def compact_metrics() -> PanelMetrics:
 
 
 class StatusPanel(OverlayWindow):
+    type_clicked = Signal()               # the TYPE button: open the chat to type to her
+    talk_clicked = Signal()               # the TALK button: she listens now (no "Hey Capri" needed)
+
     def __init__(self, controller: CompanionController, icon: QImage, always_on_top: bool = True) -> None:
         super().__init__(always_on_top)
+        self.chat_bits = True              # the "YOU >" line and the TYPE / TALK buttons
+        self._buttons: dict[str, QRectF] = {}
+        self.clicked.connect(self._clicked)
         self.setWindowTitle("Capri - status")
         self.controller = controller
         self._icon_src = icon
@@ -196,9 +202,13 @@ class StatusPanel(OverlayWindow):
 
         self._title_lines = self._wrap_title(c.message, m.width - self._text_x() - m.pad)
         title_h = QFontMetricsF(m.f_title).height()
-        head_block = max(m.icon, self._header_h() + title_h * len(self._title_lines))
-        rows = len(c.entries) if (self.show_log and m.log) else 0
-        body_h = m.pad + STEP + head_block + (8 + rows * m.row_h if rows else 0) + m.pad
+        self._you = self.heard() if self.chat_bits else ""
+        you_h = QFontMetricsF(m.f_log).height() + 2 if self._you else 0.0
+        head_block = max(m.icon, self._header_h() + you_h + title_h * len(self._title_lines))
+        rows = len([e for e in c.entries if e[0] != "Heard"]) if (self.show_log and m.log) else 0
+        buttons_h = (QFontMetricsF(m.f_badge).height() + 10) if self.chat_bits else 0.0
+        body_h = m.pad + STEP + head_block + (8 + rows * m.row_h if rows else 0) + \
+            (8 + buttons_h if buttons_h else 0) + m.pad
         self.setFixedSize(m.width + GLOW * 2, round(body_h + GLOW * 2 + TAIL))
         self._body = QRectF(GLOW, GLOW + (TAIL if self.tail_up else 0), m.width, body_h)
         if c.state is not self._last_state:
@@ -207,6 +217,20 @@ class StatusPanel(OverlayWindow):
             self._last_state = c.state
             self._update_static_timer()
         self.update()
+
+    def heard(self) -> str:
+        """What she last heard you say (from her activity log)."""
+        for verb, detail in reversed(self.controller.entries):
+            if verb == "Heard":
+                return detail.split(" -> ")[0].strip().strip('"')
+        return ""
+
+    def _clicked(self, at) -> None:
+        local = QPointF(self.mapFromGlobal(at))
+        for name, rect in self._buttons.items():
+            if rect.adjusted(-3, -3, 3, 3).contains(local):
+                (self.type_clicked if name == "type" else self.talk_clicked).emit()
+                return
 
     def _on_pulse(self, value: float) -> None:
         self._pulse = float(value)
@@ -309,7 +333,7 @@ class StatusPanel(OverlayWindow):
         dpr = self.devicePixelRatioF()
         key = (self.width(), self.height(), dpr, c.state, c.message, c.channel, tuple(c.entries), self._pulse,
                self.level, self.reveal, self.talking, self.tail_x, self.tail_up, self.tail_visible,
-               self._icon_src.cacheKey(), m.width, self.show_log)
+               self._icon_src.cacheKey(), m.width, self.show_log, self.chat_bits, getattr(self, "_you", ""))
         if key != self._overlay_key:
             overlay = QImage(round(self.width() * dpr), round(self.height() * dpr),
                              QImage.Format.Format_ARGB32_Premultiplied)
@@ -393,11 +417,23 @@ class StatusPanel(OverlayWindow):
                 p.fillRect(QRectF(bx + i * (bar_w + gap), badge.center().y() + (badge.height() - 5) / 2 - bh,
                                   bar_w, bh), theme.BADGE_TEXT)
 
+        # What you said, dim, above her answer.
+        y = top + self._header_h()
+        if getattr(self, "_you", ""):
+            p.setFont(m.f_log)
+            fm_you = QFontMetricsF(m.f_log)
+            p.setPen(theme.MSG_CYAN)
+            p.drawText(QPointF(text_x, y + fm_you.ascent()), "YOU \u203a")
+            p.setPen(theme.TEXT_LOG)
+            width = r.right() - m.pad - text_x - fm_you.horizontalAdvance("YOU \u203a ")
+            p.drawText(QPointF(text_x + fm_you.horizontalAdvance("YOU \u203a "), y + fm_you.ascent()),
+                       fm_you.elidedText(self._you, Qt.TextElideMode.ElideRight, width))
+            y += fm_you.height() + 2
+
         # Title / status message.
         p.setFont(m.f_title)
         p.setPen(theme.TEXT_TITLE)
         fm_title = QFontMetricsF(m.f_title)
-        y = top + self._header_h()
         budget = round(sum(len(line) for line in self._title_lines) * self.reveal)
         for line in self._title_lines:
             shown = line[:max(0, budget)]                 # typewriter while she speaks
@@ -412,6 +448,8 @@ class StatusPanel(OverlayWindow):
             y = max(top + m.icon, y) + 8
             detail_w = r.right() - m.pad - (text_x + m.verb_col)
             for verb, detail in c.entries:
+                if verb == "Heard":
+                    continue                                   # (it's the "YOU >" line now)
                 base = y + fm_log.ascent()
                 p.setPen(accent if verb.upper() == "ERROR" else theme.GREEN)
                 p.drawText(QPointF(text_x, base), verb)
@@ -419,3 +457,32 @@ class StatusPanel(OverlayWindow):
                 p.drawText(QPointF(text_x + m.verb_col, base),
                            fm_log.elidedText(detail, Qt.TextElideMode.ElideRight, detail_w))
                 y += m.row_h
+
+        # TYPE / TALK: angled chips along the bottom edge
+        self._buttons = {}
+        if self.chat_bits:
+            fm_b = QFontMetricsF(m.f_badge)
+            bh = fm_b.height() + 6
+            by = r.bottom() - m.pad - bh
+            x = r.right() - m.pad
+            p.setFont(m.f_badge)
+            for name, label, colour in (("talk", "\u25c9 TALK", theme.MSG_RED), ("type", "\u2328 TYPE", theme.MSG_CYAN)):
+                bw = fm_b.horizontalAdvance(label) + 18
+                rect = QRectF(x - bw, by, bw, bh)
+                chip = QPainterPath()
+                chip.moveTo(rect.left() + 6, rect.top())
+                chip.lineTo(rect.right(), rect.top())
+                chip.lineTo(rect.right(), rect.bottom() - 6)
+                chip.lineTo(rect.right() - 6, rect.bottom())
+                chip.lineTo(rect.left(), rect.bottom())
+                chip.lineTo(rect.left(), rect.top() + 6)
+                chip.closeSubpath()
+                fill = QColor(colour)
+                fill.setAlpha(40)
+                p.setBrush(fill)
+                p.setPen(QPen(colour, 1.2))
+                p.drawPath(chip)
+                p.setPen(colour)
+                p.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
+                self._buttons[name] = rect
+                x -= bw + 8

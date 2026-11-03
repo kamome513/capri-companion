@@ -144,6 +144,7 @@ class Services:
     roam: Any | None = None             # ui.roam.RoamShow: "go for a walk"
     clips: Any | None = None            # integrations.clips.ClipRecorder: "clip that"
     screen_watch: Any | None = None     # integrations.screen_watch.ScreenWatch: "what do you see?"
+    game_agent: Any | None = None       # integrations.game_agent.GameAgent: "play this for me"
     clips_turn_on: Callable[[Callable[[str], None]], None] | None = None   # progress -> turn clips on (downloads)
 
 
@@ -403,6 +404,7 @@ class CommandRouter(QObject):
             Kind.SCREEN: self._screen, Kind.REPEAT: self._repeat, Kind.MOVE: self._move, Kind.AI_SETUP: self._ai_setup,
             Kind.SHORTCUT: self._shortcut, Kind.FORGET: self._forget, Kind.MUSIC_SERVICE: self._music_service,
             Kind.LEARN_BUTTON: self._learn_button, Kind.FORGET_BUTTON: self._forget_button, Kind.TYPE: self._type, Kind.HAIR: self._hair, Kind.SETTINGS: self._settings, Kind.UPDATE: self._update, Kind.RESTART_APP: self._restart_app, Kind.ROAM: self._roam, Kind.CLIP: self._clip, Kind.LOOK: self._look, Kind.WATCH: self._watch,
+            Kind.PLAY_GAME: self._play_game, Kind.STOP_GAME: self._stop_game,
             Kind.QUIET: self._quiet, Kind.VOICE: self._voice, Kind.TIMER: self._timer,
             Kind.PERCH_ON: lambda i: self._perch(True), Kind.PERCH_OFF: lambda i: self._perch(False),
             Kind.HYPE_ON: lambda i: self._hype(True), Kind.HYPE_OFF: lambda i: self._hype(False),
@@ -2106,6 +2108,37 @@ class CommandRouter(QObject):
         self.controller.set_state(State.PROCESSING, "Looking...")
         watch.ask(intent.query, lambda text, emotion: self.assistant.show_result(
             State.SUCCESS if emotion != "confused" else State.ERROR, text, emotion=emotion))
+
+    def _play_game(self, intent: Intent) -> None:
+        """'Play this for me' / 'your turn, get some wood': she plays the game in front (Esc stops her)."""
+        agent, s = self.services.game_agent, self.services.settings
+        if agent is None or s is None:
+            return self.assistant.show_result(State.ERROR, "I can't play games here.")
+        if not s.game_play:
+            def answer(yes: bool) -> None:
+                if not yes:
+                    return self.assistant.show_result(State.IDLE, "Okay. It's in my Settings, under Extras.")
+                s.game_play = True
+                s.save()
+                self._play_game(intent)
+            return self.assistant.confirm("Want me to take over? I'll press keys and click in the game window "
+                                          "you've got in front - Esc stops me any time. Say yes or no.", answer)
+        goal = intent.query
+        self.assistant.show_result(State.SUCCESS, "My turn! Esc takes it back." + (f" Goal: {goal}." if goal else ""),
+                                   emotion="playful")
+
+        def go() -> None:                        # once she's done talking and the game's back in front
+            why = agent.start(goal)
+            if why:
+                self.assistant.show_result(State.ERROR, why)
+        QTimer.singleShot(1500, go)
+
+    def _stop_game(self, intent: Intent) -> None:
+        agent = self.services.game_agent
+        if agent is None or not agent.running:
+            return self.assistant.show_result(State.IDLE, "I'm not playing anything.")
+        agent.stop()
+        self.assistant.show_result(State.SUCCESS, "Hands off. Your turn.")
 
     def _watch(self, intent: Intent) -> None:
         """'Watch my screen' / 'stop watching my screen'."""

@@ -46,6 +46,12 @@ class Companion(QObject):
         self.drone = False    # game mode: she's a little flying disk (never saved)
         self.busy_elsewhere = False   # a show (dash, greeting) has her out of her window for a moment
         self.on_throw: Callable[[QPointF], bool] | None = None   # a flick-and-let-go: fling.ThrowShow
+        self._popup_until = 0.0                    # popup text box: shown until then
+        self._popup_message = ""
+        self._panel_fading = False
+        self._popup_timer = QTimer(self)
+        self._popup_timer.setSingleShot(True)
+        self._popup_timer.timeout.connect(lambda: None if self.drone else self._apply_visibility())
         self._lying_raised = False
         self.perch_rect: QRect | None = None  # the window she's sitting on ("Sit on windows")
         self._panel_home = QPoint()
@@ -274,12 +280,14 @@ class Companion(QObject):
     def _drag_start(self) -> None:
         self._drag_origin = self.character.pos()
         self._drag_samples = [(time.monotonic(), QPointF(QCursor.pos()))]
+        self.character.set_held(True)                       # she dangles from your cursor
 
     def _drag_move(self, delta: QPoint) -> None:
         self._move_character(self._drag_origin + delta)
         samples = getattr(self, "_drag_samples", [])
         samples.append((time.monotonic(), QPointF(QCursor.pos())))
         del samples[:-12]
+        self.character.held_at(float(QCursor.pos().x()))
 
     def _drag_end(self) -> None:
         """Let go: thrown if you flicked her (see fling.py), else she stays where you put her."""
@@ -288,6 +296,7 @@ class Companion(QObject):
         if samples and time.monotonic() - samples[-1][0] > 0.06:
             samples = []                                    # you stopped before letting go: no throw
         self._drag_samples = []
+        self.character.set_held(False)
         if self.on_throw is not None and samples and self.on_throw(speed_of(samples)):
             return
         self._remember_position()
@@ -338,6 +347,12 @@ class Companion(QObject):
         self._relayout(lambda: self.character.set_look(wild_hair, idle_animation, hair_style))
         if changed:
             self._save()                                  # (also tells the menu and Settings)
+
+    def set_body_look(self, look: str) -> None:
+        """Settings -> Character -> Body: neon (dark, glowing edges) or full colour."""
+        self.settings.body_style = look
+        self.character.set_body_look(look)
+        self._save()
 
     def set_idle_acts(self, on: bool) -> None:
         self.settings.idle_acts = on
@@ -411,6 +426,11 @@ class Companion(QObject):
         self.drone_window.set_talking(on)
         self.sit_window.set_talking(on)
         if self.drone:
+            self._apply_visibility()
+        elif getattr(self.settings, "panel_popup", False):          # popup text box: up while she talks,
+            if not on:                                                # and a few seconds after
+                self._popup_until = max(self._popup_until, time.monotonic() + self.POPUP_SECONDS)
+                self._popup_timer.start(int(self.POPUP_SECONDS * 1000) + 50)
             self._apply_visibility()
         if not on:
             self.viseme = ""
@@ -493,7 +513,66 @@ class Companion(QObject):
         self.drone_window.setVisible(False)
         self.sit_window.setVisible(not self.hidden and self.perched)
         self.character.setVisible(not self.hidden and not self.perched)
-        self.panel.setVisible(not self.hidden and self.settings.show_panel)
+        self._show_panel(not self.hidden and self.settings.show_panel and self._panel_wanted())
+
+    # -- the text box: always, or only popping up when she talks back ------------------------------------------
+    POPUP_SECONDS = 6.0                       # it stays this long after she's done (longer for long replies)
+
+    def _panel_wanted(self) -> bool:
+        if not getattr(self.settings, "panel_popup", False) or self.lounging():
+            return True                           # (lying on it: she needs it)
+        busy = self.talking or self.controller.state in (State.LISTENING, State.PROCESSING, State.LAUNCHING,
+                                                         State.SPEAKING)
+        return busy or time.monotonic() < self._popup_until
+
+    def _show_panel(self, visible: bool) -> None:
+        """Show / hide the text box - popping in and fading out in popup mode."""
+        panel = self.panel
+        popup = getattr(self.settings, "panel_popup", False)
+        if visible == panel.isVisible() and not (visible and self._panel_fading):
+            return
+        if not popup:
+            panel.setWindowOpacity(1.0)
+            panel.setVisible(visible)
+            return
+        from PySide6.QtCore import QPropertyAnimation
+        anim = getattr(self, "_panel_anim", None)
+        if anim is not None:
+            anim.stop()
+        anim = QPropertyAnimation(panel, b"windowOpacity", self)
+        self._panel_anim = anim
+        if visible:
+            self._panel_fading = False
+            panel.setWindowOpacity(0.0)
+            panel.setVisible(True)
+            self._place_panel()
+            anim.setDuration(160)
+            anim.setStartValue(0.0)
+            anim.setEndValue(1.0)
+        else:
+            self._panel_fading = True
+            anim.setDuration(260)
+            anim.setStartValue(panel.windowOpacity())
+            anim.setEndValue(0.0)
+            anim.finished.connect(lambda: (panel.setVisible(False), panel.setWindowOpacity(1.0),
+                                           setattr(self, "_panel_fading", False)) if self._panel_fading else None)
+        anim.start()
+
+    def _popup_check(self) -> None:
+        """Popup mode: something new to say (or she's listening / thinking): show it, and hide it later."""
+        if not getattr(self.settings, "panel_popup", False):
+            return
+        c = self.controller
+        if c.message != self._popup_message or self.talking or c.state in (State.LISTENING, State.PROCESSING,
+                                                                            State.LAUNCHING, State.SPEAKING):
+            if c.message != self._popup_message and c.state is State.IDLE and not self._popup_message:
+                self._popup_message = c.message                  # (her first idle line: no popup for it)
+                return
+            self._popup_message = c.message
+            self._popup_until = time.monotonic() + self.POPUP_SECONDS + min(8.0, len(c.message or "") / 25)
+            self._popup_timer.start(int((self._popup_until - time.monotonic()) * 1000) + 50)
+        if not self.drone:
+            self._apply_visibility()
 
     def set_drone(self, on: bool) -> None:
         """Game mode on / off: she turns into a little flying disk while you play."""
@@ -616,6 +695,8 @@ class Companion(QObject):
         self._place_panel()
         if self.drone:
             self._apply_visibility()
+        else:
+            self._popup_check()
 
     def show(self) -> None:
         self._lying_raised = False

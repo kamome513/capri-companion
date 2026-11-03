@@ -106,9 +106,10 @@ def test_thrown_at_the_wall_she_slams_slides_and_gets_up(clock):
     assert show.throw(QPointF(-3200, -500))
     assert c.busy_elsewhere
     states = run(show, clock)
-    assert states[:6] == ["fly", "slam", "slide", "crumple", "dazed", "getup"] and states[-1] == "fade"
+    assert states[:3] == ["fly", "slam", "fly"]                            # slams, then BOUNCES off
+    assert states[-4:] == ["topple", "dazed", "getup", "fade"] and show.walls[0] == "left"
     assert not show.active and c.shown == 1 and c.remembered == 1 and not c.busy_elsewhere
-    assert c.moved_to.x() + 40 + 45 < 200                               # she's left by the wall she hit...
+    assert c.moved_to.x() + 40 + 45 < 1000                              # bounced back off the left wall...
     assert c.moved_to.y() + 30 + 250 == AREA.bottom() + 1               # ...standing on the taskbar
     assert any(e == "angry" for _t, e in said)                          # "Ow! Rude."
 
@@ -122,9 +123,11 @@ def test_the_slam_cracks_the_wall_and_sparks_fly(clock):
         clock.t += 1 / 60
         show._tick()
     fx = show.fx
-    assert fx.cracks and fx.sparks and fx.glitch > 0.5 and fx.stars > 0.5
-    assert all(-1 <= pt.x() for line in fx.cracks[0].lines for pt in line[:1])
-    clock.t += 0.05
+    e = fx.effects
+    assert e.cracks and e.rings and e.flashes and fx.glitch > 0.5 and fx.stars > 0.5 and fx.impact > 0.5
+    assert any(p.kind == "shard" for p in e.particles) and any(p.kind == "spark" for p in e.particles)
+    assert all(-1 <= pt.x() for line in e.cracks[0].lines for pt in line[:1])
+    clock.t += 0.15
     show._tick()
     left = fx.body.centre.x() - fx.fh * fling.WIDTH * fx.body.squash[0]
     assert abs(left - AREA.left()) < 1                                  # flat against the wall, not through it
@@ -138,8 +141,7 @@ def test_thrown_at_the_ceiling_she_drops(clock):
     show, c, _ = make()
     show.throw(QPointF(200, -4200))
     states = run(show, clock)
-    assert "slam" in states and "fall" in states and states[-1] == "fade"
-    assert show._wall == "top"
+    assert "slam" in states and states[-1] == "fade" and show.walls[0] == "top"
 
 
 def test_a_gentle_toss_lands_on_her_feet(clock):
@@ -183,3 +185,40 @@ def test_release_speed_is_from_the_last_moment_of_the_drag():
 def test_her_size_when_turned():
     assert fling.extents(200, 0) == pytest.approx((30, 100))
     assert fling.extents(200, 90) == pytest.approx((100, 30))
+
+
+def test_she_says_ow_once_per_throw_not_on_every_bounce(clock):
+    show, c, said = make()
+    show.throw(QPointF(-5200, -2600))                              # hard: several slams and bounces
+    run(show, clock)
+    assert len(show.walls) >= 1 and len(said) == 1 and said[0][1] == "angry"
+
+
+def test_every_frame_repaints_the_whole_window(clock):
+    """Repainting only part of it left old frames of her stuck on the screen (Windows)."""
+    show, c, _ = make()
+    show.throw(QPointF(-3000, 0))
+    asked = []
+    show.fx.update = lambda *a: asked.append(a)
+    clock.t += 1 / 60
+    show._tick()
+    assert asked == [()]
+
+
+def test_old_effects_never_break_a_frame(clock):
+    """A spark drawn after its life ran out used to break the frame (old frames of her then stayed on screen)."""
+    show, c, _ = make()
+    show.throw(QPointF(-3500, 0))
+    for _ in range(80):
+        clock.t += 1 / 60
+        show._tick()
+    fx = show.fx
+    fx.effects.dust(QPointF(500, 800), clock.t - 5, 250)               # long dead, not pruned yet
+    fx.effects.sparks(QPointF(500, 800), 0, 1, 5, (100, 200), clock.t - 5)
+    fx.effects.ring(QPointF(500, 800), clock.t - 5, 100)
+    from capri.ui import fx as fxmod
+    real = fxmod.time if hasattr(fxmod, "time") else None
+    img = QImage(1600, 900, QImage.Format.Format_ARGB32_Premultiplied)
+    img.fill(0)
+    fx.resize(1600, 900)
+    fx.render(img)                                                      # no TypeError, no half-drawn frame

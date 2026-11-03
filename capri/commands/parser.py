@@ -53,6 +53,8 @@ class Kind(Enum):
     CLIP = "clip"                 # "clip that": save the last seconds of your screen; query = seconds ("" = usual)
     LOOK = "look"                 # "what do you see?" / "look at my screen": query = your question
     WATCH = "watch"               # "watch my screen" (on) / "stop watching my screen" (off): query "on" / "off"
+    PLAY_GAME = "play_game"       # "play this for me" / "your turn": she plays the game in front; query = the goal
+    STOP_GAME = "stop_game"       # "stop playing" / "my turn": hands off
     SHORTCUT = "shortcut"         # "when I say gaming time, open steam and discord": targets = (phrase, command)
     FORGET = "forget"             # "forget the shortcut gaming time": targets = (phrase,)
     TAB = "tab"                   # "switch tabs on opera": targets = (browser,) or (); query = the tab ("" = ask)
@@ -738,6 +740,13 @@ LOOK_WORDS = (rf"{_PLS}(?:look at (?:my|the|this) screen|(?:take a )?look at (?:
               rf"what do you think (?:of|about) (?:this|that|my screen)|check (?:out )?my screen|"
               rf"what(?:'s|s| is) (?:this|that)(?: on my screen)?|read my screen|help me with (?:this|what'?s on my screen))"
               rf"(?: right now| please| for me)*")
+PLAY_FOR_ME = (rf"{_PLS}(?:play (?:this|it|the game|this game|for me|this for me|it for me|this game for me)"
+               rf"(?: for me)?|take over(?: the game)?|your turn|you play(?: for me)?|you try|you have a go|"
+               rf"have a go(?: at this)?|take the wheel|take control)(?:,? (?:and |to |then )?(?P<goal>.+))?")
+STOP_PLAYING = (rf"{_PLS}(?:stop playing (?:the game|for me|this|it)|my turn|give it back|i'?ll play|hands off|let me play|stop the game|"
+                rf"i got it|i've got it)(?: now| please)*")
+
+
 WATCH_ON = rf"{_PLS}(?:watch|keep an eye on|keep watching) (?:my|the) screen(?: for me| please)*"
 WATCH_OFF = (rf"{_PLS}(?:stop|quit|don'?t keep) (?:watching|looking at) (?:my|the) screen(?: please)*|"
              rf"{_PLS}don'?t watch (?:my|the) screen(?: anymore)?")
@@ -753,7 +762,8 @@ def clip_seconds(n: str | None, unit: str | None) -> str:
 
 ROAM_WALK = (rf"{_PLS}(?:go (?:for|on) a (?:little )?walk|take a (?:little )?walk|walk around|go walk(?:ing)?(?: around)?|"
              rf"roam(?: around)?|go roam(?:ing)?(?: around)?|wander(?: around)?|go wander(?:ing)?(?: around)?|"
-             rf"stretch your legs|walk somewhere else|move around){_END}")
+             rf"stretch your legs|walk somewhere else|move around|teleport(?: somewhere(?: else)?| around)?|tp(?: somewhere)?|"
+             rf"warp(?: somewhere| around)?){_END}")
 ROAM_STAY = (rf"{_PLS}(?:(?:stop|quit|no more) (?:roaming|walking|wandering)(?: around)?|stay (?:there|here|put|still)|"
              rf"don'?t (?:walk|roam|wander)(?: around)?(?: anymore)?|stand still){_END}")
 ROAM_ON = rf"{_PLS}(?:(?:start|keep|you can|feel free to) (?:roaming|walking around|wandering|roam|wander|walk around)(?: around)?|roam again){_END}"
@@ -772,6 +782,11 @@ def parse(text: str) -> Intent:
         return Intent(Kind.TYPE, query=words)
     if re.fullmatch(RESTART_SELF, t):
         return Intent(Kind.RESTART_APP)                            # "restart yourself": her, not the PC
+    if re.fullmatch(STOP_PLAYING, t):
+        return Intent(Kind.STOP_GAME)
+    m = re.fullmatch(PLAY_FOR_ME, t)
+    if m:
+        return Intent(Kind.PLAY_GAME, query=(m.group("goal") or "").strip())   # "play this for me and get wood"
     if re.fullmatch(WATCH_OFF, t):
         return Intent(Kind.WATCH, query="off")
     if re.fullmatch(WATCH_ON, t):

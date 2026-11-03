@@ -123,6 +123,7 @@ class ZapShow(QObject):
         self._then: Callable[[], None] | None = None
         self._timer = QTimer(self)
         self._timer.setInterval(16)
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)   # frames on time
         self._timer.timeout.connect(self._tick)
 
     HOME_FIRST_MS = 380         # sitting on a window: her teleport home, then the zap

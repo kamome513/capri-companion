@@ -166,6 +166,7 @@ class VisitShow(QObject):
         self._then: Callable[[], None] | None = None
         self._timer = QTimer(self)
         self._timer.setInterval(16)
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)   # frames on time
         self._timer.timeout.connect(self._tick)
 
     def rig(self) -> Rig | None:
@@ -173,8 +174,10 @@ class VisitShow(QObject):
         sprites = self.companion.sprites
         if sprites is None or "standing" not in getattr(sprites, "body", {}):
             return None
-        if self._rig_full is None:
-            self._rig_full = Rig(sprites.frame("standing"))
+        look = getattr(self.companion.settings, "body_style", "full")
+        if self._rig_full is None or getattr(self, "_look", None) != look:
+            from .neon import body_image
+            self._rig_full, self._look, self._rig_key = Rig(body_image(sprites.frame("standing"), look)), look, None
         style = getattr(self.companion.settings, "hair_style", "storm")
         self._rig_full.set_hair_style(style)
         dpr = self.companion.screen.devicePixelRatio()

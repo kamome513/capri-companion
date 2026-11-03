@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QLockFile, QRect, QStandardPaths, Qt, QTimer
+from PySide6.QtCore import QLockFile, QObject, QRect, QStandardPaths, Qt, QTimer, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
@@ -70,6 +70,7 @@ from .integrations.screen_click import ScreenHands, click_at, click_spotify_play
 from .integrations.screen_targets import Finder, click, cursor_pos, target_window, windows_ocr
 from .typing_watch import TypingWatch
 from . import memory
+from .ui.extras_tab import ExtrasTab
 from .ui.visit import VisitShow
 from .ui.visit_actions import VisitActions
 from .ui.zap import ZapShow
@@ -397,6 +398,15 @@ def main(argv: list[str] | None = None) -> int:
         controller.set_state(State.SUCCESS, line, emotion="happy" if where == "head" else "surprised")
         assistant.say(line, emotion="happy" if where == "head" else "surprised")
     companion.patted.connect(patted)
+    companion.character.set_body_look(settings.body_style)       # full colour / neon
+    companion.character.glitch_every = settings.glitches          # random glitches (off unless you turn them on)
+    companion.character.real_glitch.rescheduled()
+
+    def glitch_setting() -> None:
+        if companion.character.glitch_every != settings.glitches:
+            companion.character.glitch_every = settings.glitches
+            companion.character.real_glitch.rescheduled()
+    assistant.settings_changed.connect(glitch_setting)
     from .speech import speaker as speaker_mod
     speaker_mod.mic_device = lambda: settings.mic_voice_device     # "Her voice in your mic"
     from .ui.roam import RoamShow
@@ -521,8 +531,38 @@ def main(argv: list[str] | None = None) -> int:
     sounding = now_doing.sounding_for_platform()
     music = now_doing.MusicWatch(sounding, lambda: now_doing.browser_titles(system.processes, desktop)) \
         if sounding else None
-    status = now_doing.StatusWatch(presence.set_doing, gaming, music,
-                                   wanted=lambda: settings.discord_presence and presence.available)
+    # Her music deck: a slim data spine beside her while music plays (media keys for the buttons)
+    from .ui.music_deck import DeckKeeper, MusicDeck, tidy_title
+    music_deck = MusicDeck()
+    def deck_button(name: str) -> None:
+        try:
+            media.press(name)
+        except OSError as exc:
+            controller.log("Music", f"couldn't press {name}: {exc}"[:60])
+    music_deck.pressed.connect(deck_button)
+
+    def playing_title() -> str:               # from the music app's window ("Artist - Song"), else a music site
+        try:
+            procs = system.processes()
+            players = [p for p in procs if now_doing.is_music_app(p.name or Path(p.exe or "").name)]
+            for title in (desktop.window_title(w) for w in desktop.windows_for([p.pid for p in players])):
+                if title and tidy_title(title) not in ("Music", ""):
+                    return tidy_title(title)
+            for title in now_doing.browser_titles(system.processes, desktop):
+                if now_doing.music_site([title]):
+                    return tidy_title(title)
+        except Exception:
+            pass
+        return "Now playing"
+    deck_keeper = DeckKeeper(music_deck, companion, playing_title, lambda: settings.music_deck)
+    app._music_deck = (music_deck, deck_keeper)
+
+    def doing(mode: str) -> None:
+        presence.set_doing(mode)
+        deck_keeper.music_changed(mode == "music")
+    status = now_doing.StatusWatch(doing, gaming, music,
+                                   wanted=lambda: (settings.discord_presence and presence.available)
+                                   or settings.music_deck)
     services.games.changed.connect(lambda on: status.tick())   # a game opened / closed: right away
     # Clips: the last two minutes of your game, on disk, while it should be recording ("clip that" saves it)
     from .integrations import clips as clipmod
@@ -607,6 +647,52 @@ def main(argv: list[str] | None = None) -> int:
                         notice=lambda text: assistant.show_result(State.ERROR, text, emotion="confused"))
     watch.start()
     services.screen_watch = watch
+
+    # She plays your game ("play this for me"): looks (vision AI) -> moves (keys / camera / clicks), Esc stops her
+    from .integrations import game_agent as gamemod
+    from .integrations.game_hands import game_hands
+    from .ui.her_cursor import HerCursor
+    her_cursor = HerCursor()
+    app._her_cursor = her_cursor
+
+    class _GameBridge(QObject):
+        said = Signal(str)
+        done = Signal(str)
+        cursor = Signal(int, int)
+    game_bridge = _GameBridge()
+    app._game_bridge = game_bridge
+    game_bridge.said.connect(lambda text: (controller.log("Game", text[:60]), assistant.say(text, emotion="playful")))
+    game_bridge.done.connect(lambda why: (controller.log("Game", why), assistant.show_result(
+        State.SUCCESS if why in ("done", "stopped", "escape") else State.ERROR, gamemod.ending(why))))
+
+    def to_screen(x: int, y: int) -> None:
+        r = to_logical((x, y, x + 1, y + 1))
+        her_cursor.glide(r.x(), r.y())
+    game_bridge.cursor.connect(to_screen)
+
+    def game_window(hwnd: int):
+        if not hwnd or desktop.pid_of(hwnd) == os.getpid():          # never Capri herself
+            return None
+        r = desktop.hwnd_rect(hwnd)
+        return gamemod.Rect(r[0], r[1], r[2] - r[0], r[3] - r[1]) if r else None
+
+    def game_picture(rect):
+        from PySide6.QtGui import QGuiApplication, QImage
+        if sys.platform == "win32":
+            from .integrations.screen_click import grab
+            rgb = grab((rect.x, rect.y, rect.x + rect.w, rect.y + rect.h))
+            if rgb is None:
+                return None
+            import numpy as np
+            h, w = rgb.shape[:2]
+            rgba = np.ascontiguousarray(np.dstack([rgb, np.full((h, w), 255, np.uint8)]))
+            return QImage(rgba.tobytes(), w, h, 4 * w, QImage.Format.Format_RGBA8888).copy()
+        screen = QGuiApplication.primaryScreen()
+        return screen.grabWindow(0, rect.x, rect.y, rect.w, rect.h).toImage() if screen is not None else None
+    services.game_agent = gamemod.GameAgent(brain, game_hands, game_picture, desktop.foreground, game_window,
+                                            game_bridge.said.emit, game_bridge.done.emit,
+                                            cursor=lambda x, y: game_bridge.cursor.emit(int(x), int(y)))
+    app.aboutToQuit.connect(services.game_agent.stop)
     status.start()                            # music -> her Discord status; gaming -> she steps aside for your game
     app._status_watch = status
     app.aboutToQuit.connect(status.stop)
@@ -638,8 +724,10 @@ def main(argv: list[str] | None = None) -> int:
                                                          lambda: greet(preview=True), game_hype=hype,
                                                          join_now=lambda: router.handle("join call"),
                                                          updates=services.updates,
-                                                         restart=services.restart,
-                                                         clips_turn_on=services.clips_turn_on), "PC && chat")])
+                                                         restart=services.restart), "PC && chat"),
+                                                  (ExtrasTab(settings, lambda: (assistant.settings_changed.emit(),
+                                                                                companion._apply_visibility()),
+                                                             services.clips_turn_on), "Extras")])
         win = windows["settings"]
         win.load_rows()
         win.show()
@@ -690,6 +778,16 @@ def main(argv: list[str] | None = None) -> int:
         companion.set_click_through(on)
         controller.log("Click", "through ON (locked)" if on else "through off")
     remote["listen"] = assistant.listen_now
+    companion.panel.chat_bits = settings.panel_chat             # "YOU >" + TYPE / TALK on her text box
+    companion.panel.type_clicked.connect(open_chat)
+    companion.panel.talk_clicked.connect(assistant.listen_now)
+
+    def chat_bits() -> None:
+        if companion.panel.chat_bits != settings.panel_chat:
+            companion.panel.chat_bits = settings.panel_chat
+            companion.panel.refresh()
+            companion._place_panel()
+    assistant.settings_changed.connect(chat_bits)
     remote["click-through"] = toggle_click_through
 
     def register_hotkeys() -> list[str]:
@@ -790,14 +888,6 @@ def main(argv: list[str] | None = None) -> int:
                 "Say \u201cHey Capri, open Discord\u201d. Right-click me (or this tray icon) for settings. "
                 "Your microphone audio is processed on this PC only.",
                 QSystemTrayIcon.MessageIcon.Information, 8000)
-    if not settings.extras_offered and not os.environ.get("CAPRI_NO_EXTRAS"):
-        def offer_extras() -> None:               # once: the things that start off (all in Settings too)
-            from .ui.extras import ExtrasDialog
-            dialog = ExtrasDialog(settings, assistant.settings_changed.emit, services.clips_turn_on)
-            windows["extras"] = dialog
-            dialog.show()
-            dialog.raise_()
-        QTimer.singleShot(9000 if args.startup else 4000, offer_extras)
     if settings.click_through and menu.tray:
         menu.tray.showMessage(
             "Capri", f"Click-through is on. Press {pretty(settings.hotkey_click_through)} "
