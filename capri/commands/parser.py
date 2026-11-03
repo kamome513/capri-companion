@@ -753,7 +753,8 @@ def clip_seconds(n: str | None, unit: str | None) -> str:
 
 ROAM_WALK = (rf"{_PLS}(?:go (?:for|on) a (?:little )?walk|take a (?:little )?walk|walk around|go walk(?:ing)?(?: around)?|"
              rf"roam(?: around)?|go roam(?:ing)?(?: around)?|wander(?: around)?|go wander(?:ing)?(?: around)?|"
-             rf"stretch your legs|walk somewhere else|move around){_END}")
+             rf"stretch your legs|walk somewhere else|move around|teleport(?: somewhere(?: else)?| around)?|tp(?: somewhere)?|"
+             rf"warp(?: somewhere| around)?){_END}")
 ROAM_STAY = (rf"{_PLS}(?:(?:stop|quit|no more) (?:roaming|walking|wandering)(?: around)?|stay (?:there|here|put|still)|"
              rf"don'?t (?:walk|roam|wander)(?: around)?(?: anymore)?|stand still){_END}")
 ROAM_ON = rf"{_PLS}(?:(?:start|keep|you can|feel free to) (?:roaming|walking around|wandering|roam|wander|walk around)(?: around)?|roam again){_END}"

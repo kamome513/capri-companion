@@ -50,6 +50,13 @@ class LookTab(QWidget):
                                  "first hair, a wide spiky block. Or say \u201cchange your hair\u201d.")
         self.hair_box.currentIndexChanged.connect(lambda _i: self._look())       # takes effect right away
         form.addRow("Hair", self.hair_box)
+        from .neon import LOOKS
+        self.body_box = QComboBox()
+        for key, label in LOOKS.items():
+            self.body_box.addItem(label, key)
+        self.body_box.setCurrentIndex(max(0, self.body_box.findData(getattr(s, "body_look", "neon"))))
+        self.body_box.currentIndexChanged.connect(lambda _i: companion.set_body_look(self.body_box.currentData()))
+        form.addRow("Body", self.body_box)
         companion.settings_changed.connect(self._sync_hair)
 
         self.games_box = QComboBox()

@@ -160,7 +160,7 @@ open Chrome") or pause after her name. Her frame turns green while she's listeni
 | "clip that" / "clip it" | Saves the last 30 seconds of your screen and sound as a video (Videos\Capri Clips) |
 | "clip the last minute" / "clip the last 2 minutes" / "save the last 45 seconds" | Saves that much (up to 2 minutes) |
 
-Turn on **Clip my games** in Settings → PC & chat first. While it's on, she keeps the last two minutes
+Turn on **Clip my games** in Settings → Extras first. While it's on, she keeps the last two minutes
 recording (only while you're in a game, unless you pick *Always*), on your PC. On Windows the recorder
 (ffmpeg, about 31 MB) downloads once when you turn it on. On Linux install ffmpeg first
 (`sudo apt install ffmpeg`).
@@ -181,9 +181,10 @@ page or private window is in front.
 | Do / say | What happens |
 |---|---|
 | Drag her | Moves her |
-| Flick her and let go | Throws her. Hit a wall hard and she slams into it, slides down, sees stars and gets up |
+| Flick her and let go | Throws her. Hit a wall hard and she slams into it (the wall cracks, sparks fly), bounces off, sees stars and gets up |
 | Click her head | A head pat (click her body: a poke) |
-| "go for a walk" / "stay there" / "start roaming" | She walks somewhere else along the bottom, or stays put |
+| Drag her | She dangles from your cursor, swinging behind the way you move |
+| "teleport" / "go for a walk" / "stay there" / "start roaming" | Her power closes in around her and she teleports somewhere else along the bottom, or stays put |
 
 **Timers, time and weather**
 
@@ -323,6 +324,7 @@ install something.
 |---|---|
 | **Style** | Full body, portrait, classic, or an animated picture. Drop your own pictures in the `looks` folder |
 | **Hair** | Like the show, or Classic spiky |
+| **Body** | Neon (dark, with glowing red and green edges) or Full colour |
 | **In games** | Stay herself over the game, or turn into the drone |
 | **Drone look** | Disk or Mask |
 | **Idle animation** | Breathing, blinking, looking around |
@@ -364,15 +366,22 @@ install something.
 | **Update automatically** / **Check for updates now** | Daily check for a new Capri: downloads it and installs it on her next start. Off = she only tells you |
 | **Restart Capri** | Closes and starts her again (installs a downloaded update) |
 | **Game hype** (cheer for kills, say something when I die, watch my screen, encourage me) / **Preview** | Hype while you play: CS2, Dota 2 and League directly, any game by reading your screen |
-| **Clip my games** / Record / "Clip that" saves / Frame rate / Resolution / With sound / Save big moments | Clips (see Clips above). *Save big moments* clips triple kills, aces and wins by itself (needs Game hype) |
-| **Choose folder / Open clips folder** | Where clips go (Videos\Capri Clips) |
-| **Watch my screen and comment** / How often / Remember what she sees | She glances at your screen and comments (see Your screen above) |
-| **Throw her** / **Roam around** / **Head pats** | Flick-and-throw, little walks along the bottom of the screen, reacting to clicks |
-| **Also play her voice on** | Her voice in your mic: pick a virtual cable (VB-Audio "CABLE Input", free) or "Steam Streaming Speakers", then pick the matching mic in Discord or Roblox. Your friends hear her |
 | **Toggle Mute / Deafen keybind** | Your Discord keybinds, if you changed Discord's defaults |
 | **Show "Playing Capri" on my Discord profile** | Your friends see animated Capri on your profile with **Get Capri** and **Join her Discord** buttons (Discord hides your own buttons from you; friends see them). It says **Plugged in**, or **Vibing to music** while a music app or music site plays (never which song). While you're in a game she steps off Discord, so your game shows instead. She's back when it closes |
 | **Your voice channel** / **Leave call keybind** / **Join it now** | For "join call" and "leave call". Right-click the channel in Discord → Copy Link |
 | **Save** | Saves your changes |
+
+**Extras tab:** the things you can switch on.
+
+| Setting | What it does |
+|---|---|
+| **Text box** | Always there, only when she talks back (it pops up, then hides again), or never (just her) |
+| **She glitches** | How often her picture glitches like a broken video feed: every 1, 3, 5 or 10 minutes, or never |
+| **Clip my games** / Record / "Clip that" saves / Frame rate / Resolution / With sound / Save big moments | Clips (see Clips above). *Save big moments* clips triple kills, aces and wins by itself (needs Game hype) |
+| **Choose folder / Open clips folder** | Where clips go (Videos\Capri Clips) |
+| **Watch my screen and comment** / How often / Remember what she sees | She glances at your screen and comments (see Your screen above) |
+| **Throw her** / **Roam around** / **Head pats** | Flick-and-throw, teleporting around the bottom of the screen, reacting to clicks |
+| **Also play her voice on** | Her voice in your mic: pick a virtual cable (VB-Audio "CABLE Input", free) or "Steam Streaming Speakers", then pick the matching mic in Discord or Roblox. Your friends hear her |
 
 ### Privacy
 
@@ -406,6 +415,7 @@ install something.
 | I want a free AI without a key | Settings → Assistant → AI → **Set up Ollama for me**, or say "Hey Capri, set up your brain". She does the rest |
 | "I don't have Ollama installed" but you do | Open the Ollama app once (it sits by the clock), then say "set up your brain". If you changed Ollama's address, put it in Settings → Assistant → Address |
 | The AI says a model "doesn't exist" | Settings → Assistant → **Show my models** and pick one from the list |
+| She crashed (Linux) | Send `crash.log` and `capri.log` from `~/.config/Capri` - since 1.40 they say why |
 | "Mute me" doesn't work | Put your Discord keybinds in Settings → PC & chat. Don't run Discord "as administrator" |
 | Her voice sounds robotic | Settings → Assistant → **Download Capri's voice** |
 | She vanished | Click the tray icon by the clock, or start Capri again |
