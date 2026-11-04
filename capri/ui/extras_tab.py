@@ -142,6 +142,9 @@ class ExtrasTab(QWidget):
         self.music_deck = QCheckBox("Music deck: while music plays, she stands on a neon bar (song, play / pause, skip)")
         self.music_deck.setChecked(s.music_deck)
         form.addRow(self.music_deck)
+        self.music_dance = QCheckBox("She vibes to your music while it plays (a little bounce and sway)")
+        self.music_dance.setChecked(s.music_dance)
+        form.addRow(self.music_dance)
         self.game_play = QCheckBox("Let her play games: say “play this for me” (she presses keys and clicks in the "
                                    "game in front - Esc stops her)")
         self.game_play.setChecked(s.game_play)
@@ -200,6 +203,7 @@ class ExtrasTab(QWidget):
         s.head_pats = self.head_pats.isChecked()
         s.game_play = self.game_play.isChecked()
         s.music_deck = self.music_deck.isChecked()
+        s.music_dance = self.music_dance.isChecked()
         s.mic_voice_device = self.mic_device.currentData() or ""
         s.roam = self.roam.isChecked()
         if not self.clip_on.isChecked():

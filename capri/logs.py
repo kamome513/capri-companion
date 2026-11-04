@@ -46,9 +46,39 @@ def setup(on_crash: Callable[[str], None] | None = None) -> Path:
 
     sys.excepthook = excepthook
     threading.excepthook = lambda args: excepthook(args.exc_type, args.exc_value, args.exc_traceback)
+    global last_crash
+    last_crash = _unreported_crash(path.parent / "crash.log")
+    if last_crash:
+        log.error("Capri crashed last time:\n%s", last_crash[-4000:])
     _native_crashes(path.parent / "crash.log")
     _qt_messages()
     return path
+
+
+last_crash = ""          # what crash.log says about a crash since the last start (shown once, then marked seen)
+
+
+def _unreported_crash(where: Path) -> str:
+    """A crash written to crash.log since she last mentioned one ("" if none). Marks it as mentioned."""
+    seen = where.with_name("crash.seen")
+    try:
+        size = where.stat().st_size
+    except OSError:
+        return ""
+    try:
+        told = int(seen.read_text(encoding="utf-8").strip() or 0)
+    except (OSError, ValueError):
+        told = 0
+    if size <= told:
+        return ""
+    try:
+        with open(where, "rb") as f:
+            f.seek(told if told < size else 0)
+            text = f.read().decode("utf-8", "replace").strip()
+        seen.write_text(str(size), encoding="utf-8")
+    except OSError:
+        return ""
+    return text
 
 
 _crash_file = None

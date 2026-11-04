@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import sys
 import threading
 import time
 from pathlib import Path
@@ -58,6 +59,25 @@ def to_jpeg_b64(image: QImage, max_width: int = MAX_WIDTH, quality: int = 70) ->
     image.convertToFormat(QImage.Format.Format_RGB888).save(buffer, "JPEG", quality)
     buffer.close()
     return base64.b64encode(bytes(data)).decode("ascii")
+
+
+BLACK_SCREEN = ("All I get is a black screen. If it's a game in exclusive fullscreen, switch it to borderless "
+                "or windowed and I can see it." if sys.platform == "win32" else
+                "All I get is a black screen. On Wayland I can't take screenshots: log in with an X11 session "
+                "(\"Ubuntu on Xorg\" or similar) and I can see it.")
+
+
+def is_blank(image) -> bool:
+    """A screenshot that came out (nearly) all one dark colour: nothing to show the AI."""
+    if image is None or image.isNull() or image.width() < 2 or image.height() < 2:
+        return True
+    w, h = image.width(), image.height()
+    values = []
+    for gy in range(12):
+        for gx in range(16):
+            c = image.pixelColor(int((gx + 0.5) * w / 16), int((gy + 0.5) * h / 12))
+            values.append(c.red() + c.green() + c.blue())
+    return max(values) < 30 or (max(values) - min(values) < 6 and max(values) < 90)
 
 
 def cleaned(text: str) -> str:
@@ -119,8 +139,10 @@ class ScreenWatch(QObject):
     def __init__(self, settings, brain, grab: Callable[[], QImage], front_title: Callable[[], str],
                  say: Callable[[str, str], None], busy: Callable[[], bool] = lambda: False,
                  memory: SeenMemory | None = None, notice: Callable[[str], None] = lambda text: None,
-                 clock: Callable[[], float] = time.monotonic, background: bool = True) -> None:
+                 clock: Callable[[], float] = time.monotonic, background: bool = True,
+                 grab_window: Callable[[], QImage] | None = None) -> None:
         super().__init__()
+        self.grab_window = grab_window
         self.settings, self.brain, self.grab, self.front_title = settings, brain, grab, front_title
         self.say, self.busy, self.notice, self.clock = say, busy, notice, clock
         self.memory = memory or SeenMemory(None)
@@ -190,7 +212,14 @@ class ScreenWatch(QObject):
             log.info("watch: not looking - something private is in front")
             return then(None)
         try:
-            jpeg = to_jpeg_b64(self.grab())
+            picture = self.grab()
+            if is_blank(picture) and self.grab_window is not None:
+                picture = self.grab_window()                   # black: the window by itself (GPU-drawn apps)
+            if is_blank(picture):
+                log.info("watch: the screenshot came out black")
+                from ..ai.claude import AIReply
+                return then(AIReply(BLACK_SCREEN, error=True, blind=False))
+            jpeg = to_jpeg_b64(picture)
         except Exception as exc:
             log.info("watch: couldn't take the picture: %s", exc)
             jpeg = ""

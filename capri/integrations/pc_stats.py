@@ -223,7 +223,14 @@ def overview(ps=None, sleep: Callable[[float], None] = time.sleep) -> str:
 REPORTS: dict[str, Callable[[], str]] = {
     "ram": memory_report, "cpu": cpu_report, "disk": disk_report, "uptime": uptime_report,
     "battery": battery_report, "overview": overview, "self": own_report,
+    "lag": lambda: _her_tools().lag_report(ping=lambda: _her_tools().ping(4)),
+    "internet": lambda: _her_tools().internet_report(),
 }
+
+
+def _her_tools():
+    from . import her_tools
+    return her_tools
 
 
 def report(topic: str) -> str:

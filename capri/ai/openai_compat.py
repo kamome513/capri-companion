@@ -132,6 +132,45 @@ def _text(content) -> str:
     return (content or "").strip() if isinstance(content, str) else ""
 
 
+# Each service's models that can see pictures (for "what do you see?" when yours can't), best first.
+VISION_MODELS = {
+    "openai": ("gpt-5-nano", "gpt-4o-mini"),
+    "groq": ("meta-llama/llama-4-scout-17b-16e-instruct", "meta-llama/llama-4-maverick-17b-128e-instruct"),
+    "openrouter": ("openai/gpt-5-nano", "google/gemini-2.5-flash"),
+    "gemini": ("gemini-flash-latest", "gemini-2.5-flash"),
+    "nvidia": ("meta/llama-4-maverick-17b-128e-instruct", "meta/llama-3.2-90b-vision-instruct",
+               "meta/llama-3.2-11b-vision-instruct", "microsoft/phi-4-multimodal-instruct"),
+    "mistral": ("mistral-small-latest", "pixtral-12b-2409"),
+    "xai": ("grok-4", "grok-2-vision-1212"),
+}
+NVIDIA_INLINE_LIMIT = 170_000      # NVIDIA takes a picture in the request only up to about this many characters
+
+
+def small_jpeg(jpeg_b64: str, limit: int) -> str:
+    """The same picture, shrunk until its base64 fits in `limit` characters."""
+    if len(jpeg_b64) <= limit:
+        return jpeg_b64
+    import base64
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice, Qt
+    from PySide6.QtGui import QImage
+    image = QImage.fromData(base64.b64decode(jpeg_b64), "JPEG")
+    if image.isNull():
+        return jpeg_b64
+    out, width, quality = jpeg_b64, image.width(), 65
+    for _ in range(6):
+        width = int(width * 0.8)
+        data = QByteArray()
+        buffer = QBuffer(data)
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.scaledToWidth(max(320, width), Qt.TransformationMode.SmoothTransformation).save(buffer, "JPEG", quality)
+        buffer.close()
+        out = base64.b64encode(bytes(data)).decode("ascii")
+        quality = max(45, quality - 5)
+        if len(out) <= limit:
+            break
+    return out
+
+
 def reasoning_model(model: str) -> bool:
     """OpenAI's thinking models (gpt-5..., o3...): told to think as little as possible - quick replies."""
     m = model.lower().split("/")[-1]
@@ -230,14 +269,26 @@ class OpenAIBrain:
 
     @staticmethod
     def _detail(exc: http.HttpError) -> str:
+        """The service's own words for what went wrong, whatever shape they come in: OpenAI's
+        {"error": {"message"}}, Gemini's [{"error": ...}], NVIDIA's {"title", "detail"}, FastAPI's
+        {"detail": [{"msg"}]}, or plain text."""
         data = exc.json()
-        err = data.get("error") if isinstance(data, dict) else None
-        if isinstance(err, dict):
-            return str(err.get("message", ""))[:300]
         if isinstance(data, list) and data and isinstance(data[0], dict):      # (Gemini wraps it in a list)
-            inner = data[0].get("error")
-            return str(inner.get("message", "") if isinstance(inner, dict) else inner or "")[:300]
-        return str(err or "")[:300]
+            data = data[0]
+        if isinstance(data, dict):
+            err = data.get("error")
+            if isinstance(err, dict) and err.get("message"):
+                return str(err["message"])[:300]
+            if isinstance(err, str) and err.strip():
+                return err.strip()[:300]
+            detail = data.get("detail")
+            if isinstance(detail, list):                                       # validation errors
+                detail = "; ".join(str(d.get("msg", d)) if isinstance(d, dict) else str(d) for d in detail)
+            for value in (detail, data.get("message"), data.get("title")):
+                if isinstance(value, str) and value.strip():
+                    return value.strip()[:300]
+        body = (exc.body or "").strip()
+        return body[:300] if body and not body.startswith(("<", "{", "[")) else ""
 
     def _problem(self, exc: http.HttpError) -> str:
         detail = self._detail(exc).lower()
@@ -258,35 +309,84 @@ class OpenAIBrain:
         return f"{self.label()} refused: {said[:120]}." if said else f"{self.label()} glitched out ({exc.status})."
 
     def look(self, prompt: str, jpeg_b64: str) -> AIReply:
-        """One look at a picture (your screen), no history and no tools. Blocking."""
+        """One look at a picture (your screen), no history and no tools. Blocking.
+        Your model first; if it can't take pictures (or refuses the request), the service's own models that can
+        see, one after another - the first that answers is remembered. NVIDIA also gets its inline picture
+        format, and a picture small enough for it."""
         key = self._key().strip()
         headers = {"Authorization": f"Bearer {key}"} if key else {}
-        model = self.model()
-        body = {"model": model, "messages": [
-            {"role": "system", "content": system_prompt(self._slang(), self._persona())},
-            {"role": "user", "content": [{"type": "text", "text": prompt},
-                                         {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + jpeg_b64}}]}]}
-        if "api.openai.com" in self.base():
-            body["max_completion_tokens"] = 1500 if reasoning_model(model) else 300
+        preset = self._preset() or DEFAULT_PRESET
+        candidates = []
+        for m in [self.model(), getattr(self, "_vision_model", "")] + list(VISION_MODELS.get(preset, ())):
+            if m and m not in candidates:
+                candidates.append(m)
+        if getattr(self, "_vision_model", "") in candidates:          # the one that worked last time, first
+            candidates.remove(self._vision_model)
+            candidates.insert(0, self._vision_model)
+        if preset == "nvidia":
+            jpeg_b64 = small_jpeg(jpeg_b64, NVIDIA_INLINE_LIMIT)
+        blind, problem, tries = 0, "", 0
+        for model in candidates:
+            cant_see = False
+            for shape in (("parts", "inline") if preset == "nvidia" else ("parts",)):
+                if cant_see:
+                    break
+                for plain in (False, True):                            # with her token limits, then without
+                    tries += 1
+                    if tries > 10:
+                        break
+                    body = self._look_body(model, prompt, jpeg_b64, shape, plain)
+                    try:
+                        data = self._fetch("POST", self.base() + "/chat/completions", json_body=body,
+                                           headers=headers, timeout=TIMEOUT) or {}
+                    except http.HttpError as exc:
+                        detail = self._detail(exc)
+                        log.warning("ai: %s %s couldn't look (HTTP %s): %s", self.label(), model, exc.status,
+                                    (detail or exc.body or "")[:300])
+                        if exc.status in (401, 402, 403, 429) or exc.status >= 500:
+                            return AIReply(self._problem(exc), error=True, detail=f"HTTP {exc.status}: {detail}")
+                        if any(w in detail.lower() for w in ("image", "vision", "multimodal", "image_url",
+                                                              "content type", "content must be a string")):
+                            blind += 1
+                            cant_see = True
+                            break                                      # this model can't see: the next one
+                        problem = problem or (f"{self.label()} turned it down ({exc.status}: "
+                                              f"{detail.rstrip('.')[:120]})." if detail else self._problem(exc))
+                        continue
+                    except OSError:
+                        return AIReply(f"Can't reach {self.label()} right now.", error=True)
+                    choice = (data.get("choices") or [{}])[0]
+                    feeling, said = emotions.split_tag(_text((choice.get("message") or {}).get("content")))
+                    if not said.strip():
+                        continue                                       # (nothing back: try it plainer)
+                    if model != self.model() and model != getattr(self, "_vision_model", ""):
+                        log.info("ai: %s can't see pictures - looking with %s instead", self.model(), model)
+                    self._vision_model = model if model != self.model() else ""
+                    return AIReply(said.strip(), emotion=feeling)
+        if blind and not problem:
+            return AIReply(f"{self.model()} can't see pictures, and none of {self.label()}'s picture models "
+                           f"answered. Pick one that can see in my Settings (Gemini Flash is free).",
+                           error=True, blind=True)
+        return AIReply(problem or f"{self.label()} didn't answer about your screen. Try again in a moment.",
+                       error=True)
+
+    def _look_body(self, model: str, prompt: str, jpeg_b64: str, shape: str, plain: bool) -> dict:
+        url = "data:image/jpeg;base64," + jpeg_b64
+        if shape == "inline":        # NVIDIA's own way: the picture as an <img> tag in the text
+            user = {"role": "user", "content": f'{prompt} <img src="{url}" />'}
         else:
-            body["max_tokens"] = 1024
-        if reasoning_model(model):
-            body["reasoning_effort"] = "minimal"
-        try:
-            data = self._fetch("POST", self.base() + "/chat/completions", json_body=body, headers=headers,
-                               timeout=TIMEOUT) or {}
-        except http.HttpError as exc:
-            detail = (self._detail(exc) or exc.body or "").lower()
-            if exc.status in (400, 404, 415, 422) and any(w in detail for w in ("image", "vision", "multimodal",
-                                                                                 "image_url", "content type")):
-                return AIReply(f"{model} can't see pictures. Pick a model that can (GPT-4o mini, Gemini Flash...).",
-                               error=True, blind=True)
-            return AIReply(self._problem(exc), error=True)
-        except OSError:
-            return AIReply(f"Can't reach {self.label()} right now.", error=True)
-        choice = (data.get("choices") or [{}])[0]
-        feeling, said = emotions.split_tag(_text((choice.get("message") or {}).get("content")))
-        return AIReply(said.strip(), emotion=feeling)
+            user = {"role": "user", "content": [{"type": "text", "text": prompt},
+                                                {"type": "image_url", "image_url": {"url": url}}]}
+        body = {"model": model, "messages": [
+            {"role": "system", "content": system_prompt(self._slang(), self._persona())}, user]}
+        if not plain:
+            if "api.openai.com" in self.base():
+                body["max_completion_tokens"] = 1500 if reasoning_model(model) else 300
+            else:
+                body["max_tokens"] = 1024
+            if reasoning_model(model):
+                body["reasoning_effort"] = "minimal"
+        return body
 
     def _tools(self) -> list[dict] | None:
         """OpenAI itself: her strict tools. Everyone else: the portable ones. A service that refused
@@ -315,7 +415,7 @@ class OpenAIBrain:
     def _post(self, system: str) -> dict:
         key = self._key().strip()
         headers = {"Authorization": f"Bearer {key}"} if key else {}
-        for _ in range(6):                    # a service that rejects something: adapt and ask again
+        for _ in range(9):                    # a service that rejects something: adapt and ask again
             try:
                 return self._fetch("POST", self.base() + "/chat/completions", json_body=self._body(system),
                                    headers=headers, timeout=TIMEOUT) or {}
@@ -332,16 +432,26 @@ class OpenAIBrain:
                     continue
                 if model_missing(exc.status, detail) and self._swap_model():
                     continue                              # retired / renamed model: ask again with the new one
-                dropped = next((o for o in ("reasoning_effort", "max_completion_tokens", "max_tokens")
-                                if o in body and o not in self._skip and exc.status == 400), None)
+                if exc.status not in (400, 422):
+                    raise
+                log.warning("ai: %s refused the request (%s): %s", self.label(), exc.status, (detail or body)[:300])
+                sent = self._body(system)
+                last = self.messages[-1] if self.messages else None
+                can_start_fresh = len(self.messages) > 1 and last and last.get("role") == "user"
+                about_history = any(w in body for w in ("message", "history", "role", "tool_call", "content"))
+                if can_start_fresh and about_history:
+                    self.messages = [last]                # the history is what it won't take: start fresh
+                    log.info("ai: asking %s again in a fresh conversation", self.label())
+                    continue
+                # An option it doesn't take (named in its answer first, else one at a time): drop it for good.
+                options = [o for o in ("reasoning_effort", "max_completion_tokens", "max_tokens")
+                           if o in sent and o not in self._skip]
+                dropped = next((o for o in options if o in body), None) or (options[0] if options else None)
                 if dropped is not None:
                     self._skip.add(dropped)
+                    log.info("ai: asking %s again without %s", self.label(), dropped)
                     continue
-                if exc.status != 400:
-                    raise
-                log.warning("ai: %s refused the request (400): %s", self.label(), (detail or body)[:300])
-                last = self.messages[-1] if self.messages else None
-                if len(self.messages) > 1 and last and last.get("role") == "user":
+                if can_start_fresh:
                     self.messages = [last]                # the history may be what it won't take: start fresh
                     log.info("ai: asking %s again in a fresh conversation", self.label())
                     continue

@@ -107,6 +107,8 @@ class CharacterWindow(OverlayWindow):
         self.sway = DragSway()                  # she dangles while you drag her
         self.setMouseTracking(True)             # hovering over her: she floats up and leans to your cursor
         self._hover = 0.0                       # 0..1 eased
+        self.grooving = False                   # music's playing: she vibes to it (a little bounce and sway)
+        self._groove = 0.0                      # 0..1 eased in and out
         self._hover_on = False
         self._hover_x = 0.0
         self._sway_at = time.monotonic()
@@ -423,13 +425,38 @@ class CharacterWindow(OverlayWindow):
         self._update_timer()
 
     def _special(self) -> bool:
-        """Something that needs full-speed frames right now: a glitch, her swinging, or your mouse on her."""
-        return self.real_glitch.active or self.sway.swinging or self._hover_on or self._hover > 0.0
+        """Something that needs full-speed frames right now: a glitch, her swinging, your mouse on her, or music."""
+        return self.real_glitch.active or self.sway.swinging or self._hover_on or self._hover > 0.0 or \
+            (self.mode == "body" and (self.grooving or self._groove > 0.0))
+
+    GROOVE_BPM = 104                            # her bounce, about the speed of most songs
+
+    def set_grooving(self, on: bool) -> None:
+        """Music on / off: she starts (or stops) vibing to it."""
+        if on != self.grooving:
+            self.grooving = on
+            self._update_timer()
+
+    def groove_moves(self, now: float) -> dict[str, float]:
+        """Her vibe while music plays, eased in / out: knees bouncing on the beat, swaying every two beats,
+        hair bouncing, stepping side to side a little."""
+        if self._groove <= 0.0:
+            return {}
+        beat = now * self.GROOVE_BPM / 60.0 * 2 * math.pi
+        g = self._groove
+        bounce = max(0.0, math.sin(beat)) ** 2
+        return {"squat": 0.14 * bounce * g, "lean": 0.055 * math.sin(beat / 2) * g,
+                "stride": 0.16 * math.sin(beat / 2) * g, "energy": (0.3 + 0.25 * bounce) * g,
+                "wag": 0.35 * math.sin(beat / 2) * g}
 
     def _tick(self) -> None:
         now = time.monotonic()
         dt, self._sway_at = min(0.05, now - self._sway_at), now
         self._hover_step(dt)
+        want = 1.0 if self.grooving and not self.talking and not self.sway.held else 0.0
+        if self._groove != want:                                   # eases in / out over about half a second
+            step = dt / 0.5
+            self._groove = min(want, self._groove + step) if want > self._groove else max(want, self._groove - step)
         if self.sway.swinging:
             self.sway.step(dt)
         if self.real_glitch.due(self.isVisible() and not self.talking and self.mode != "classic" and self.state
@@ -684,6 +711,10 @@ class CharacterWindow(OverlayWindow):
         if self.sway.swinging:
             smooth = dict(smooth)
             smooth["lean"] = smooth.get("lean", 0.0) + self.sway.angle
+        if self._groove > 0.0 and self.mode == "body":             # music: she vibes to it
+            smooth = dict(smooth)
+            for k, v in self.groove_moves(now).items():
+                smooth[k] = max(smooth.get(k, 0.0), v) if k in ("energy", "squat") else smooth.get(k, 0.0) + v
         if self._hover > 0.0:                                      # leaning to your cursor, hair perking up
             smooth = dict(smooth)
             side = max(-1.0, min(1.0, (self._hover_x - self.width() / 2) / max(1.0, self.width() / 2)))

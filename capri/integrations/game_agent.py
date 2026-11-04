@@ -39,7 +39,72 @@ Moves:
   {{"click": [x, y], "button": "left", "hold": 0}}   click at x, y = fractions 0..1 across / down the game window;
                                      "hold" seconds keeps the button down (mining, attacking); "button" left or right
   {{"wait": 0.5}}                   wait (up to 2 s)
-Your last moves: {history}"""
+If something just went wrong (you died, got caught, a jumpscare, got stuck, fell, lost health), add
+  "lesson": "<one short tip so it doesn't happen again>"
+{lessons}Your last moves: {history}"""
+LESSONS_INTRO = "What you learned playing this game before - use it, don't repeat these mistakes:\n{items}\n"
+REFLECT = """You were playing this game for the user (goal: {goal}) and it ended: {why}.
+Your last moves: {history}
+In ONE short sentence, what should you do differently next time in this game? Reply with only that sentence."""
+MAX_LESSONS = 12              # per game (the newest kept)
+REFLECT_ON = ("escape", "time", "steps", "stopped")      # endings worth thinking about
+
+
+def game_name(title: str) -> str:
+    """A game's window title -> the name its lessons are kept under ("Five Nights at Freddy's 2 - v1.0" ->
+    "five nights at freddy's 2")."""
+    t = re.split(r"\s+[-|–—]\s+", (title or "").strip())[0]
+    t = re.sub(r"\s*\(?(?:v|version\s*)\d[\w.]*\)?\s*$", "", t, flags=re.I)
+    return re.sub(r"\s+", " ", t).strip().lower()[:80]
+
+
+class GameLessons:
+    """What she learned from her mistakes, per game, in a small file on this PC (never sent anywhere except as
+    part of her prompt to your AI while she plays that game)."""
+
+    def __init__(self, path=None) -> None:
+        self.path = path
+        self.games: dict[str, dict] = {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8")) if path is not None else {}
+            self.games = {str(k): v for k, v in data.items() if isinstance(v, dict)}
+        except (OSError, ValueError, AttributeError):
+            self.games = {}
+
+    def lessons(self, game: str) -> list[str]:
+        return [str(x) for x in self.games.get(game, {}).get("lessons", [])][-MAX_LESSONS:]
+
+    def add(self, game: str, lesson: str) -> bool:
+        """Keep a new lesson (not one she already has, said differently). True if it was new."""
+        from difflib import SequenceMatcher
+        lesson = re.sub(r"\s+", " ", (lesson or "").strip().strip('"'))[:160]
+        if not game or len(lesson) < 6:
+            return False
+        entry = self.games.setdefault(game, {"lessons": [], "tries": 0})
+        have = entry.setdefault("lessons", [])
+        if any(SequenceMatcher(None, lesson.lower(), old.lower()).ratio() > 0.8 for old in have):
+            return False
+        have.append(lesson)
+        del have[:-MAX_LESSONS]
+        self.save()
+        return True
+
+    def played(self, game: str, why: str) -> None:
+        if not game:
+            return
+        entry = self.games.setdefault(game, {"lessons": [], "tries": 0})
+        entry["tries"] = int(entry.get("tries", 0)) + 1
+        entry["last"] = why
+        self.save()
+
+    def save(self) -> None:
+        if self.path is None:
+            return
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(self.games, indent=1), encoding="utf-8")
+        except OSError:
+            pass
 
 
 @dataclass
@@ -64,7 +129,8 @@ def parse_plan(text: str) -> dict | None:
     if not isinstance(plan, dict):
         return None
     moves = plan.get("do") if isinstance(plan.get("do"), list) else []
-    return {"say": str(plan.get("say") or "")[:160], "do": moves[:MAX_ACTIONS], "done": bool(plan.get("done"))}
+    return {"say": str(plan.get("say") or "")[:160], "do": moves[:MAX_ACTIONS], "done": bool(plan.get("done")),
+            "lesson": str(plan.get("lesson") or "")[:160]}
 
 
 def checked(move, window: Rect) -> tuple | None:
@@ -109,7 +175,8 @@ class GameAgent:
                  foreground: Callable[[], int], window_rect: Callable[[int], Rect | None],
                  say: Callable[[str], None], finished: Callable[[str], None],
                  cursor: Callable[[int, int], None] = lambda x, y: None, clock=time.monotonic, sleep=time.sleep,
-                 jpeg: Callable[[object], str] | None = None) -> None:
+                 jpeg: Callable[[object], str] | None = None, title: Callable[[int], str] = lambda hwnd: "",
+                 lessons: GameLessons | None = None) -> None:
         self.brain, self.hands_factory, self.grab = brain, hands_factory, grab
         self.foreground, self.window_rect, self.say, self.finished, self.cursor = \
             foreground, window_rect, say, finished, cursor
@@ -119,6 +186,10 @@ class GameAgent:
         self.thread: threading.Thread | None = None
         self.goal = ""
         self.moves: list[str] = []
+        self.title = title
+        self.lessons = lessons or GameLessons(None)
+        self.game = ""
+        self._last_jpeg = ""
 
     @staticmethod
     def _jpeg(image) -> str:
@@ -140,6 +211,10 @@ class GameAgent:
         self.goal = (goal or "").strip() or "play well: explore, and do whatever makes sense in this game"
         self.stop_event.clear()
         self.moves = []
+        try:
+            self.game = game_name(self.title(hwnd))
+        except Exception:
+            self.game = ""
         if background:
             self.thread = threading.Thread(target=self._run, args=(hwnd,), daemon=True, name="capri-game")
             self.thread.start()
@@ -160,6 +235,26 @@ class GameAgent:
             log.exception("game: stopped by a problem")
             why = f"problem: {exc}"
         self.finished(why)
+        try:
+            self._reflect(why)
+        except Exception:
+            log.info("game: couldn't think it over", exc_info=True)
+
+    def _reflect(self, why: str) -> None:
+        """After a session that didn't reach the goal: one sentence on what to do differently, kept for next time."""
+        self.lessons.played(self.game, why)
+        if why not in REFLECT_ON or not self.game or not self._last_jpeg or len(self.moves) < 3:
+            return
+        history = "; ".join(self.moves[-12:])
+        reply = self.brain.look(REFLECT.format(goal=self.goal, why=ENDINGS.get(why, why), history=history),
+                                self._last_jpeg)
+        if not getattr(reply, "error", False) and self.lessons.add(self.game, reply.text or ""):
+            log.info("game: learned for %s: %s", self.game, (reply.text or "")[:120])
+
+    def _prompt(self, history: str) -> str:
+        learned = self.lessons.lessons(self.game)
+        intro = LESSONS_INTRO.format(items="\n".join(f"- {x}" for x in learned)) if learned else ""
+        return PROMPT.format(goal=self.goal, history=history, lessons=intro)
 
     def _play(self, hwnd: int, hands) -> str:
         started, last_said = self.clock(), -1e9
@@ -179,8 +274,9 @@ class GameAgent:
             jpeg = self.jpeg(image) if image is not None else ""
             if not jpeg:
                 return "no picture"
+            self._last_jpeg = jpeg
             history = "; ".join(self.moves[-8:]) or "none yet"
-            reply = self.brain.look(PROMPT.format(goal=self.goal, history=history), jpeg)
+            reply = self.brain.look(self._prompt(history), jpeg)
             if getattr(reply, "missing", False):
                 return "no ai"
             if getattr(reply, "error", False):
@@ -189,6 +285,8 @@ class GameAgent:
             if plan is None:
                 self.moves.append("(answer wasn't a plan)")
                 continue
+            if plan["lesson"] and self.lessons.add(self.game, plan["lesson"]):
+                log.info("game: learned for %s: %s", self.game, plan["lesson"])
             if plan["say"] and self.clock() - last_said > SAY_GAP:
                 last_said = self.clock()
                 self.say(plan["say"])

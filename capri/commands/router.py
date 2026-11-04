@@ -291,7 +291,7 @@ class CommandRouter(QObject):
     ACTION_KINDS = {Kind.OPEN, Kind.CLOSE, Kind.SEARCH, Kind.PLAY, Kind.MEDIA, Kind.MINIMIZE, Kind.RESTORE,
                     Kind.DISCORD, Kind.CLICK, Kind.REVEAL, Kind.TAB, Kind.VIDEO, Kind.PC_INFO, Kind.SCREENSHOT,
                     Kind.SCREEN, Kind.MOVE, Kind.WEATHER, Kind.RAIN, Kind.TIME, Kind.DATE, Kind.DRONE_ON,
-                    Kind.DRONE_OFF, Kind.LOUNGE_ON, Kind.LOUNGE_OFF, Kind.PERSONALITY}
+                    Kind.DRONE_OFF, Kind.LOUNGE_ON, Kind.LOUNGE_OFF, Kind.PERSONALITY, Kind.ARRANGE, Kind.APP_VOLUME}
 
     def _shortcuts(self) -> list:
         s = self.services.settings
@@ -403,7 +403,8 @@ class CommandRouter(QObject):
             Kind.PC_INFO: self._pc_info, Kind.SCREENSHOT: self._screenshot, Kind.PERSONALITY: self._personality,
             Kind.SCREEN: self._screen, Kind.REPEAT: self._repeat, Kind.MOVE: self._move, Kind.AI_SETUP: self._ai_setup,
             Kind.SHORTCUT: self._shortcut, Kind.FORGET: self._forget, Kind.MUSIC_SERVICE: self._music_service,
-            Kind.LEARN_BUTTON: self._learn_button, Kind.FORGET_BUTTON: self._forget_button, Kind.TYPE: self._type, Kind.HAIR: self._hair, Kind.SETTINGS: self._settings, Kind.UPDATE: self._update, Kind.RESTART_APP: self._restart_app, Kind.ROAM: self._roam, Kind.MUSIC_DECK: self._music_deck, Kind.SIZE: self._size, Kind.CLIP: self._clip, Kind.LOOK: self._look, Kind.WATCH: self._watch,
+            Kind.LEARN_BUTTON: self._learn_button, Kind.FORGET_BUTTON: self._forget_button, Kind.TYPE: self._type, Kind.HAIR: self._hair, Kind.SETTINGS: self._settings, Kind.UPDATE: self._update, Kind.RESTART_APP: self._restart_app, Kind.ROAM: self._roam, Kind.MUSIC_DECK: self._music_deck, Kind.SIZE: self._size,
+            Kind.ARRANGE: self._arrange, Kind.APP_VOLUME: self._app_volume, Kind.SETTING: self._setting, Kind.CLIP: self._clip, Kind.LOOK: self._look, Kind.WATCH: self._watch,
             Kind.PLAY_GAME: self._play_game, Kind.STOP_GAME: self._stop_game,
             Kind.QUIET: self._quiet, Kind.VOICE: self._voice, Kind.TIMER: self._timer,
             Kind.PERCH_ON: lambda i: self._perch(True), Kind.PERCH_OFF: lambda i: self._perch(False),
@@ -1770,7 +1771,10 @@ class CommandRouter(QObject):
             return self.assistant.show_result(State.ERROR, "I can't read the PC's stats here.")
         topic = intent.query or "overview"
         self.controller.set_state(State.PROCESSING, {"ram": "Checking your RAM...", "cpu": "Watching your CPU...",
-                                                     "disk": "Checking your drives..."}.get(topic, "Checking your PC..."))
+                                                     "disk": "Checking your drives...",
+                                                     "lag": "Checking what's slowing your game...",
+                                                     "internet": "Testing your internet..."}.get(topic,
+                                                                                                "Checking your PC..."))
 
         def done(text) -> None:
             if isinstance(text, Exception):
@@ -2194,6 +2198,141 @@ class CommandRouter(QObject):
             tries[0] += 1
             QTimer.singleShot(500, go)
         QTimer.singleShot(600, go)
+
+    # -- her tools: windows, one app's volume, her own settings ----------------------------------------------------
+    SIDE_WORDS = {"left": "on the left", "right": "on the right", "top": "at the top", "bottom": "at the bottom",
+                  "maximize": "full screen", "center": "in the middle", "top_left": "top left",
+                  "top_right": "top right", "bottom_left": "bottom left", "bottom_right": "bottom right"}
+    OTHER_SIDE = {"left": "right", "right": "left", "top": "bottom", "bottom": "top", "top_left": "top_right",
+                  "top_right": "top_left", "bottom_left": "bottom_right", "bottom_right": "bottom_left"}
+
+    def _find_window(self, spoken: str, processes) -> tuple[str, int | None]:
+        desktop = self._desktop()
+        if not spoken:
+            return "that window", desktop.foreground() if hasattr(desktop, "foreground") else None
+        name, pids, _mode = self.catalog.running_for(spoken, processes)
+        return name, (desktop.main_window(pids) if pids and hasattr(desktop, "main_window") else None)
+
+    def _arrange(self, intent: Intent) -> None:
+        """'Put Chrome on the left and Discord on the right' / 'Spotify full screen' / 'side by side'."""
+        from ..integrations import her_tools
+        desktop = self._desktop()
+        if desktop is None:
+            return
+        layouts = [x for x in (intent.query or "maximize").split(",") if x in her_tools.LAYOUTS] or ["maximize"]
+        processes = self._processes() if any(intent.targets) else []
+        found, missing = [], []
+        for spoken in list(intent.targets) or [""]:
+            name, hwnd = self._find_window(spoken, processes)
+            (found if hwnd else missing).append((name, hwnd))
+        if not found:
+            name = missing[0][0] if missing else "that"
+            return self.assistant.show_result(State.ERROR, f"{name} isn't open." if name != "that window"
+                                              else "I can't find the window to move.", emotion="confused")
+        work = her_tools.work_area(desktop, found[0][1])
+        if work is None:
+            return self.assistant.show_result(State.ERROR, "I can't tell where your screen is.")
+        said = []
+        if layouts == ["side_by_side"]:
+            rects = her_tools.layout_rects(work, "side_by_side", len(found))
+            spots = ["maximize_none"] * len(found)
+        else:
+            spots = []
+            for i in range(len(found)):
+                spots.append(layouts[i] if i < len(layouts) else self.OTHER_SIDE.get(spots[-1], "maximize"))
+            rects = [her_tools.layout_rects(work, spot)[0] for spot in spots]
+        try:
+            for (name, hwnd), rect, spot in zip(found, rects, spots):
+                her_tools.place_window(desktop, hwnd, rect, maximize=spot == "maximize")
+                said.append(f"{name} {self.SIDE_WORDS.get(spot, '')}".strip())
+        except OSError as exc:
+            return self.assistant.show_result(State.ERROR, f"Windows wouldn't let me: {str(exc)[:60]}")
+        self.controller.log("Arrange", ", ".join(said)[:60])
+        if layouts == ["side_by_side"]:
+            text = f"{join_names([n for n, _h in found])}, side by side."
+        else:
+            text = "Done: " + ", ".join(said) + "."
+        if missing:
+            text += f" {missing[0][0]} isn't open."
+        self.assistant.show_result(State.SUCCESS, text)
+
+    def _app_volume(self, intent: Intent) -> None:
+        """'Turn Discord down' / 'make Spotify louder' / 'set Chrome to 30%': only that app, in the volume mixer."""
+        from ..integrations import her_tools
+        spoken = intent.targets[0] if intent.targets else ""
+        processes = self._processes()
+        name, pids, _mode = self.catalog.running_for(spoken, processes)
+        if not pids:
+            return self.assistant.show_result(State.ERROR, f"{name or spoken} isn't open.", emotion="confused")
+        exes = sorted({p.name or (p.exe.replace("\\", "/").rsplit("/", 1)[-1] if p.exe else "")
+                       for p in processes if p.pid in set(pids)} - {""})
+        action, percent = intent.query or "down", 50
+        if action.startswith("set:"):
+            action, percent = "set", int(action.split(":", 1)[1] or 50)
+        self.controller.set_state(State.PROCESSING, f"Turning {name} {'down' if action == 'down' else 'up'}..."
+                                  if action in ("down", "up") else f"Changing {name}'s volume...")
+
+        def done(result) -> None:
+            if isinstance(result, Exception):
+                self.controller.log("Error", f"app volume: {str(result)[:40]}")
+                return self.assistant.show_result(State.ERROR, f"I couldn't change {name}'s volume.")
+            changed, level = result
+            if not changed:
+                return self.assistant.show_result(State.ERROR, f"{name} isn't playing any sound I can turn "
+                                                  f"{'down' if action == 'down' else 'up'} right now.",
+                                                  emotion="confused")
+            self.controller.log("Volume", f"{name} {action} {level if level >= 0 else ''}".strip())
+            text = {"mute": f"Muted {name}.", "unmute": f"{name}'s sound is back on."}.get(
+                action, f"{name}'s at {level}% now." if level >= 0 else f"Done, {name} {action}.")
+            self.assistant.show_result(State.SUCCESS, text)
+        self._background(lambda: her_tools.app_volume(exes, action, percent), done)
+
+    # Her own settings the AI may change for you (anything else is left alone).
+    SETTING_INTENTS = {
+        ("music_deck", "on"): Intent(Kind.MUSIC_DECK, query="on"), ("music_deck", "off"): Intent(Kind.MUSIC_DECK, query="off"),
+        ("roaming", "on"): Intent(Kind.ROAM, query="on"), ("roaming", "off"): Intent(Kind.ROAM, query="stay"),
+        ("watch_screen", "on"): Intent(Kind.WATCH, query="on"), ("watch_screen", "off"): Intent(Kind.WATCH, query="off"),
+        ("game_hype", "on"): Intent(Kind.HYPE_ON), ("game_hype", "off"): Intent(Kind.HYPE_OFF),
+        ("lie_down", "on"): Intent(Kind.LOUNGE_ON), ("lie_down", "off"): Intent(Kind.LOUNGE_OFF),
+        ("sit_on_windows", "on"): Intent(Kind.PERCH_ON), ("sit_on_windows", "off"): Intent(Kind.PERCH_OFF),
+        ("compact", "on"): Intent(Kind.COMPACT_ON), ("compact", "off"): Intent(Kind.COMPACT_OFF),
+        ("voice_speed", "faster"): Intent(Kind.VOICE, query="faster"),
+        ("voice_speed", "slower"): Intent(Kind.VOICE, query="slower"),
+        ("voice_volume", "louder"): Intent(Kind.VOICE, query="louder"),
+        ("voice_volume", "softer"): Intent(Kind.VOICE, query="softer"),
+    }
+    SETTING_NAMES = ("size", "music_deck", "roaming", "watch_screen", "game_hype", "lie_down", "sit_on_windows",
+                     "compact", "voice_speed", "voice_volume", "text_box", "glitches")
+
+    def _setting(self, intent: Intent) -> None:
+        """One of her own settings, changed for you (from the AI): only the ones listed here."""
+        setting = intent.targets[0] if intent.targets else ""
+        value = (intent.query or "").strip().lower()
+        if (setting, value) in self.SETTING_INTENTS:
+            return self.dispatch(self.SETTING_INTENTS[(setting, value)])
+        if setting == "size":
+            return self._size(Intent(Kind.SIZE, query=value or "normal"))
+        s, companion = self.services.settings, getattr(self, "companion", None)
+        if s is None:
+            return self.assistant.show_result(State.ERROR, "I can't change that here.")
+        if setting == "text_box" and value in ("always", "popup", "name", "never"):
+            s.show_panel, s.panel_popup, s.panel_on_name = value != "never", value in ("popup", "name"), value == "name"
+            s.save()
+            if companion is not None and hasattr(companion, "_apply_visibility"):
+                companion._apply_visibility()
+            return self.assistant.show_result(State.SUCCESS, {
+                "always": "My text box stays up now.", "popup": "My text box only pops up when I talk back.",
+                "name": "My text box only pops up when you say my name.", "never": "No text box. Just me."}[value])
+        if setting == "glitches" and value in ("off", "rarely", "sometimes", "often"):
+            s.glitches = {"off": 0, "rarely": 600, "sometimes": 180, "often": 60}[value]
+            s.save()
+            character = getattr(companion, "character", None)
+            glitch = getattr(character, "real_glitch", None)
+            if glitch is not None and hasattr(glitch, "rescheduled"):
+                glitch.rescheduled()                      # (it reads the setting itself)
+            return self.assistant.show_result(State.SUCCESS, "No more glitches." if value == "off"
+                                              else "Glitching " + value + " now.")
+        self.assistant.show_result(State.ERROR, "That's not one of the settings I can change myself.")
 
     def _size(self, intent: Intent) -> None:
         """'Make yourself bigger' / 'make yourself tiny' / 'normal size'."""

@@ -88,6 +88,7 @@ class Settings:
     mic_voice_device: str = ""         # "Her voice in your mic": also play her voice here (a virtual cable)
     head_pats: bool = True             # click her head: she reacts
     game_play: bool = False            # "play this for me": she presses keys / clicks in the game in front
+    music_dance: bool = True           # she vibes to your music while it plays (a little bounce and sway)
     music_deck: bool = True            # while music plays, she stands on her music deck (a neon bar)
     glitches: int = 0                  # seconds between her random glitches (0 = never - the default)
     extras_offered: bool = False       # the "Extras" welcome (turn on what you want) was shown

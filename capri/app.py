@@ -563,7 +563,8 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             pass
         return "Now playing"
-    deck_keeper = DeckKeeper(music_deck, companion, playing_title, lambda: settings.music_deck)
+    deck_keeper = DeckKeeper(music_deck, companion, playing_title, lambda: settings.music_deck,
+                             groove=lambda on: companion.character.set_grooving(on and settings.music_dance))
     app._music_deck = (music_deck, deck_keeper)
 
     def doing(mode: str) -> None:
@@ -628,20 +629,42 @@ def main(argv: list[str] | None = None) -> int:
     # Watch my screen: a glance now and then (to your AI, which must be able to see pictures), and "what do you see?"
     from .integrations.screen_watch import ScreenWatch, SeenMemory
 
+    def rgb_image(rgb):
+        from PySide6.QtGui import QImage
+        if rgb is None:
+            return QImage()
+        import numpy as np
+        h, w = rgb.shape[:2]
+        rgba = np.ascontiguousarray(np.dstack([rgb, np.full((h, w), 255, np.uint8)]))
+        return QImage(rgba.tobytes(), w, h, 4 * w, QImage.Format.Format_RGBA8888).copy()
+
     def screen_picture():
-        from PySide6.QtGui import QGuiApplication, QImage
+        """The screen your window is on (not always the main one: a game on your second monitor too)."""
+        from PySide6.QtGui import QCursor, QGuiApplication, QImage
         if sys.platform == "win32":
-            from .integrations.screen_click import grab
-            sc = clipmod.primary_screen()
-            rgb = grab((sc.x, sc.y, sc.x + sc.width, sc.y + sc.height))
-            if rgb is None:
-                return QImage()
-            import numpy as np
-            h, w = rgb.shape[:2]
-            rgba = np.ascontiguousarray(np.dstack([rgb, np.full((h, w), 255, np.uint8)]))
-            return QImage(rgba.tobytes(), w, h, 4 * w, QImage.Format.Format_RGBA8888).copy()
-        screen = QGuiApplication.primaryScreen()
+            from .integrations.screen_click import grab, monitor_of
+            try:
+                rect = monitor_of(desktop.foreground())
+            except Exception:
+                rect = None
+            if rect is None:
+                sc = clipmod.primary_screen()
+                rect = (sc.x, sc.y, sc.x + sc.width, sc.y + sc.height)
+            return rgb_image(grab(rect))
+        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
         return screen.grabWindow(0).toImage() if screen is not None else QImage()
+
+    def window_picture():
+        """Just the window in front, drawn by itself - for when the screenshot came out black."""
+        if sys.platform != "win32":
+            from PySide6.QtGui import QImage
+            return QImage()
+        from .integrations.screen_click import grab_window
+        try:
+            return rgb_image(grab_window(desktop.foreground()))
+        except Exception:
+            from PySide6.QtGui import QImage
+            return QImage()
 
     def front_title() -> str:
         try:
@@ -653,7 +676,8 @@ def main(argv: list[str] | None = None) -> int:
                         lambda text, emotion: (controller.log("Watch", text[:60]), assistant.say(text, emotion=emotion)),
                         busy=lambda: assistant._busy or controller.state in (State.LISTENING, State.PROCESSING),
                         memory=SeenMemory(log_dir() / "seen.json"),
-                        notice=lambda text: assistant.show_result(State.ERROR, text, emotion="confused"))
+                        notice=lambda text: assistant.show_result(State.ERROR, text, emotion="confused"),
+                        grab_window=window_picture)
     watch.start()
     services.screen_watch = watch
 
@@ -700,7 +724,9 @@ def main(argv: list[str] | None = None) -> int:
         return screen.grabWindow(0, rect.x, rect.y, rect.w, rect.h).toImage() if screen is not None else None
     services.game_agent = gamemod.GameAgent(brain, game_hands, game_picture, desktop.foreground, game_window,
                                             game_bridge.said.emit, game_bridge.done.emit,
-                                            cursor=lambda x, y: game_bridge.cursor.emit(int(x), int(y)))
+                                            cursor=lambda x, y: game_bridge.cursor.emit(int(x), int(y)),
+                                            title=desktop.window_title,
+                                            lessons=gamemod.GameLessons(log_dir() / "game_lessons.json"))
     app.aboutToQuit.connect(services.game_agent.stop)
     status.start()                            # music -> her Discord status; gaming -> she steps aside for your game
     app._status_watch = status
@@ -777,6 +803,11 @@ def main(argv: list[str] | None = None) -> int:
                 State.SUCCESS, f"I've updated myself to Capri {__version__}.", speak=False, emotion="happy"))
         settings.last_version = __version__
         settings.save()
+    if logs.last_crash:                               # a hard crash last time: say where the details are, once
+        controller.log("Error", "I crashed last time - see crash.log")
+        QTimer.singleShot(5000, lambda: assistant.show_result(
+            State.ERROR, "I crashed last time. The details are in crash.log in my log folder (tray menu, Open log "
+            "folder). Send it to the Capri Discord so it can be fixed.", speak=False, emotion="sad"))
     updates.start()
 
     # Global shortcuts: work even while a game has focus.

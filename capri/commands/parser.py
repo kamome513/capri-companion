@@ -49,6 +49,10 @@ class Kind(Enum):
     SETTINGS = "settings"         # "open your settings": her own Settings window
     UPDATE = "update"             # "check for updates" / "update yourself": a newer Capri from GitHub
     RESTART_APP = "restart_app"   # "restart yourself": Capri closes and starts again (not the PC!)
+    ARRANGE = "arrange"           # "put chrome on the left and discord on the right": targets = apps ("" = the one
+                                  #   in front), query = their layouts, comma separated (left, right, maximize...)
+    APP_VOLUME = "app_volume"     # "turn discord down": targets = (app,), query = down | up | set:<0-100> | mute | unmute
+    SETTING = "setting"           # one of her own settings (from the AI): targets = (name,), query = value
     SIZE = "size"                 # query: "bigger" / "smaller" / "tiny" / "small" / "normal" / "big" / "huge"
     MUSIC_DECK = "music_deck"     # query: "on" / "off" - the bar she stands on while music plays
     ROAM = "roam"                 # query: "walk" (go for a walk now) / "stay" (stop roaming) / "on" (roam again)
@@ -173,6 +177,16 @@ VIDEO = [(rf"(?:play|resume|unpause|un pause|start|continue|restart)(?: playing)
 PC_ASK = (r"\b(?:what|whats|which|who|how|why|check|show|tell|is|are|am|much|using|use|usage|eating|hogging|taking|"
           r"full|high|left|free|space|status|slow|lagging|laggy|level|percent)\b")
 PC_TOPICS = [
+    ("lag", r"\bwhy (?:is|does|do) (?:my |the |this )?(?:game|games|fps|frame ?rate|valorant|fortnite|minecraft|roblox|"
+            r"cs ?2?|league|apex|warzone|it)(?: keep)? (?:so )?(?:lag|lagging|laggy|stutter|stuttering|stuttery|choppy|"
+            r"freeze|freezing|drop|dropping|so low|low|bad|slow)"
+            r"|\b(?:my )?(?:fps|frames?) (?:is |are |keeps? )?(?:so )?(?:low|dropping|bad|tanking)\b"
+            r"|\bwhat(?: s| is) making (?:my )?(?:game|games|it) (?:lag|stutter)\b"
+            r"|\b(?:check|test) (?:why )?(?:my )?(?:game )?(?:lag|stutter|stuttering|fps)\b"),
+    ("internet", r"\b(?:how(?: s| is)|check|test|whats|what s|what is|is) (?:my |the )?(?:internet|wifi|wi fi|"
+                 r"connection|network|ping|internet speed|download speed)(?: speed| connection)?\b"
+                 r"|\b(?:run a |do a )?speed ?test\b|\bwhat(?: s| is) my ping\b|\bam i lagging\b"
+                 r"|\bis (?:my )?(?:internet|wifi|wi fi|connection) (?:slow|bad|laggy|ok|okay|good|down|working)\b"),
     ("ram", r"\b(?:ram|memory|gigs of ram|gb of ram)\b"),
     ("cpu", r"\b(?:cpu|processor|cpu usage)\b"),
     ("disk", r"\b(?:storage|disk space|hard drive|hard disk|ssd|drive space|disk|space left|space on my)\b"),
@@ -776,6 +790,85 @@ DECK_OFF = rf"{_PLS}(?:(?:turn|switch|shut) off|hide|disable|get rid of|remove|c
 DECK_ON = rf"{_PLS}(?:(?:turn|switch) on|show|enable|bring back|use) {_DECK}(?: again)?{_END}|{_PLS}(?:turn|switch) {_DECK} (?:back )?on{_END}"
 
 
+_SIDE = {"left": "left", "right": "right", "top": "top", "bottom": "bottom", "top left": "top_left",
+         "top right": "top_right", "bottom left": "bottom_left", "bottom right": "bottom_right", "middle": "center",
+         "center": "center", "centre": "center", "full screen": "maximize", "fullscreen": "maximize",
+         "maximized": "maximize", "maximised": "maximize", "the whole screen": "maximize"}
+_SIDE_WORDS = "|".join(sorted((re.escape(k) for k in _SIDE), key=len, reverse=True))
+_SPOT = rf"(?:(?:on|to|in|at) )?(?:the )?(?P<side{{n}}>{_SIDE_WORDS})(?: side| half| corner| of (?:the|my) screen)*"
+_APP = (r"(?P<app{n}>(?!it\b|this\b|that\b|everything\b|all\b|the volume\b|the music\b|the sound\b|to\b|"
+        r"yourself\b|urself\b|you\b|her\b|capri\b|over\b|me\b|my volume\b)[a-z0-9 .+']{2,40}?)")
+_PUT = r"(?:put|move|snap|drag|throw|stick|place|shove|send|make|set)"
+ARRANGE_ONE = rf"{_PLS}{_PUT} {_APP.replace("{n}", "1")} {_SPOT.replace("{n}", "1")}{_END}"
+ARRANGE_TWO = (rf"{_PLS}(?:{_PUT} )?{_APP.replace("{n}", "1")} {_SPOT.replace("{n}", "1")},? and(?: put| move)? {_APP.replace("{n}", "2")} "
+               rf"{_SPOT.replace("{n}", "2")}{_END}")
+ARRANGE_THIS = rf"{_PLS}{_PUT} (?:it|this|this window|that window|this app) {_SPOT.replace("{n}", "1")}{_END}"
+ARRANGE_MAX = rf"{_PLS}(?:maximi[sz]e|full ?screen) {_APP.replace("{n}", "1")}(?: window)?{_END}"
+ARRANGE_SPLIT = (rf"{_PLS}(?:(?:put|move|place|set|show|have|tile|arrange|split(?: my screen| the screen)?(?: between)?) )?"
+                 rf"{_APP.replace("{n}", "1")} and {_APP.replace("{n}", "2")}(?: and {_APP.replace("{n}", "3")})? "
+                 rf"(?:side by side|next to each other|split screen|on (?:a |the )?split screen){_END}")
+ARRANGE_SPLIT2 = (rf"{_PLS}split (?:my |the )?screen (?:between|with) {_APP.replace("{n}", "1")} and "
+                  rf"{_APP.replace("{n}", "2")}(?: and {_APP.replace("{n}", "3")})?{_END}")
+_NOT_APP_VOL = (r"(?!it\b|this\b|that\b|everything\b|the volume\b|volume\b|the music\b|music\b|the sound\b|sound\b|"
+                r"me\b|you\b|yourself\b|her\b|the audio\b|audio\b|for\b|the bass\b|bass\b|capri\b)")
+_VAPP = rf"(?P<app>{_NOT_APP_VOL}[a-z0-9 .+']{{2,40}}?)(?:s)?(?: volume| sound| audio)?"
+APP_VOLUME = [
+    (rf"{_PLS}turn (?:the )?(?:volume of |sound of )?{_VAPP} (?P<dir>down|up)(?: a (?:bit|little|lot|tad))?{_END}", ""),
+    (rf"{_PLS}turn (?P<dir>down|up) {_VAPP}(?: a (?:bit|little|lot|tad))?{_END}", ""),
+    (rf"{_PLS}(?:make|get) {_VAPP} (?P<dir>quieter|louder|softer)(?: a (?:bit|little))?{_END}", ""),
+    (rf"{_PLS}(?P<dir>lower|raise) {_VAPP}{_END}", ""),
+    (rf"{_PLS}(?:set|put|turn) {_VAPP} (?:volume )?(?:to|at) (?P<pct>\d{{1,3}})(?: ?percent| ?%)?{_END}", "set"),
+    (rf"{_PLS}(?P<dir>mute|unmute|silence) (?:the )?(?:sound|audio|volume) (?:of|on|from) {_VAPP}{_END}", ""),
+    (rf"{_PLS}(?P<dir>mute|unmute|silence) {_VAPP} (?:sound|audio|volume){_END}", ""),
+]
+VOLUME_DIR = {"down": "down", "up": "up", "quieter": "down", "softer": "down", "louder": "up", "lower": "down",
+              "raise": "up", "mute": "mute", "silence": "mute", "unmute": "unmute"}
+
+
+HER_THINGS = {"drone", "panel", "text box", "box", "music bar", "music deck", "bar", "deck", "log", "chat",
+              "cursor", "mouse", "hair"}
+
+
+def arrange_intent(t: str) -> Intent | None:
+    """'put chrome on the left and discord on the right' / 'spotify on the right' / 'maximize steam' /
+    'chrome and discord side by side' -> ARRANGE."""
+    for pattern in (ARRANGE_TWO, ARRANGE_ONE, ARRANGE_THIS, ARRANGE_MAX, ARRANGE_SPLIT, ARRANGE_SPLIT2):
+        m = re.fullmatch(pattern, t)
+        if not m:
+            continue
+        g = m.groupdict()
+        apps = [(g.get(f"app{i}") or "").strip() for i in (1, 2, 3)]
+        apps = [re.sub(r"^(?:the|my|your) ", "", a) for a in apps if a]
+        if any(a in HER_THINGS for a in apps):
+            return None                                   # "move the drone to the left": hers, not a window
+        if pattern is ARRANGE_THIS:
+            return Intent(Kind.ARRANGE, ("",), query=_SIDE[g["side1"]])
+        if pattern is ARRANGE_MAX:
+            return Intent(Kind.ARRANGE, tuple(apps[:1]), query="maximize")
+        if pattern in (ARRANGE_SPLIT, ARRANGE_SPLIT2):
+            return Intent(Kind.ARRANGE, tuple(apps), query="side_by_side")
+        sides = [_SIDE[g[f"side{i}"]] for i in (1, 2) if g.get(f"side{i}")]
+        if any(a in ("it", "this", "that") for a in apps) or not apps:
+            return None
+        return Intent(Kind.ARRANGE, tuple(apps), query=",".join(sides))
+    return None
+
+
+def app_volume_intent(t: str) -> Intent | None:
+    """'turn discord down' / 'make spotify louder' / 'set chrome to 30 percent' -> APP_VOLUME (only that app)."""
+    for pattern, kind in APP_VOLUME:
+        m = re.fullmatch(pattern, t)
+        if not m:
+            continue
+        app = re.sub(r"^(?:the|my) ", "", m.group("app").strip())
+        if not app or app in ("game", "the game", "music", "volume", "sound"):
+            return None
+        if kind == "set":
+            return Intent(Kind.APP_VOLUME, (app,), query=f"set:{max(0, min(100, int(m.group('pct'))))}")
+        return Intent(Kind.APP_VOLUME, (app,), query=VOLUME_DIR[m.group("dir")])
+    return None
+
+
 _HER = r"(?:yourself|urself|capri|her|you)"
 SIZE_WORDS = (rf"{_PLS}(?:make|get|turn) {_HER} (?:a (?:bit|little) |even |much |way )?(?P<size>bigger|larger|smaller|tinier|"
               rf"tiny|small|normal|regular|normal size|big|huge|giant|massive|large)(?: again)?{_END}|"
@@ -798,6 +891,12 @@ def parse(text: str) -> Intent:
         return Intent(Kind.TYPE, query=words)
     if re.fullmatch(RESTART_SELF, t):
         return Intent(Kind.RESTART_APP)                            # "restart yourself": her, not the PC
+    arranged = arrange_intent(t)
+    if arranged is not None:
+        return arranged                                            # "put chrome on the left"
+    turned = app_volume_intent(t)
+    if turned is not None:
+        return turned                                              # "turn discord down"
     m = re.fullmatch(SIZE_WORDS, t)
     if m:
         which = m.group("size") or m.group("size2") or "normal"
@@ -1025,7 +1124,8 @@ def pc_topic(t: str) -> str:
     if re.fullmatch(SELF_STATS, re.sub(r"^(?:hey |yo |so |and )?(?:capri )?", "", t)):
         return "self"
     for topic, pattern in PC_TOPICS:
-        if re.search(pattern, t) and (topic in ("uptime", "overview", "battery") or re.search(PC_ASK, t)):
+        if re.search(pattern, t) and (topic in ("uptime", "overview", "battery", "lag", "internet")
+                                      or re.search(PC_ASK, t)):
             return topic
     return ""
 

@@ -75,6 +75,8 @@ def strong(intent: Intent, knows: Callable[[str], bool] | None) -> bool:
         return False
     if intent.kind in (Kind.OPEN, Kind.CLOSE, Kind.MINIMIZE) and intent.targets and intent.targets != ("this",):
         return knows is not None and all(knows(t) for t in intent.targets)
+    if intent.kind in (Kind.ARRANGE, Kind.APP_VOLUME) and any(intent.targets):
+        return knows is not None and all(knows(t) for t in intent.targets if t)
     return True
 
 

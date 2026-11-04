@@ -1,14 +1,19 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. When she updates, she replaces that same file, so it stays the same app. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). Already have Capri installed with the installer? It keeps updating itself, or switch to Capri.exe whenever you like. `Capri-Setup-2.1.0.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.2.0.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
 
 **What's in this one**
-- **One app.** `Capri.exe` is all of Capri in one file. Updates replace that same file in the same place: same shortcut, same taskbar pin, same "Start with Windows".
-- **A new icon.** Her red USB shard with its green circuits, on a dark neon tile with a glitch running through it. It's on the app, the taskbar, the tray and the Linux apps menu.
-- **She stands on her music deck.** While music plays, a neon bar slides under her feet and she rises onto it: the song scrolling along it, a spinning ring, equaliser bars and previous / play-pause / next. Lying down, she lies on it. It now shows the right song, and keeps up when the next one starts. Turn it on or off in the tray menu (Capri → Music deck), Settings → Extras, or say "hide the music bar" / "show the music bar".
-- **Change her size.** Right-click her → **Size**: Tiny, Small, Normal, Big, Bigger or Huge (or Bigger / Smaller one step at a time). Or say "make yourself bigger", "make yourself tiny", "normal size". Her feet stay where they are.
-- **Text box only when you say her name.** New Settings → Extras → Text box option: it pops up when you say "hey Capri" and stays for that chat, but not for things she says by herself.
-- **Fewer "AI error 400"s.** When an AI service refuses a request, she now starts a fresh conversation (or drops the option it won't take) and asks again by herself. If it still says no, she tells you the service's actual reason, and it's written to `capri.log`. Screen watching waits longer after each problem instead of asking again every glance.
-- **Crazier wall slams.** When she slams into the edge of the screen it overloads instead of cracking: electric arcs crawl out of the impact, the screen tears into glitchy RGB-split bands, manga impact lines burst out, and dead pixels and bits of error text fly off.
+- **"AI error 400" fixed.** She now reads every AI service's error properly (NVIDIA's included), and fixes what it complains about by herself: a setting it doesn't take, a broken chat history, or tools it doesn't support. If it still can't answer, she tells you the actual reason.
+- **"What do you see?" works with any AI.** If your model can't look at pictures, she uses that service's own model that can (NVIDIA, Groq, Mistral, xAI, OpenAI, OpenRouter, Gemini). She looks at the monitor your window is on, and if the screenshot comes out black (a game in exclusive fullscreen, or Wayland) she tries the window itself, then tells you why instead of sending the AI a black picture.
+- **Fish Audio sounds like it does on their site.** Capri asks for Fish's full-quality voice instead of the faster, rougher one, and keeps the speed and volume steady instead of changing them with her mood.
+- **Her tools:**
+  - "Put Chrome on the left and Discord on the right", "Spotify full screen", "Chrome and Discord side by side".
+  - "Turn Discord down", "make Spotify louder", "set Chrome to 30%": only that app's volume.
+  - "Why is my game lagging?": CPU, memory, graphics card, heat, disk and ping, with the most likely cause first.
+  - "How's my internet?": ping and a quick download speed test.
+  - Your AI can now also set timers, arrange windows, change one app's volume and change her own settings (size, text box, music bar, roaming, glitches...) when you ask it to.
+- **She vibes to your music.** While music plays she bounces and sways to it, and stops when you pause. Turn it off in Settings → Extras.
+- **The music bar's pause button** switches to play straight away, and the bar waits for you while it's paused.
+- **If she crashes**, she says so the next time she starts and tells you where `crash.log` is, so it can be sent in and fixed.
 
 Join the Capri Discord: https://discord.gg/FBxdDSCaA7

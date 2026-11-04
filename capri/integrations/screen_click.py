@@ -147,6 +147,66 @@ def grab(rect: tuple[int, int, int, int]) -> np.ndarray | None:
         user32.ReleaseDC(0, screen)
 
 
+def monitor_of(hwnd: int) -> tuple[int, int, int, int] | None:
+    """The monitor a window is on (physical pixels: left, top, right, bottom). Windows only."""
+    if sys.platform != "win32" or not hwnd:
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class MONITORINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
+                    ("dwFlags", wintypes.DWORD)]
+    user32 = ctypes.windll.user32
+    user32.MonitorFromWindow.restype = wintypes.HANDLE
+    monitor = user32.MonitorFromWindow(wintypes.HWND(hwnd), 2)          # MONITOR_DEFAULTTONEAREST
+    info = MONITORINFO(ctypes.sizeof(MONITORINFO))
+    if not monitor or not user32.GetMonitorInfoW(wintypes.HANDLE(monitor), ctypes.byref(info)):
+        return None
+    r = info.rcMonitor
+    return r.left, r.top, r.right, r.bottom
+
+
+def grab_window(hwnd: int) -> np.ndarray | None:
+    """A window's own picture (PrintWindow, full content) as RGB: works for GPU-drawn apps (browsers,
+    Discord, many games in borderless mode) that a plain screenshot sometimes gets black. Windows only."""
+    if sys.platform != "win32" or not hwnd:
+        return None
+    import ctypes
+    from ctypes import wintypes
+    user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
+    rect = wintypes.RECT()
+    if not user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rect)):
+        return None
+    w, h = rect.right - rect.left, rect.bottom - rect.top
+    if w <= 0 or h <= 0 or w * h > 8192 * 8192:
+        return None
+    screen = user32.GetDC(0)
+    dc = gdi32.CreateCompatibleDC(screen)
+    bmp = gdi32.CreateCompatibleBitmap(screen, w, h)
+    try:
+        gdi32.SelectObject(dc, bmp)
+        if not user32.PrintWindow(wintypes.HWND(hwnd), dc, 2):          # PW_RENDERFULLCONTENT
+            return None
+
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG), ("biHeight", wintypes.LONG),
+                        ("biPlanes", wintypes.WORD), ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD),
+                        ("biSizeImage", wintypes.DWORD), ("biXPelsPerMeter", wintypes.LONG),
+                        ("biYPelsPerMeter", wintypes.LONG), ("biClrUsed", wintypes.DWORD),
+                        ("biClrImportant", wintypes.DWORD)]
+        info = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
+        buf = ctypes.create_string_buffer(w * h * 4)
+        if not gdi32.GetDIBits(dc, bmp, 0, h, buf, ctypes.byref(info), 0):
+            return None
+        bgra = np.frombuffer(buf.raw, np.uint8).reshape(h, w, 4)
+        return bgra[..., 2::-1].copy()
+    finally:
+        gdi32.DeleteObject(bmp)
+        gdi32.DeleteDC(dc)
+        user32.ReleaseDC(0, screen)
+
+
 def click_at(x: int, y: int) -> None:
     """A left click at a screen point (physical pixels); the mouse goes back where it was."""
     import ctypes

@@ -389,6 +389,11 @@ class ElevenLabsEngine:
         return audio
 
 
+def fish_speed(speed: float) -> float:
+    """Your speed setting (0..1, default 0.6) -> Fish's speed: exactly 1.0 (the voice as it is) at the default."""
+    return round(max(0.8, min(1.2, 1.0 + (float(speed) - 0.6) * 0.5)), 2)
+
+
 class FishAudioEngine:
     """Fish Audio's online voices (fish.audio: free to sign up, with free credits for its API) - your API key
     + a voice's ID from its library (fish.audio/m/<ID>), Settings -> Assistant -> Voice.
@@ -419,8 +424,10 @@ class FishAudioEngine:
         import io
         import urllib.error
         import wave
-        body = {"text": text, "format": "wav", "sample_rate": 44100, "latency": "balanced",
-                "prosody": {"speed": round(0.85 + 0.3 * max(0.0, min(1.0, speed)), 2)}}
+        # "normal" latency: Fish's full-quality read ("balanced" is quicker but rougher - it sounded off).
+        # The speed is your speed setting only (1.0 at the default), steady from line to line.
+        body = {"text": text, "format": "wav", "sample_rate": 44100, "latency": "normal", "normalize": True,
+                "prosody": {"speed": fish_speed(speed), "volume": 0}}
         voice_id = self.voice_from(type(self).voice_id())
         if voice_id:
             body["reference_id"] = voice_id

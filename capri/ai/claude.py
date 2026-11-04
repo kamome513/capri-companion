@@ -63,7 +63,10 @@ Capri's command system carries out the action and tells the user the outcome its
 action tool reply with at most a few words. For weather or the current time, call get_weather or \
 get_time instead of guessing. For questions about the user's PC (what's using their RAM or CPU, storage \
 left, uptime, battery), call get_pc_stats and answer from its numbers. You can take a screenshot with \
-take_screenshot, and switch your own personality with set_personality when they ask. To do several \
+take_screenshot, and switch your own personality with set_personality when they ask. You also know your tools: \
+arrange_windows (put apps left / right / full screen / side by side), set_app_volume (turn just one app down or \
+up), set_timer, change_setting (your own settings: size, text box, music deck, roaming, glitches...), and \
+get_pc_stats with topic "lag" (why their game stutters) or "internet" (ping and speed) - use them. To do several \
 things, call several tools in one reply, in order - "open Spotify and take a screenshot" is open_app then \
 take_screenshot; to type somewhere ("type hi in Notepad") call type_text with that app, it opens it if needed; \
 Capri says "wait a second while I..." and "alright, ..." herself, so just call them. You're open source: \
@@ -93,6 +96,10 @@ def _tool(name: str, description: str, properties: dict) -> dict:
                              "required": list(properties), "additionalProperties": False}}
 
 
+ARRANGE_LAYOUTS = ("left", "right", "top", "bottom", "maximize", "center", "top_left", "top_right", "bottom_left",
+                   "bottom_right", "side_by_side")
+SETTING_CHOICES = ("size", "music_deck", "roaming", "watch_screen", "game_hype", "lie_down", "sit_on_windows",
+                   "compact", "voice_speed", "voice_volume", "text_box", "glitches")
 PC_ACTIONS = {
     "minimize_all": Intent(Kind.MINIMIZE), "restore_windows": Intent(Kind.RESTORE),
     "lock": Intent(Kind.POWER, query="lock"), "sleep": Intent(Kind.POWER, query="sleep"),
@@ -139,8 +146,10 @@ TOOLS = [
     _tool("get_time", "The user's current local date and time.", {}),
     _tool("get_pc_stats", "Live stats from the user's PC: what's using their memory (RAM) or CPU, storage left, "
                           "uptime or battery. Grouped by app, read on their PC.",
-          {"topic": {"type": "string", "enum": ["ram", "cpu", "disk", "uptime", "battery", "overview", "self"],
-                     "description": "self = Capri's own RAM and CPU use"}}),
+          {"topic": {"type": "string", "enum": ["ram", "cpu", "disk", "uptime", "battery", "overview", "self",
+                                                "lag", "internet"],
+                     "description": "self = Capri's own RAM and CPU use; lag = why their game stutters (CPU, "
+                                    "memory, GPU, heat, disk, ping); internet = ping and download speed test"}}),
     _tool("take_screenshot", "Take a screenshot of every monitor (or just the window the user is using) and save "
                              "it to their Pictures\\Screenshots folder.",
           {"what": {"type": "string", "enum": ["screen", "window"]}}),
@@ -150,6 +159,26 @@ TOOLS = [
            "app": {"type": "string", "description": "App to type into, e.g. 'Notepad'. Empty: the window in front."}}),
     _tool("set_personality", "Change how Capri talks, when the user asks for a different personality.",
           {"personality": {"type": "string", "enum": list(PERSONALITY_KEYS)}}),
+    _tool("arrange_windows", "Move and size app windows on the user's screen: e.g. Chrome on the left half and "
+                             "Discord on the right, one app full screen, or several side by side. Give one layout "
+                             "per app (or just side_by_side). An empty app list means the window in front.",
+          {"apps": NAMES,
+           "layouts": {"type": "array", "items": {"type": "string", "enum": list(ARRANGE_LAYOUTS)},
+                       "description": "One per app, in the same order, e.g. ['left', 'right']."}}),
+    _tool("set_app_volume", "Change the volume of ONE app only (in the volume mixer), e.g. turn Discord down "
+                            "while a game stays loud. percent is used with action 'set' (0-100).",
+          {"app": {"type": "string", "description": "e.g. 'Discord'"},
+           "action": {"type": "string", "enum": ["down", "up", "set", "mute", "unmute"]},
+           "percent": {"type": "integer", "description": "0-100, for 'set'; otherwise 0."}}),
+    _tool("set_timer", "Set a timer that rings after some minutes, with an optional label.",
+          {"minutes": {"type": "number", "description": "e.g. 5, or 0.5 for 30 seconds"},
+           "label": {"type": "string", "description": "What it's for, e.g. 'pizza'. Empty if none."}}),
+    _tool("change_setting", "Change one of Capri's own settings when the user asks.",
+          {"setting": {"type": "string", "enum": list(SETTING_CHOICES)},
+           "value": {"type": "string", "description": "size: tiny/small/normal/big/huge/bigger/smaller; "
+                                                      "text_box: always/popup/name/never; glitches: "
+                                                      "off/rarely/sometimes/often; voice_speed: faster/slower; "
+                                                      "voice_volume: louder/softer; everything else: on/off"}}),
 ]
 INFO_TOOLS = {"get_weather", "get_time", "get_pc_stats"}
 DISPLAY = {"compact_on": Kind.COMPACT_ON, "compact_off": Kind.COMPACT_OFF, "panel_hide": Kind.PANEL_HIDE,
@@ -185,6 +214,31 @@ def to_intent(name: str, args: dict) -> Intent | None:
     if name == "type_text" and str(args.get("text", "")).strip():
         app = str(args.get("app", "")).strip().lower()[:60]
         return Intent(Kind.TYPE, (app,) if app else (), query=re.sub(r"[\r\n]+", " ", str(args["text"]))[:2000])
+    if name == "arrange_windows":
+        apps = tuple(str(n).strip() for n in args.get("apps", []) if str(n).strip())[:4]
+        layouts = [str(x) for x in args.get("layouts", []) if str(x) in ARRANGE_LAYOUTS][:4] or ["maximize"]
+        if "side_by_side" in layouts:
+            layouts = ["side_by_side"]
+        return Intent(Kind.ARRANGE, apps or ("",), query=",".join(layouts))
+    if name == "set_app_volume" and str(args.get("app", "")).strip() and \
+            args.get("action") in ("down", "up", "set", "mute", "unmute"):
+        action = args["action"]
+        if action == "set":
+            try:
+                action = f"set:{max(0, min(100, int(args.get('percent', 50))))}"
+            except (TypeError, ValueError):
+                return None
+        return Intent(Kind.APP_VOLUME, (str(args["app"]).strip()[:60],), query=action)
+    if name == "set_timer":
+        try:
+            seconds = round(float(args.get("minutes", 0)) * 60)
+        except (TypeError, ValueError):
+            return None
+        if 0 < seconds <= 24 * 3600:
+            return Intent(Kind.TIMER, (str(seconds), str(args.get("label", "")).strip()[:40]), query="add")
+        return None
+    if name == "change_setting" and args.get("setting") in SETTING_CHOICES:
+        return Intent(Kind.SETTING, (args["setting"],), query=str(args.get("value", "")).strip().lower()[:20])
     if name == "set_personality":
         from .. import personality
         if args.get("personality") in personality.PERSONALITIES:

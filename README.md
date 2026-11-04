@@ -158,6 +158,11 @@ open Chrome") or pause after her name. Her frame turns green while she's listeni
 | "shut down" / "restart" / "put my PC to sleep" | Asks you first. Only a clear "yes" does it |
 | "take a screenshot" / "screenshot this window" | Saves it to Pictures\Screenshots |
 | "what's using all my RAM?" / "how much storage is left?" / "battery?" | Live PC stats |
+| "why is my game lagging?" / "my FPS is so low" | Checks CPU, memory, graphics card (NVIDIA), heat, disk and ping, and says the most likely cause |
+| "how's my internet?" / "what's my ping?" / "run a speed test" | Ping, how steady it is, and a quick download speed test |
+| "put Chrome on the left and Discord on the right" / "Spotify full screen" / "snap this to the left" | Arranges your windows |
+| "put Chrome and Discord side by side" | Splits the screen between them |
+| "turn Discord down" / "make Spotify louder" / "set Chrome to 30%" / "mute the sound of Chrome" | Changes only that app's volume (Windows volume mixer; Linux: pactl) |
 | "type hello in Notepad" / "type hello" | Types it for you. She never presses Enter |
 | "click subscribe" / "click that" | Clicks a button you can see on screen |
 | "highlight hello" / "copy that" / "right click that" / "scroll down" | Hands on your screen |
@@ -181,8 +186,10 @@ recording (only while you're in a game, unless you pick *Always*), on your PC. O
 | "what do you see?" / "look at my screen" / "what am I doing?" / "what do you think of this?" | She looks at your screen and answers |
 | "watch my screen" / "stop watching my screen" | She glances at your screen every few minutes and comments |
 
-Needs an AI that can see pictures (ChatGPT, Gemini, Claude, or Ollama with `gemma3` / `llava`). The picture
-goes to that AI. With Ollama it stays on your PC. She won't look while a password manager, bank, sign-in
+Needs an AI that can see pictures (ChatGPT, Gemini, Claude, or Ollama with `gemma3` / `llava`). If your model
+can't, she uses that service's own picture model by herself (NVIDIA, Groq, Mistral, xAI, OpenRouter). She looks
+at the monitor your window is on. A game in exclusive fullscreen shows up black to her: switch it to borderless
+or windowed. On Linux it needs an X11 session (Wayland doesn't allow screenshots). The picture goes to that AI. With Ollama it stays on your PC. She won't look while a password manager, bank, sign-in
 page or private window is in front.
 
 **She plays your game**
@@ -405,6 +412,7 @@ install something.
 | **Show what you said, and TYPE / TALK buttons** | Her text box shows "YOU ›" what she heard; TYPE opens the chat to type to her, TALK makes her listen now |
 | **She glitches** | Never (the default), or every 1, 3, 5 or 10 minutes her picture glitches like a broken video feed |
 | **Music deck** | While music plays, she stands on a neon bar (lying down, she lies on it): the song, and previous / play-pause / next. Also in the tray menu (Capri → Music deck), or say "hide the music bar" / "show the music bar" |
+| **She vibes to your music** | While music plays she bounces and sways to it (and stops when you pause) |
 | **Let her play games** | "Play this for me" (see She plays your game above) |
 | **Clip my games** / Record / "Clip that" saves / Frame rate / Resolution / With sound / Save big moments | Clips (see Clips above). *Save big moments* clips triple kills, aces and wins by itself (needs Game hype) |
 | **Choose folder / Open clips folder** | Where clips go (Videos\Capri Clips) |
@@ -443,6 +451,7 @@ install something.
 | She can't find an app | Settings → Apps → **Add app or game...**, or add what she hears to **Also say** |
 | I want a free AI without a key | Settings → Assistant → AI → **Set up Ollama for me**, or say "Hey Capri, set up your brain". She does the rest |
 | "I don't have Ollama installed" but you do | Open the Ollama app once (it sits by the clock), then say "set up your brain". If you changed Ollama's address, put it in Settings → Assistant → Address |
+| She says she crashed last time | Send the `crash.log` from her log folder (right-click her → Open log folder) to the Capri Discord |
 | She keeps saying the AI turned something down (400) | She already retries by herself. If it keeps happening, the reason she reads out (and the line in `capri.log`) says what the service didn't like. Often it's a model that can't do pictures (for *Watch my screen*) or doesn't support her tools: pick another model in Settings → Assistant |
 | The AI says a model "doesn't exist" | Settings → Assistant → **Show my models** and pick one from the list |
 | She crashed (Linux) | Send `crash.log` and `capri.log` from `~/.config/Capri` - since 1.40 they say why |

@@ -281,7 +281,10 @@ class Speaker(QObject):
         speed, pitch, gain = prosody(self.settings, emotion)
         self._emotion = emotion
         from .engines import is_online
-        parts = [text] if is_online(getattr(self.settings, "speech_voice", "")) else speech_chunks(text)
+        online = is_online(getattr(self.settings, "speech_voice", ""))
+        if online:      # their voice as it is: your speed and volume only - no mood speeding it up or quieting it
+            speed, gain = self.settings.speech_speed, self.settings.speech_volume * MASTER_GAIN
+        parts = [text] if online else speech_chunks(text)
         # (an online voice says the whole line in one go: one request, one consistent read)
         talking = False
         try:

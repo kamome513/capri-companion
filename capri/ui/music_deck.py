@@ -34,6 +34,8 @@ NOT_SONGS = {"default ime", "msctfime ui", "chrome legacy window", "spotify", "s
              "music", "apple music", "itunes", "media player", "windows media player", "groove music", "deezer",
              "tidal", "amazon music", "youtube music", "soundcloud", "youtube", "vlc media player", "foobar2000",
              "now playing", "new tab", "home"}
+PAUSED_FOR = 300.0               # paused with her button: the bar stays (and she stays on it) this long
+TRUST_BUTTON = 30.0              # after a press, her button's play / pause beats the (slow) music detection
 REFRESH = 3.0                    # seconds between re-reading what's playing (the song changes)
 
 
@@ -261,12 +263,16 @@ class DeckKeeper:
     and lifts her onto it - smoothly - and back down."""
 
     def __init__(self, deck: MusicDeck, companion, title: Callable[[], str], enabled: Callable[[], bool],
-                 clock=time.monotonic) -> None:
+                 clock=time.monotonic, groove: Callable[[bool], None] = lambda on: None) -> None:
         self.deck, self.companion, self.title, self.enabled, self.clock = deck, companion, title, enabled, clock
+        self.groove = groove                            # she vibes while it's playing (and stops when you pause)
         self.music = False
         self._quiet_since = 0.0
         self.lift = 0.0                                 # how far she's up on it right now (px)
         self._titled = -1e9
+        self._pressed_at = -1e9                         # when you last pressed play / pause on her bar
+        self._pressed_playing = True                    # ...and what it switched to
+        deck.pressed.connect(self.pressed)
         self._from, self._to, self._since = 0.0, 0.0, 0.0
         self.timer = QTimer(deck)                       # (both go with the deck)
         self.timer.setInterval(400)
@@ -292,14 +298,46 @@ class DeckKeeper:
             self._quiet_since = self.clock()
         self.tick()
 
+    def pressed(self, name: str) -> None:
+        """Her bar's buttons: play / pause flips its symbol straight away (the music check only notices a few
+        seconds later); next / previous re-read the song soon."""
+        now = self.clock()
+        if name == "play_pause":
+            self._pressed_playing = not self.showing_playing()
+            self._pressed_at = now
+            self.deck.playing = self._pressed_playing
+            self.deck.update()
+            self.groove(self._pressed_playing)
+        elif name in ("next", "previous"):
+            self._pressed_playing, self._pressed_at = True, now
+            self._titled = now - REFRESH + 1.0
+            self.deck.playing = True
+            self.deck.update()
+
+    def showing_playing(self) -> bool:
+        """Play or pause on the bar: what you just pressed, else whether music is playing."""
+        if self.clock() - self._pressed_at < TRUST_BUTTON:
+            return self._pressed_playing
+        return self.music
+
+    def _paused_by_you(self) -> bool:
+        return not self._pressed_playing and self.clock() - self._pressed_at < PAUSED_FOR
+
     def wanted(self) -> bool:
         c, deck = self.companion, self.deck
         if not self.enabled() or getattr(c, "drone", False) or getattr(c, "perched", False):
             return False
-        return self.music or (deck.isVisible() and self.clock() - self._quiet_since < LINGER)
+        if self.music and self.clock() - self._pressed_at >= TRUST_BUTTON:
+            self._pressed_playing = True                # it's playing again (you pressed play elsewhere)
+        return self.music or (deck.isVisible() and (self._paused_by_you()
+                                                    or self.clock() - self._quiet_since < LINGER))
 
     def tick(self) -> None:
         c, deck = self.companion, self.deck
+        try:
+            self.groove(self.showing_playing())
+        except Exception:
+            pass
         on = self.wanted()
         away = c.hidden or c.busy_elsewhere                # thrown / teleporting / hidden: the deck waits
         if not on or away:
@@ -311,13 +349,13 @@ class DeckKeeper:
         if not deck.isVisible():
             deck.set_music(self.music, self._song())
             self._titled = self.clock()
-        elif self.music and self.clock() - self._titled >= REFRESH:      # the next song: the bar keeps up
+        elif self.showing_playing() and self.clock() - self._titled >= REFRESH:      # the next song: the bar keeps up
             self._titled = self.clock()
             song = self._song()
             if song and song != deck.title:
                 deck.title = song
                 deck.update()
-        deck.playing = self.music
+        deck.playing = self.showing_playing()
         self._lift_to(BODY - SINK)
         self.place()
 
