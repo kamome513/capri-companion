@@ -12,6 +12,8 @@ which become Capri's own intents and go through the same CommandRouter
 
 from __future__ import annotations
 
+import logging
+
 import re
 import time
 from typing import Callable
@@ -40,6 +42,31 @@ ACTION_WORDS = re.compile(
 def wants_action(text: str) -> bool:
     """Does this sound like asking her to *do* something (vs. just talking)?"""
     return bool(ACTION_WORDS.search(text))
+
+
+log = logging.getLogger("capri")
+EYES_MODEL = "gemma3:4b"          # "give yourself eyes": a small local model that can see (about 3.3 GB)
+BLIND = ("My local brain ({model}) can't see pictures, so I can't look at your screen or play games with it. "
+         "Say \u201cgive yourself eyes\u201d and I'll download a small model that can (gemma3, about 3 GB), "
+         "or pick an AI that can see in my Settings (Gemini Flash is free).")
+
+
+def can_see(model: str) -> bool:
+    """Ollama models that take pictures."""
+    return bool(re.search(r"gemma3|llava|vision|qwen\d?(\.\d)?-?vl|minicpm-v|moondream|llama4|bakllava|mistral-small3|"
+                          r"granite3\.2-vision|gemma3n", (model or "").lower()))
+
+
+def ollama_error(exc) -> str:
+    """Ollama's own reason: {"error": "..."}."""
+    try:
+        data = exc.json()
+    except Exception:
+        data = None
+    if isinstance(data, dict) and data.get("error"):
+        return str(data["error"])[:160]
+    body = (getattr(exc, "body", "") or "").strip()
+    return body[:160] if body and not body.startswith("<") else ""
 
 
 class LocalBrain:
@@ -102,23 +129,41 @@ class LocalBrain:
                 self.chosen = ""                       # it was removed: look again next time
                 return AIReply(f"My local AI model isn't downloaded. Run: ollama pull {self._model() or DEFAULT_MODEL}",
                                error=True)
-            return AIReply(f"My local AI glitched ({exc.status}).", error=True)
+            said = ollama_error(exc)
+            log.warning("ai: Ollama refused (HTTP %s): %s", exc.status, said or exc.body[:200])
+            return AIReply(f"My local AI said no ({exc.status}: {said or 'no reason given'}).", error=True)
         except OSError:
             self.reset()
             return AIReply(f"Can't reach Ollama at {self._base()}. Is the Ollama app running?", error=True)
 
+    def eyes(self) -> str:
+        """A model you have in Ollama that can see pictures ("" if none): the one you set up for it, else any."""
+        try:
+            tags = self._fetch("GET", self._base() + "/api/tags", timeout=4.0) or {}
+        except (http.HttpError, OSError):
+            return ""
+        names = [m.get("name", "") for m in tags.get("models", [])]
+        if EYES_MODEL in names or any(n.split(":")[0] == EYES_MODEL.split(":")[0] for n in names):
+            return next(n for n in names if n == EYES_MODEL or n.split(":")[0] == EYES_MODEL.split(":")[0])
+        return next((n for n in names if can_see(n)), "")
+
     def look(self, prompt: str, jpeg_b64: str) -> AIReply:
-        """One look at a picture (your screen) - needs a model that can see (llava, gemma3, llama3.2-vision...)."""
-        body = {"model": self._use_model(), "stream": False, "keep_alive": "3m",
+        """One look at a picture (your screen). Your chat model often can't see (llama3.2, the one "set up your
+        brain" installs), so a model of yours that can (gemma3, llava, qwen2.5vl...) looks instead."""
+        model = self._use_model()
+        if jpeg_b64 and not can_see(model):
+            model = self.eyes() or model
+        body = {"model": model, "stream": False, "keep_alive": "3m",
                 "messages": [{"role": "system", "content": system_prompt(self._slang(), self._persona())},
                              {"role": "user", "content": prompt, **({"images": [jpeg_b64]} if jpeg_b64 else {})}]}
         try:
-            data = self._fetch("POST", self._base() + "/api/chat", timeout=TIMEOUT * 2, json_body=body) or {}
+            data = self._fetch("POST", self._base() + "/api/chat", timeout=TIMEOUT * 3, json_body=body) or {}
         except http.HttpError as exc:
-            if "image" in (exc.body or "").lower() or "vision" in (exc.body or "").lower():
-                return AIReply(f"{self._use_model()} can't see pictures. Try: ollama pull gemma3", error=True,
-                               blind=True)
-            return AIReply(f"My local AI glitched ({exc.status}).", error=True)
+            said = ollama_error(exc)
+            log.warning("ai: Ollama %s refused a look (HTTP %s): %s", model, exc.status, said or exc.body[:200])
+            if jpeg_b64 and (not can_see(model) or "image" in said.lower() or "vision" in said.lower()):
+                return AIReply(BLIND.format(model=model), error=True, blind=True)
+            return AIReply(f"My local AI ({model}) said no ({exc.status}: {said or 'no reason given'}).", error=True)
         except OSError:
             return AIReply(f"Can't reach Ollama at {self._base()}.", error=True)
         feeling, said = emotions.split_tag(((data.get("message") or {}).get("content") or "").strip())

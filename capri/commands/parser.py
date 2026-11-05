@@ -253,6 +253,9 @@ MOVE = (r"(?:go|move|teleport|tp|jump|head|get|fly|walk|run|scoot)(?: over| your
         r"(?: the| my| your)? (?P<spot>(?:bottom|top) (?:left|right)|left side|right side|left corner|right corner|"
         r"left|right|middle|center|centre|top|bottom|other screen|other monitor|second screen|second monitor|"
         r"main screen|main monitor|corner)(?: of (?:the|my) screen| corner| of the monitor)?")
+EYES_SETUP = (r"(?:give|get|set ?up|download|install|grab)(?: yourself| you| your| me| her)? ?(?:some |a pair of |new )?"
+              r"(?:eyes|vision|a vision model|a model that can see|sight)(?: model)?(?: for you| please)?"
+              r"|(?:let|make) (?:yourself|you) (?:see|able to see)(?: my screen)?")
 AI_SETUP = (r"(?:set ?up|install|download|get|fix|turn on|start|connect|wake up|boot up|load)(?: up)? (?:your|the|my|an?)"
             r" (?:ai|a i|brain|online brain|ai brain|thinking|chat ?bot|llama|ollama)(?: brain)?"
             r"|(?:is|why is|whats wrong with) your (?:ai|brain|ai brain)(?: not)?(?: working| on| online| broken| offline)?"
@@ -993,6 +996,8 @@ def parse(text: str) -> Intent:
         return Intent(Kind.PC_INFO, query=topic)
     if re.fullmatch(r"go(?: back)? home|go back to your (?:corner|spot|place)", t):
         return Intent(Kind.MOVE, ("bottom_right",))
+    if re.fullmatch(EYES_SETUP, t):
+        return Intent(Kind.AI_SETUP, query="eyes")                  # "give yourself eyes": a local model that sees
     if re.fullmatch(AI_SETUP, t):
         return Intent(Kind.AI_SETUP)
     m = re.fullmatch(MOVE, t)

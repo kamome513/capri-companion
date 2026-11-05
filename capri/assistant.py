@@ -381,6 +381,16 @@ class Assistant(QObject):
         watch.sample()
         return watch.typed_at >= self._listen_started - 1.0
 
+    def remark(self, text: str, emotion: str = "neutral") -> None:
+        """Something she says by herself (game hype, a comment on your screen, "ow!"): said AND shown in her text
+        box, word by word as she says it - unless she's in the middle of something for you (then just said)."""
+        if not text:
+            return
+        if self._busy or self._pending is not None or self._asking is not None:
+            self.say(text, emotion=emotion)
+            return
+        self.show_result(State.SPEAKING, text, emotion=emotion)
+
     def say(self, text: str, then: Callable[[], None] | None = None, emotion: str = "neutral") -> bool:
         """Speak if spoken replies are on. False = not spoken (muted / no voice)."""
         if self.speaker is None:

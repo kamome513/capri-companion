@@ -1685,11 +1685,14 @@ class CommandRouter(QObject):
                                    speak=False)
 
     def _ai_setup(self, intent: Intent) -> None:
-        """'Set up your brain' / 'is your AI working': find out why she can't think, and fix it."""
+        """'Set up your brain' / 'is your AI working': find out why she can't think, and fix it.
+        'Give yourself eyes': download a small local model that can see (for "what do you see" and playing games)."""
         from ..ai import doctor as dr
         doc = self.services.doctor
         if doc is None:
             return self.assistant.show_result(State.ERROR, "I can't check my AI here.")
+        if intent.query == "eyes":
+            return self._eyes(doc)
         self.controller.set_state(State.PROCESSING, "Checking my brain...")
 
         def refresh() -> None:
@@ -2242,6 +2245,35 @@ class CommandRouter(QObject):
             line += (f" To hear you in {lang.name} I need Parakeet: Settings, Wake word, Download Parakeet "
                      f"({parakeet.model_mb(code)} MB). Typing to me works now.")
         self.assistant.show_result(State.SUCCESS, line)
+
+    def _eyes(self, doc) -> None:
+        """Pull gemma3:4b into Ollama (asks first: about 3 GB), so she can look at your screen and play games."""
+        from ..ai.local import EYES_MODEL
+
+        def go(yes: bool) -> None:
+            if not yes:
+                return self.assistant.show_result(State.IDLE, "Okay, no eyes for now.")
+            last = [-1]
+
+            def progress(p: float) -> None:
+                pct = int(p * 100)
+                if pct != last[0]:
+                    last[0] = pct
+                    self._bridge.done.emit(lambda v: self.controller.set_state(
+                        State.PROCESSING, f"Downloading my eyes... {v}%"), pct)
+
+            def done(result) -> None:
+                if isinstance(result, Exception):
+                    msg = str(result)[:80]
+                    return self.assistant.show_result(State.ERROR, "I couldn't get them: " + msg + ". Is Ollama "
+                                                      "running? Say \u201cset up your brain\u201d first.")
+                self.controller.log("AI", "eyes downloaded")
+                self.assistant.show_result(State.SUCCESS, "I can see now. Ask me what I see, or say "
+                                                          "\u201cplay this for me\u201d.", emotion="happy")
+            self.controller.set_state(State.PROCESSING, "Downloading my eyes...")
+            self._background(lambda: doc.pull(progress, model=EYES_MODEL), done)
+        self.assistant.confirm(f"I'll download {EYES_MODEL} into Ollama so I can see your screen, about 3 "
+                               f"gigabytes. Say yes or no.", go)
 
     def _arrange(self, intent: Intent) -> None:
         """'Put Chrome on the left and Discord on the right' / 'Spotify full screen' / 'side by side'."""

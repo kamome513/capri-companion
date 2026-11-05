@@ -396,7 +396,7 @@ def main(argv: list[str] | None = None) -> int:
         visit_show.fh = companion.character.figure_height()
         return visit_show.rig()
     from .ui.fling import ThrowShow
-    throw_show = ThrowShow(companion, figure_rig, lambda text, emotion: assistant.say(text, emotion=emotion),
+    throw_show = ThrowShow(companion, figure_rig, lambda text, emotion: assistant.remark(text, emotion=emotion),
                            enabled=lambda: settings.throwable)
     companion.on_throw = throw_show.throw     # flick her and let go: she flies (and slams into the wall)
     app._throw_show = throw_show
@@ -411,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:
         line = _random.choice(PATS[where])
         controller.log("Pat" if where == "head" else "Poke", line)
         controller.set_state(State.SUCCESS, line, emotion="happy" if where == "head" else "surprised")
-        assistant.say(line, emotion="happy" if where == "head" else "surprised")
+        assistant.remark(line, emotion="happy" if where == "head" else "surprised")
     companion.patted.connect(patted)
     companion.character.set_body_look(settings.body_style)       # full colour / neon
     companion.character.glitch_every = settings.glitches          # random glitches (off unless you turn them on)
@@ -503,7 +503,7 @@ def main(argv: list[str] | None = None) -> int:
                            note=lambda text: controller.log("Games", text[:60]))
     keeper.start()                            # over full-screen games: back on top every 1.5 s (no focus taken)
     app._keep_on_top = keeper
-    hype = GameHype(settings, lambda text: (controller.log("Hype", text), assistant.say(text, emotion="happy")),
+    hype = GameHype(settings, lambda text: (controller.log("Hype", text), assistant.remark(text, emotion="happy")),
                     lambda: catalog.games, system.processes, busy=lambda: assistant._busy)
     hype.apply()                              # "nice kill!" - only if it's on in Settings
     assistant.settings_changed.connect(hype.apply)
@@ -697,7 +697,7 @@ def main(argv: list[str] | None = None) -> int:
             return ""
     from .logs import log_dir
     watch = ScreenWatch(settings, brain, screen_picture, front_title,
-                        lambda text, emotion: (controller.log("Watch", text[:60]), assistant.say(text, emotion=emotion)),
+                        lambda text, emotion: (controller.log("Watch", text[:60]), assistant.remark(text, emotion=emotion)),
                         busy=lambda: assistant._busy or controller.state in (State.LISTENING, State.PROCESSING),
                         memory=SeenMemory(log_dir() / "seen.json"),
                         notice=lambda text: assistant.show_result(State.ERROR, text, emotion="confused"),
@@ -719,7 +719,7 @@ def main(argv: list[str] | None = None) -> int:
         cursor = Signal(int, int)
     game_bridge = _GameBridge()
     app._game_bridge = game_bridge
-    game_bridge.said.connect(lambda text: (controller.log("Game", text[:60]), assistant.say(text, emotion="playful")))
+    game_bridge.said.connect(lambda text: (controller.log("Game", text[:60]), assistant.remark(text, emotion="playful")))
     game_bridge.done.connect(lambda why: (controller.log("Game", why), assistant.show_result(
         State.SUCCESS if why in ("done", "stopped", "escape") else State.ERROR, gamemod.ending(why))))
 
@@ -810,6 +810,8 @@ def main(argv: list[str] | None = None) -> int:
     updates = UpdateManager(settings, controller, assistant, menu.tray)    # new versions from GitHub
     services.updates = updates
     menu.add_updates(updates)
+    from .commands.parser import Intent as _Intent, Kind as _Kind
+    menu.add_languages(lambda code: router.dispatch(_Intent(_Kind.LANGUAGE, (code,))))   # right-click -> Language
 
     def restart_capri() -> None:
         """Start a fresh Capri, then quit this one. A downloaded update installs as she starts."""

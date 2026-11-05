@@ -119,8 +119,8 @@ open Chrome") or pause after her name. Her frame turns green while she's listeni
 
 Capri speaks 25 languages: Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French,
 German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak,
-Slovenian, Spanish, Swedish and Ukrainian. Pick yours in Settings → Wake word → **Language** (or say "speak
-German"), press **Download Parakeet** (about 490 MB, once) and Apply.
+Slovenian, Spanish, Swedish and Ukrainian. Pick yours with right-click → **Language**, in Settings → Wake word → **Language**, or say "speak
+German", press **Download Parakeet** (about 490 MB, once) and Apply.
 
 - Wake her with "Hey Capri" as usual, then talk in your language. NVIDIA's Parakeet v3 hears it, on your PC.
 - Everyday commands work by themselves: open / close apps, play, pause, next, previous, louder, quieter, the
@@ -202,7 +202,7 @@ recording (only while you're in a game, unless you pick *Always*), on your PC. O
 | "what do you see?" / "look at my screen" / "what am I doing?" / "what do you think of this?" | She looks at your screen and answers |
 | "watch my screen" / "stop watching my screen" | She glances at your screen every few minutes and comments |
 
-Needs an AI that can see pictures (ChatGPT, Gemini, Claude, or Ollama with `gemma3` / `llava`). If your model
+Needs an AI that can see pictures (ChatGPT, Gemini, Claude, or Ollama with `gemma3` / `llava`). Using the free local brain from "set up your brain"? Its llama3.2 can't see: say **"give yourself eyes"** and she downloads gemma3 into Ollama (about 3 GB, once). If your model
 can't, she uses that service's own picture model by herself (NVIDIA, Groq, Mistral, xAI, OpenRouter). If the service won't take pictures at all, she reads the text on your screen on your PC and asks about that instead. She looks
 at the monitor your window is on. A game in exclusive fullscreen shows up black to her: switch it to borderless
 or windowed. On Linux it needs an X11 session (Wayland doesn't allow screenshots). The picture goes to that AI. With Ollama it stays on your PC. She won't look while a password manager, bank, sign-in

@@ -18,7 +18,7 @@ GLOW = 6         # transparent margin for the neon glow
 TAIL = 9         # height of the speech-bubble tail
 STEP = 4         # height of the step in the top edge next to the badge
 TAIL_HALF = 8    # half the width of the tail's base
-ANSWER_LINES = 5 # an AI answer (SPEAKING) may use more lines than a status message
+ANSWER_LINES = 14  # what she says (SPEAKING) is shown whole - the box grows for it (14 lines is a long paragraph)
 BARS = 4         # voice bars in the badge while she talks
 
 
@@ -180,7 +180,7 @@ class StatusPanel(OverlayWindow):
             lines.append(line)
         limit = self.m.title_lines
         if self.controller.state is State.SPEAKING:
-            limit = ANSWER_LINES if self.m.log else 2
+            limit = ANSWER_LINES if self.m.log else 8
         if len(lines) > limit:
             lines = lines[:limit - 1] + [fm.elidedText(" ".join(lines[limit - 1:]), Qt.TextElideMode.ElideRight, max_w)]
         return lines or [""]

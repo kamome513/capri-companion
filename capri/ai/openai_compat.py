@@ -306,7 +306,10 @@ class OpenAIBrain:
             return (f"{self.label()} says I'm out of credit." if "quota" in detail or "credit" in detail else
                     f"{self.label()}'s rate limited. Give it a minute.")
         said = self._detail(exc).strip().rstrip(".")
-        return f"{self.label()} refused: {said[:120]}." if said else f"{self.label()} glitched out ({exc.status})."
+        if said:
+            return f"{self.label()} refused: {said[:120]}."
+        raw = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", exc.body or "")).strip()[:100]
+        return f"{self.label()} refused it ({exc.status}{': ' + raw if raw else ', no reason given'})."
 
     def look(self, prompt: str, jpeg_b64: str) -> AIReply:
         """One look at a picture (your screen), no history and no tools. Blocking.

@@ -122,11 +122,11 @@ class AIDoctor:
         self.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
         return True
 
-    def pull(self, progress: Callable[[float], None] = lambda p: None) -> None:
-        """Download the model through Ollama's own API, reporting 0..1. Blocking (minutes)."""
+    def pull(self, progress: Callable[[float], None] = lambda p: None, model: str = "") -> None:
+        """Download a model (hers, or the one named) through Ollama's own API, reporting 0..1. Blocking (minutes)."""
         opener = self.opener()
         req = urllib.request.Request(self._base() + "/api/pull", method="POST",
-                                     data=json.dumps({"model": self.model(), "stream": True}).encode(),
+                                     data=json.dumps({"model": model or self.model(), "stream": True}).encode(),
                                      headers={"Content-Type": "application/json"})
         with opener.open(req, timeout=3600) as r:
             for line in r:

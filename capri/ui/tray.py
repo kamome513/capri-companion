@@ -156,6 +156,40 @@ class CompanionMenu(QObject):
             self.menu.addAction(self.a_update)
         self.menu.aboutToShow.connect(lambda: self.a_update.setText(updates.label()))
 
+    def add_languages(self, switch) -> None:
+        """'Language' - right under Size: every language she speaks; picking one switches her straight away."""
+        from .. import languages
+        menu = QMenu("Language", self.menu)
+        menu.setStyleSheet(theme.MENU_STYLE)
+        group = QActionGroup(menu)
+        self.languages = {}
+        for lang in sorted(languages.LANGUAGES.values(), key=lambda l: (l.code != "en", l.name)):
+            label = lang.name if lang.native == lang.name else f"{lang.name} ({lang.native})"
+            action = self._check(label, lambda on, c=lang.code: on and switch(c), menu)
+            action.setActionGroup(group)
+            self.languages[lang.code] = action
+        size_menu = next((a for a in self.menu.actions() if a.text() == "Size"), None)
+        after = None
+        if size_menu is not None:
+            actions = self.menu.actions()
+            i = actions.index(size_menu)
+            after = actions[i + 1] if i + 1 < len(actions) else None
+        if after is not None:
+            self.menu.insertMenu(after, menu)
+        else:
+            self.menu.addMenu(menu)
+        self._language_menu = menu
+        self.menu.aboutToShow.connect(self._sync_language)
+
+    def _sync_language(self) -> None:
+        code = getattr(self.companion.settings, "language", "en")
+        self._syncing = True
+        try:
+            for c, action in getattr(self, "languages", {}).items():
+                action.setChecked(c == code)
+        finally:
+            self._syncing = False
+
     def add_restart(self, restart) -> None:
         """'Restart Capri' - just above Exit. Installs a downloaded update on the way."""
         action = QAction("Restart Capri", self.menu)

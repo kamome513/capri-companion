@@ -346,3 +346,126 @@ def test_on_a_busy_pc_she_makes_the_whole_line_before_talking():
     sp._speak("First part of the line. Second part of it. And a third one too.")
     assert len(played) == 1 and played[0] > 2 * 2205                 # one go, all of it
     sp.shutdown()
+
+
+# -- "play this for me" with the local brain "set up your brain" installs (llama3.2 can't see) -------------------------
+def test_local_looks_use_a_model_that_can_see():
+    from capri.ai import local
+    from capri.integrations import http
+    sent = []
+
+    def fetch(method, url, json_body=None, timeout=None, **kw):
+        if url.endswith("/api/tags"):
+            return {"models": [{"name": "llama3.2:latest"}, {"name": "gemma3:4b"}]}
+        sent.append(json_body)
+        if json_body["model"].startswith("llama3.2"):
+            raise http.HttpError(400, '{"error": "this model is missing data required for image input"}')
+        return {"message": {"content": "A Deadlock match."}}
+    import inspect
+    params = inspect.signature(local.LocalBrain.__init__).parameters
+    b = local.LocalBrain(**{k: v for k, v in {"model": lambda: "llama3.2", "url": lambda: "", "info": {},
+                                               "fetch": fetch}.items() if k in params})
+    b.chosen = "llama3.2:latest"
+    reply = b.look("play", "QUJD")
+    assert not reply.error and reply.text == "A Deadlock match." and sent[-1]["model"] == "gemma3:4b"
+
+
+def test_no_local_eyes_says_how_to_get_them_not_400():
+    from capri.ai import local
+    from capri.integrations import http
+
+    def fetch(method, url, json_body=None, timeout=None, **kw):
+        if url.endswith("/api/tags"):
+            return {"models": [{"name": "llama3.2:latest"}]}
+        raise http.HttpError(400, '{"error": "this model is missing data required for image input"}')
+    import inspect
+    params = inspect.signature(local.LocalBrain.__init__).parameters
+    b = local.LocalBrain(**{k: v for k, v in {"model": lambda: "llama3.2", "url": lambda: "", "info": {},
+                                               "fetch": fetch}.items() if k in params})
+    b.chosen = "llama3.2:latest"
+    reply = b.look("play", "QUJD")
+    assert reply.error and reply.blind and "give yourself eyes" in reply.text and "400" not in reply.text
+    assert parse("give yourself eyes").kind == Kind.AI_SETUP and parse("give yourself eyes").query == "eyes"
+
+
+@pytest.mark.parametrize("name,sees", [("gemma3:4b", True), ("llava:7b", True), ("llama3.2-vision", True),
+                                       ("qwen2.5vl:7b", True), ("minicpm-v", True), ("moondream", True),
+                                       ("llama3.2", False), ("llama3.2:1b", False), ("mistral", False)])
+def test_which_local_models_can_see(name, sees):
+    from capri.ai.local import can_see
+    assert can_see(name) is sees
+
+
+def test_right_click_language_menu_switches_her():
+    from PySide6.QtGui import QImage
+    from PySide6.QtWidgets import QMenu
+    from test_v111 import companion
+    from capri.ui.tray import CompanionMenu
+    c = companion()
+    menu = CompanionMenu(c, QImage(8, 8, QImage.Format.Format_ARGB32))
+    picked = []
+    menu.add_languages(picked.append)
+    order = [a.text() for a in menu.menu.actions()]
+    assert order.index("Language") == order.index("Size") + 1                # right under Size
+    assert len(menu.languages) == 25
+    menu.languages["de"].trigger()
+    assert picked == ["de"]
+    c.settings.language = "fr"
+    menu._sync_language()
+    assert menu.languages["fr"].isChecked() and not menu.languages["de"].isChecked()
+
+
+# -- 2.3.1: she types her reply but says nothing ----------------------------------------------------------------------
+def _streamed_wav(size_field: int, seconds: float = 0.5) -> bytes:
+    import struct
+    pcm = b"\x00\x10" * int(44100 * seconds)
+    fmt = struct.pack("<HHIIHH", 1, 1, 44100, 88200, 2, 16)
+    return b"RIFF" + struct.pack("<I", 0) + b"WAVE" + b"fmt " + struct.pack("<I", 16) + fmt + b"data" + \
+        struct.pack("<I", size_field) + pcm
+
+
+@pytest.mark.parametrize("size_field", [0, 0xFFFFFFFF, 999_999_999])
+def test_a_streamed_fish_wav_is_heard_not_silence(size_field):
+    """A streamed WAV says "0 bytes" of sound in its header: read literally, she said nothing at all."""
+    import io
+    import wave
+    raw = _streamed_wav(size_field)
+    try:                                                                        # what used to happen:
+        with wave.open(io.BytesIO(raw)) as w:
+            old = w.readframes(w.getnframes())
+    except wave.Error:
+        old = b""                                                               # refused, or...
+    assert size_field != 0 or old == b""                                        # ...no sound at all
+    from capri.speech.engines import FishAudioEngine
+    FishAudioEngine.key = staticmethod(lambda: "k")
+    try:
+        audio = FishAudioEngine(fetch=lambda u, b, h: raw).synthesize("How are you?", "fish: your Fish Audio voice", 0.6)
+    finally:
+        FishAudioEngine.key = staticmethod(lambda: "")
+    assert len(audio.samples) == 22050 and audio.rate == 44100
+
+
+def test_an_online_voice_that_sends_no_sound_falls_back_to_her_voice():
+    from capri.speech import engines as e
+    FishAudioEngine = e.FishAudioEngine
+    FishAudioEngine.key = staticmethod(lambda: "k")
+    try:
+        with pytest.raises(RuntimeError, match="no sound"):
+            FishAudioEngine(fetch=lambda u, b, h: _streamed_wav(0, 0)).synthesize("Hi", "fish: x", 0.6)
+    finally:
+        FishAudioEngine.key = staticmethod(lambda: "")
+
+
+def test_things_she_says_by_herself_show_in_her_text_box():
+    from test_v11 import FakeDesktop, rig
+    from capri.states import State
+    r = rig(FakeDesktop())
+    a = r.router.assistant
+    a.remark("Nice kill!", emotion="happy")
+    assert r.controller.state in (State.SPEAKING, State.IDLE) and "Nice kill!" in (r.controller.message or "") or \
+        any("Nice kill!" in str(e) for e in getattr(r.controller, "entries", []))
+
+
+def test_long_replies_show_whole():
+    from capri.ui import status_panel
+    assert status_panel.ANSWER_LINES >= 12

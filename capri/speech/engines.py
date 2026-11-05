@@ -456,9 +456,34 @@ class ElevenLabsEngine:
             raise RuntimeError(f"ElevenLabs: {detail or reason}"[:160]) from None
         except OSError as exc:
             raise RuntimeError("ElevenLabs: can't reach it") from exc
+        if len(raw) < 64:
+            raise RuntimeError("ElevenLabs: sent no sound")
         audio = _from_int16(raw[: len(raw) // 2 * 2], 22050)
         audio.pitched, audio.natural, audio.as_is = True, True, True    # their voice as it is
         return audio
+
+
+def read_wav(raw: bytes) -> tuple[int, int, int, bytes]:
+    """(rate, bytes per sample, channels, sound) from a WAV - also one that was streamed: those say "0 bytes" (or
+    a made-up size) for their sound because it wasn't known yet, so everything after the header is the sound.
+    Reading the size literally made her say nothing at all."""
+    import struct
+    if len(raw) < 12 or raw[:4] != b"RIFF" or raw[8:12] != b"WAVE":
+        raise RuntimeError("the voice service sent something that isn't audio")
+    pos, rate, width, channels = 12, 0, 0, 0
+    while pos + 8 <= len(raw):
+        kind, size = raw[pos:pos + 4], struct.unpack("<I", raw[pos + 4:pos + 8])[0]
+        body = pos + 8
+        if kind == b"fmt ":
+            channels, rate = struct.unpack("<HI", raw[body + 2:body + 8])
+            width = struct.unpack("<H", raw[body + 14:body + 16])[0] // 8
+        elif kind == b"data":
+            end = len(raw) if size in (0, 0xFFFFFFFF) or body + size > len(raw) else body + size
+            data = raw[body:end]
+            return rate, width, max(1, channels), data[: len(data) // max(1, width * max(1, channels))
+                                                      * max(1, width * max(1, channels))]
+        pos = body + size + (size & 1)
+    raise RuntimeError("the voice service sent audio with no sound in it")
 
 
 def fish_speed(speed: float) -> float:
@@ -514,14 +539,11 @@ class FishAudioEngine:
             raise RuntimeError(f"Fish Audio: {reason}") from None
         except OSError as exc:
             raise RuntimeError("Fish Audio: can't reach it") from exc
-        try:
-            with wave.open(io.BytesIO(raw)) as w:
-                rate, width, channels = w.getframerate(), w.getsampwidth(), w.getnchannels()
-                frames = w.readframes(w.getnframes())
-        except (wave.Error, EOFError) as exc:
-            raise RuntimeError("Fish Audio: sent something that isn't audio") from exc
+        rate, width, channels, frames = read_wav(raw)
         if width != 2:
             raise RuntimeError("Fish Audio: unexpected audio format")
+        if not frames:
+            raise RuntimeError("Fish Audio: sent no sound")
         samples = np.frombuffer(frames[: len(frames) // 2 * 2], np.int16)
         if channels > 1:
             samples = samples.reshape(-1, channels).mean(axis=1).astype(np.int16)

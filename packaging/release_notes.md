@@ -1,8 +1,15 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.0.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.1.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
 
-**Capri speaks your language.** 25 of them: Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish and Ukrainian.
+**2.3.1: no more "error 400" when she plays your game or looks at your screen with the free local AI.** "Set up your brain" gives her llama3.2, which can't see pictures, so every look failed with a bare 400. Now she uses a model you have that can see (gemma3, llava, qwen2.5vl...), and if you don't have one she tells you so plainly: say **"give yourself eyes"** and she downloads gemma3 into Ollama (about 3 GB, once). Any other refusal now shows the actual reason instead of just a number.
+
+**2.3.1 also:**
+- **She talks again.** Some voices (Fish Audio especially) send their audio in a way Capri read as "no sound", so she showed her reply, said nothing and went back to listening. Fixed - and if an online voice ever sends nothing, her own voice says it instead.
+- **See everything she says.** Long replies show in full in her text box (it grows), and the things she says by herself - game hype, comments on your screen, "ow!" - show there too, word by word as she says them.
+- **Language button:** right-click her → **Language** to switch between her 25 languages.
+
+**Capri 2.3: Capri speaks your language.** 25 of them: Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish and Ukrainian.
 - Pick yours in **Settings → Wake word → Language**, or say "speak German", "switch to French"...
 - **She hears you** in it with NVIDIA's Parakeet v3 speech model (about 490 MB, downloaded once, runs on your PC). You still wake her with "Hey Capri".
 - **Everyday commands work by themselves** in every one of these languages: open and close apps, play, pause, next, previous, louder, quieter, the time, the weather, screenshots. With an AI set up, she understands everything you say and answers in your language.
