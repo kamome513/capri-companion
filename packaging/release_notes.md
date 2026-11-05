@@ -1,8 +1,12 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.2.0.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.2.1.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
 
-**What's in this one**
+**2.2.1:** "What do you see?" no longer ends in an AI error. If your AI won't take the picture, she reads the text on your screen (on your PC, with Windows' own text reader, or Tesseract on Linux) and asks your AI about that instead, so it works with any AI. Tries are quicker too.
+
+**2.2.1, Linux:** voice commands no longer break her hearing on PCs set to a language that writes decimals with a comma (German, French, Dutch, Portuguese, Polish, Russian...). The speech recogniser's numbers came out as "0,97", which stopped her hearing right after showing what you said.
+
+**Capri 2.2**
 - **"AI error 400" fixed.** She now reads every AI service's error properly (NVIDIA's included), and fixes what it complains about by herself: a setting it doesn't take, a broken chat history, or tools it doesn't support. If it still can't answer, she tells you the actual reason.
 - **"What do you see?" works with any AI.** If your model can't look at pictures, she uses that service's own model that can (NVIDIA, Groq, Mistral, xAI, OpenAI, OpenRouter, Gemini). She looks at the monitor your window is on, and if the screenshot comes out black (a game in exclusive fullscreen, or Wayland) she tries the window itself, then tells you why instead of sending the AI a black picture.
 - **Fish Audio sounds like it does on their site.** Capri asks for Fish's full-quality voice instead of the faster, rougher one, and keeps the speed and volume steady instead of changing them with her mood.

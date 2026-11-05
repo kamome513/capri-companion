@@ -367,9 +367,9 @@ class ClaudeBrain:
                 model=MODEL, max_tokens=2000,
                 output_config={"effort": "low"},
                 system=system_prompt(self._slang(), self._persona()),
-                messages=[{"role": "user", "content": [
-                    {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": jpeg_b64}},
-                    {"type": "text", "text": prompt}]}],
+                messages=[{"role": "user", "content": ([
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": jpeg_b64}}]
+                    if jpeg_b64 else []) + [{"type": "text", "text": prompt}]}],
             )
         except anthropic.AuthenticationError:
             return AIReply("My AI key doesn't work. Check it in Settings.", error=True)

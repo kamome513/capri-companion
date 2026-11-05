@@ -27,6 +27,7 @@ How it works
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from collections import deque
@@ -58,6 +59,8 @@ COMMAND_START_TIMEOUT = 6.0   # seconds to start speaking after a bare "Capri"
 COMMAND_MAX_LENGTH = 12.0     # longest command we'll wait for
 RING_SECONDS = 20.0           # audio history kept for one-breath commands
 BYTES_PER_SAMPLE = 2
+
+log = logging.getLogger("capri")
 
 
 class Recognizer(Protocol):
@@ -149,6 +152,24 @@ def clean_command(text: str) -> str:
     return re.sub(r"\s+", " ", " ".join(words)).strip()
 
 
+_DECIMAL_COMMA = re.compile(r"(:\s*-?\d+),(\d+)")
+
+
+def vosk_json(text: str) -> dict:
+    """A Vosk result. With a comma-decimal language on Linux (German, French, Portuguese...) Vosk can write
+    numbers like "confidence" : 412,34 - not valid JSON, and that used to kill her hearing. Those are read as
+    412.34; anything still unreadable counts as "heard nothing" instead of breaking."""
+    try:
+        data = json.loads(text or "{}")
+    except ValueError:
+        try:
+            data = json.loads(_DECIMAL_COMMA.sub(r"\1.\2", text or ""))
+        except ValueError:
+            log.warning("hearing: unreadable result from the recogniser: %r", (text or "")[:200])
+            return {}
+    return data if isinstance(data, dict) else {}
+
+
 def heard(result: dict) -> list[str]:
     """Every transcript in a recogniser result, best first. With SetMaxAlternatives the
     result is {"alternatives": [{"text": ...}, ...]} instead of {"text": ...}."""
@@ -220,7 +241,7 @@ class WakeWordListener:
             return []
         if not self._wake.AcceptWaveform(chunk):
             return []
-        return self._on_wake_utterance(json.loads(self._wake.Result()))
+        return self._on_wake_utterance(vosk_json(self._wake.Result()))
 
     # -- wake word ----------------------------------------------------------
     def _new_wake(self) -> Recognizer:
@@ -297,7 +318,7 @@ class WakeWordListener:
         assert rec is not None
         elapsed = self._clock() - self._command_started
         if rec.AcceptWaveform(chunk):
-            texts = heard(json.loads(rec.Result()))
+            texts = heard(vosk_json(rec.Result()))
             if texts and LEAD_IN.fullmatch(texts[0]) and not self._lead:
                 # "Can you..." and a pause while you think: not the whole command - keep listening for the rest.
                 self._lead = texts[0]
@@ -310,14 +331,14 @@ class WakeWordListener:
                     self._lead = ""
                 return self._finish(command_from(texts, self._audio_since(self._command_sample)))
         else:
-            partial = clean_command(json.loads(rec.PartialResult()).get("partial", ""))
+            partial = clean_command(vosk_json(rec.PartialResult()).get("partial", ""))
             if partial:
                 self._heard_speech = True
                 return [Partial(partial)]
 
         if elapsed >= max(COMMAND_MAX_LENGTH, self._start_timeout + 6) or \
                 (not self._heard_speech and elapsed >= self._start_timeout):
-            texts = heard(json.loads(rec.FinalResult()))
+            texts = heard(vosk_json(rec.FinalResult()))
             if self._lead:                                    # only ever said "can you": that's all there is
                 texts = [f"{self._lead} {t}" for t in texts] if texts else [self._lead]
                 self._lead = ""
@@ -358,7 +379,7 @@ class WakeWordListener:
             return ""
         rec = self._command_factory(self.rate)
         rec.AcceptWaveform(audio)
-        result = json.loads(rec.FinalResult())
+        result = vosk_json(rec.FinalResult())
         texts = [a.get("text", "") for a in result.get("alternatives") or []] or [result.get("text", "")]
         return " | ".join(t for t in texts if t)
 
@@ -368,4 +389,4 @@ class WakeWordListener:
             return []
         rec = self._command_factory(self.rate)
         rec.AcceptWaveform(audio)
-        return heard(json.loads(rec.FinalResult()))
+        return heard(vosk_json(rec.FinalResult()))

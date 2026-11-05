@@ -187,7 +187,7 @@ recording (only while you're in a game, unless you pick *Always*), on your PC. O
 | "watch my screen" / "stop watching my screen" | She glances at your screen every few minutes and comments |
 
 Needs an AI that can see pictures (ChatGPT, Gemini, Claude, or Ollama with `gemma3` / `llava`). If your model
-can't, she uses that service's own picture model by herself (NVIDIA, Groq, Mistral, xAI, OpenRouter). She looks
+can't, she uses that service's own picture model by herself (NVIDIA, Groq, Mistral, xAI, OpenRouter). If the service won't take pictures at all, she reads the text on your screen on your PC and asks about that instead. She looks
 at the monitor your window is on. A game in exclusive fullscreen shows up black to her: switch it to borderless
 or windowed. On Linux it needs an X11 session (Wayland doesn't allow screenshots). The picture goes to that AI. With Ollama it stays on your PC. She won't look while a password manager, bank, sign-in
 page or private window is in front.

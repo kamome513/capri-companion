@@ -126,8 +126,8 @@ def test_she_remembers_and_follows_on(tmp_path):
 
 
 def test_no_ai_or_a_blind_one_is_told_once():
-    brain = Brain(AIReply("", error=True, missing=True), AIReply("", error=True, missing=True),
-                  AIReply("llama3.2 can't see pictures. Try: ollama pull gemma3", error=True, blind=True))
+    blind = AIReply("llama3.2 can't see pictures. Try: ollama pull gemma3", error=True, blind=True)
+    brain = Brain(AIReply("", error=True, missing=True), AIReply("", error=True, missing=True), blind, blind)
     w, said, notices, clock = watcher(brain)
     for _ in range(3):
         clock[0] += 2000                                        # (she backs off after each problem)

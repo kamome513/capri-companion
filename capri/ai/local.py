@@ -111,7 +111,7 @@ class LocalBrain:
         """One look at a picture (your screen) - needs a model that can see (llava, gemma3, llama3.2-vision...)."""
         body = {"model": self._use_model(), "stream": False, "keep_alive": "3m",
                 "messages": [{"role": "system", "content": system_prompt(self._slang(), self._persona())},
-                             {"role": "user", "content": prompt, "images": [jpeg_b64]}]}
+                             {"role": "user", "content": prompt, **({"images": [jpeg_b64]} if jpeg_b64 else {})}]}
         try:
             data = self._fetch("POST", self._base() + "/api/chat", timeout=TIMEOUT * 2, json_body=body) or {}
         except http.HttpError as exc:

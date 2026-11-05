@@ -304,7 +304,16 @@ class VoiceService(QObject):
                 continue   # her own voice: never fed to the recogniser
             if self.cleanup and cleaner is not None:
                 chunk = cleaner(chunk)             # quiet / cheap / far-away mics: a steady, clean level
-            for event in listener.feed(chunk):
+            try:
+                events = listener.feed(chunk)
+            except Exception:                      # never let one bad result end her hearing for good
+                log.exception("hearing: the recogniser stumbled - starting the listen over")
+                try:
+                    listener.cancel()
+                except Exception:
+                    pass
+                events = []
+            for event in events:
                 self._dispatch(event)
 
     def _dispatch(self, event) -> None:

@@ -316,6 +316,8 @@ class OpenAIBrain:
         key = self._key().strip()
         headers = {"Authorization": f"Bearer {key}"} if key else {}
         preset = self._preset() or DEFAULT_PRESET
+        if not jpeg_b64:
+            return self._look_words(prompt, headers)
         candidates = []
         for m in [self.model(), getattr(self, "_vision_model", "")] + list(VISION_MODELS.get(preset, ())):
             if m and m not in candidates:
@@ -333,7 +335,7 @@ class OpenAIBrain:
                     break
                 for plain in (False, True):                            # with her token limits, then without
                     tries += 1
-                    if tries > 10:
+                    if tries > 6:
                         break
                     body = self._look_body(model, prompt, jpeg_b64, shape, plain)
                     try:
@@ -370,9 +372,35 @@ class OpenAIBrain:
         return AIReply(problem or f"{self.label()} didn't answer about your screen. Try again in a moment.",
                        error=True)
 
+    def _look_words(self, prompt: str, headers: dict) -> AIReply:
+        """A one-off question with no picture (what's on the screen, read out as text): any model can answer it."""
+        problem = ""
+        for plain in (False, True):
+            body = self._look_body(self.model(), prompt, "", "words", plain)
+            try:
+                data = self._fetch("POST", self.base() + "/chat/completions", json_body=body, headers=headers,
+                                   timeout=TIMEOUT) or {}
+            except http.HttpError as exc:
+                detail = self._detail(exc)
+                log.warning("ai: %s refused a text look (HTTP %s): %s", self.label(), exc.status, detail[:300])
+                problem = (f"{self.label()} turned it down ({exc.status}: {detail.rstrip('.')[:120]})."
+                           if detail else self._problem(exc))
+                if exc.status not in (400, 422):
+                    break
+                continue
+            except OSError:
+                return AIReply(f"Can't reach {self.label()} right now.", error=True)
+            choice = (data.get("choices") or [{}])[0]
+            feeling, said = emotions.split_tag(_text((choice.get("message") or {}).get("content")))
+            if said.strip():
+                return AIReply(said.strip(), emotion=feeling)
+        return AIReply(problem or f"{self.label()} didn't answer.", error=True)
+
     def _look_body(self, model: str, prompt: str, jpeg_b64: str, shape: str, plain: bool) -> dict:
         url = "data:image/jpeg;base64," + jpeg_b64
-        if shape == "inline":        # NVIDIA's own way: the picture as an <img> tag in the text
+        if shape == "words":         # no picture at all
+            user = {"role": "user", "content": prompt}
+        elif shape == "inline":        # NVIDIA's own way: the picture as an <img> tag in the text
             user = {"role": "user", "content": f'{prompt} <img src="{url}" />'}
         else:
             user = {"role": "user", "content": [{"type": "text", "text": prompt},

@@ -377,3 +377,69 @@ def test_after_handing_back_she_thinks_it_over(tmp_path):
     a.start("survive", background=False)
     assert lessons.lessons("fnaf") == ["Check the cameras before Foxy runs."]
     assert lessons.games["fnaf"]["tries"] == 1 and lessons.games["fnaf"]["last"] == "escape"
+
+
+# -- 2.2.1: an AI that won't take the picture still answers "what do you see" -----------------------------------------
+def test_what_do_you_see_falls_back_to_the_screens_words():
+    from capri.integrations.screen_watch import ScreenWatch
+    shot = QImage(800, 600, QImage.Format.Format_RGB32)
+    shot.fill(QColor(30, 120, 200))
+    shot.setPixelColor(5, 5, QColor(255, 255, 255))
+    asked = []
+
+    def look(prompt, jpeg):
+        asked.append((prompt, jpeg))
+        if jpeg:
+            return AIReply("NVIDIA turned it down (400: Bad Request).", error=True)
+        return AIReply("Grinding Minecraft again? Nice house though.", emotion="playful")
+    s = SimpleNamespace(watch_screen=True, watch_every=60, watch_remember=False)
+    answers = []
+    w = ScreenWatch(s, SimpleNamespace(look=look), lambda: shot, lambda: "Minecraft 1.21", lambda *a: None,
+                    background=False, read_text=lambda img: "Inventory | Crafting | Oak Planks x12")
+    w.ask("what do you see", lambda text, emotion: answers.append((text, emotion)))
+    assert answers == [("Grinding Minecraft again? Nice house though.", "playful")]
+    words = asked[-1][0]
+    assert asked[-1][1] == "" and "Minecraft 1.21" in words and "Oak Planks" in words
+
+
+def test_every_brain_takes_a_question_with_no_picture():
+    sent = []
+    reply = brain("nvidia", lambda m, u, json_body=None, headers=None, timeout=None: sent.append(json_body) or
+                  {"choices": [{"message": {"content": "Looks like Minecraft."}}]}).look("what's this?", "")
+    assert reply.text == "Looks like Minecraft." and sent[0]["messages"][1]["content"] == "what's this?"
+    from test_stage5 import brain_with, reply as claude_reply, text_block
+    b, client = brain_with([claude_reply(text_block("Minecraft."))])
+    assert b.look("what's this?", "").text == "Minecraft."
+    assert client.requests[0]["messages"][0]["content"] == [{"type": "text", "text": "what's this?"}]
+
+
+# -- 2.2.1: Linux with a comma-decimal language (German, French...) no longer loses her hearing -------------------------
+def test_vosk_numbers_with_a_decimal_comma_are_read():
+    from capri.voice.wakeword import vosk_json
+    bad = ('{\n  "alternatives" : [{\n      "confidence" : 412,345678,\n      "text" : "open discord"\n    }, '
+           '{\n      "confidence" : 398,5,\n      "text" : "open this cord"\n    }]\n}')
+    assert vosk_json(bad)["alternatives"][0] == {"confidence": 412.345678, "text": "open discord"}
+    assert vosk_json('{"result": [{"conf" : 0,98, "start" : 1,25, "word": "capri"}]}')["result"][0]["conf"] == 0.98
+    assert vosk_json("not json {") == {}
+
+
+def test_a_comma_decimal_recogniser_still_hears_the_command():
+    """What your friend's PC did: Vosk wrote "412,34" and her hearing died right after showing the words."""
+    import re as _re
+    from fake_vosk import RATE, FakeRecognizer, speak
+    from capri.voice.wakeword import Command, Wake, WakeWordListener
+
+    class CommaRecognizer(FakeRecognizer):
+        def _json(self, words):
+            return _re.sub(r"(\d)\.(\d)", r"\1,\2", super()._json(words))      # 0.97 -> 0,97, like de_DE
+    listener = WakeWordListener(lambda r: CommaRecognizer(r, True), lambda r: CommaRecognizer(r, False), RATE, 0.8)
+    events = []
+    for chunk in speak("hey", "capri", 0.8, "open", "discord", 1.2):
+        events += listener.feed(chunk)
+    assert any(isinstance(e, Wake) for e in events)
+    assert any(isinstance(e, Command) and e.text == "open discord" for e in events)
+
+
+def test_her_numbers_stay_c_style_after_qt_starts():
+    import locale
+    assert locale.setlocale(locale.LC_NUMERIC) in ("C", "C.UTF-8", "POSIX") or "." == locale.localeconv()["decimal_point"]

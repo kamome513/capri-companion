@@ -191,6 +191,11 @@ def main(argv: list[str] | None = None) -> int:
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)  # let Ctrl+C in the console quit
     app = QApplication(sys.argv[:1])
+    try:                              # Qt switches numbers to your language's format (1,5 in German...):
+        import locale                 # keep C-style numbers, which the speech recogniser's results rely on
+        locale.setlocale(locale.LC_NUMERIC, "C")
+    except Exception:
+        pass
     app.setApplicationName("Capri")
     app.setOrganizationName("")   # settings live in ...\AppData\Local\Capri
     app.setQuitOnLastWindowClosed(False)
@@ -627,7 +632,7 @@ def main(argv: list[str] | None = None) -> int:
     hype.on_big_moment = big_moment
 
     # Watch my screen: a glance now and then (to your AI, which must be able to see pictures), and "what do you see?"
-    from .integrations.screen_watch import ScreenWatch, SeenMemory
+    from .integrations.screen_watch import ScreenWatch, SeenMemory, tesseract_text
 
     def rgb_image(rgb):
         from PySide6.QtGui import QImage
@@ -677,7 +682,8 @@ def main(argv: list[str] | None = None) -> int:
                         busy=lambda: assistant._busy or controller.state in (State.LISTENING, State.PROCESSING),
                         memory=SeenMemory(log_dir() / "seen.json"),
                         notice=lambda text: assistant.show_result(State.ERROR, text, emotion="confused"),
-                        grab_window=window_picture)
+                        grab_window=window_picture,
+                        read_text=ocr.read if sys.platform == "win32" else tesseract_text)
     watch.start()
     services.screen_watch = watch
 

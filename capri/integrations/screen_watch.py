@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 import sys
 import threading
 import time
@@ -65,6 +66,33 @@ BLACK_SCREEN = ("All I get is a black screen. If it's a game in exclusive fullsc
                 "or windowed and I can see it." if sys.platform == "win32" else
                 "All I get is a black screen. On Wayland I can't take screenshots: log in with an X11 session "
                 "(\"Ubuntu on Xorg\" or similar) and I can see it.")
+
+
+WORDS = """{prompt}
+
+(You can't get the picture this time, so here's the user's screen read out as text instead. Answer as if you
+saw it - don't mention reading text or not seeing the picture.)
+Window in front: {title}
+Text on the screen (read automatically, may be jumbled): {text}"""
+
+
+def tesseract_text(image) -> str:
+    """Linux: the words in a picture, read by Tesseract if it's installed ("" if not)."""
+    import shutil
+    import subprocess
+    import tempfile
+    exe = shutil.which("tesseract")
+    if exe is None or image is None or image.isNull():
+        return ""
+    folder = Path(tempfile.mkdtemp(prefix="capri_watch_"))
+    png = folder / "screen.png"
+    try:
+        image.save(str(png))
+        run = subprocess.run([exe, str(png), "stdout", "--psm", "3"], capture_output=True, text=True, timeout=20)
+        return run.stdout
+    finally:
+        png.unlink(missing_ok=True)
+        folder.rmdir()
 
 
 def is_blank(image) -> bool:
@@ -140,9 +168,11 @@ class ScreenWatch(QObject):
                  say: Callable[[str, str], None], busy: Callable[[], bool] = lambda: False,
                  memory: SeenMemory | None = None, notice: Callable[[str], None] = lambda text: None,
                  clock: Callable[[], float] = time.monotonic, background: bool = True,
-                 grab_window: Callable[[], QImage] | None = None) -> None:
+                 grab_window: Callable[[], QImage] | None = None,
+                 read_text: Callable[[QImage], str] | None = None) -> None:
         super().__init__()
         self.grab_window = grab_window
+        self.read_text = read_text            # the screen's words, read on this PC (for an AI that won't take pictures)
         self.settings, self.brain, self.grab, self.front_title = settings, brain, grab, front_title
         self.say, self.busy, self.notice, self.clock = say, busy, notice, clock
         self.memory = memory or SeenMemory(None)
@@ -222,9 +252,10 @@ class ScreenWatch(QObject):
             jpeg = to_jpeg_b64(picture)
         except Exception as exc:
             log.info("watch: couldn't take the picture: %s", exc)
-            jpeg = ""
+            picture, jpeg = None, ""
+        from ..ai.claude import AIReply
         if not jpeg:
-            return then(None)
+            return then(AIReply("I couldn't take a picture of your screen just now.", error=True))
         self.looking = True
         bridge, brain = self._bridge, self.brain
 
@@ -233,14 +264,38 @@ class ScreenWatch(QObject):
                 reply = brain.look(prompt, jpeg)
             except Exception as exc:
                 log.info("watch: the AI failed: %s", exc)
-                from ..ai.claude import AIReply
                 reply = AIReply("I couldn't see it right now.", error=True)
+            if reply.error and not reply.missing:
+                reply = self._by_words(prompt, title, picture, reply)
             self.looking = False
             bridge.done.emit(then, reply)
         if self.background:
             threading.Thread(target=work, daemon=True, name="capri-watch").start()
         else:
             work()
+
+    def _by_words(self, prompt: str, title: str, picture, failed):
+        """The AI wouldn't take the picture: read the screen's words on this PC and ask it with those instead.
+        Any AI can answer that. The first problem stands if this doesn't work either."""
+        words = ""
+        if self.read_text is not None and picture is not None:
+            try:
+                words = re.sub(r"\s+", " ", self.read_text(picture) or "").strip()[:3500]
+            except Exception as exc:
+                log.info("watch: couldn't read the screen's text: %s", exc)
+        if not words and not title:
+            return failed
+        try:
+            reply = self.brain.look(WORDS.format(prompt=prompt, title=title or "(unknown)",
+                                                 text=words or "(no readable text)"), "")
+        except Exception as exc:
+            log.info("watch: the AI failed on the words too: %s", exc)
+            return failed
+        if reply.error:
+            return failed
+        log.info("watch: the AI wouldn't take the picture (%s) - looked by reading the screen instead",
+                 (failed.text or "")[:80])
+        return reply
 
     def _problem(self, reply) -> bool:
         """An AI problem while watching by herself: tell you once (not every two minutes), then stay quiet."""
