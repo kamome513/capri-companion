@@ -92,6 +92,7 @@ class VoiceService(QObject):
         self._rate = 16000
         self.cleanup = False                    # mic clean-up (cleanup.py): level, rumble, hiss - the app turns it on
         self._learned: list[str] = []           # how she hears your voice say her name (taught in Settings)
+        self.any_language = False               # not English: Parakeet hears every command (set by the app)
         self._training = False
 
     # -- called from the UI thread ----------------------------------------------
@@ -304,6 +305,7 @@ class VoiceService(QObject):
                 continue   # her own voice: never fed to the recogniser
             if self.cleanup and cleaner is not None:
                 chunk = cleaner(chunk)             # quiet / cheap / far-away mics: a steady, clean level
+            listener.any_language = self.any_language and self.refine is not None
             try:
                 events = listener.feed(chunk)
             except Exception:                      # never let one bad result end her hearing for good
@@ -342,6 +344,9 @@ class VoiceService(QObject):
         except Exception as exc:
             log.warning("hearing: the better ears failed, using Vosk: %s", exc)
             text = ""
+        if not text and not event.text:
+            self.no_command.emit()                 # nothing either of them could make out
+            return
         if text and text != event.text:
             log.info("hearing: Vosk %r -> re-heard %r", event.text, text)
             self.alternatives.emit([event.text] + [a for a in event.alternatives if a != text])

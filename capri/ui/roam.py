@@ -273,9 +273,12 @@ class TeleportFX(OverlayWindow):
 
 class RoamShow(QObject):
     def __init__(self, companion: "Companion", rig: Callable[[], Rig | None], enabled: Callable[[], bool],
-                 idle: Callable[[], bool] = lambda: True, rng: random.Random | None = None) -> None:
+                 idle: Callable[[], bool] = lambda: True, rng: random.Random | None = None,
+                 quiet: Callable[[], bool] = lambda: False) -> None:
         super().__init__()
         self.companion, self.rig, self.enabled, self.idle = companion, rig, enabled, idle
+        self.quiet = quiet
+        self.home_x: float | None = None                       # her corner, while she's off somewhere else
         self.rng = rng or random.Random()
         self.fx = TeleportFX()
         self.active = False
@@ -293,21 +296,43 @@ class RoamShow(QObject):
         self._ended = 0.0
         self._settled = False
 
+    CALM = 60.0              # seconds after she last did something for you before she may wander
+    HOME_AFTER = (20.0, 45.0)  # away from her corner: back this long after
+
     def start(self) -> None:
         self._clock.start()
 
     # -- when ------------------------------------------------------------------------------------------------
     def can_walk(self) -> bool:
         c = self.companion
+        if c.controller.state in BUSY or not self.idle() or self._quiet():
+            self._calm_since = time.monotonic()               # working for you / a game: stay put a while
+            return False
         return (not self.active and not c.hidden and not c.drone and not c.perched and not c.lounging()
-                and not c.busy_elsewhere and c.character.isVisible() and c.controller.state not in BUSY
-                and self.idle())
+                and not c.busy_elsewhere and c.character.isVisible()
+                and time.monotonic() - getattr(self, "_calm_since", -1e9) >= self.CALM)
+
+    def _quiet(self) -> bool:
+        try:
+            return bool(self.quiet())
+        except Exception:
+            return False
 
     def _maybe_walk(self) -> None:
-        if time.monotonic() < self._due or not self.enabled():
+        now = time.monotonic()
+        if not self.enabled():
+            if self.home_x is not None and self.can_walk():
+                self.walk(self.home_x)                         # turned off while away: home to her corner
             return
-        self._due = time.monotonic() + self.rng.uniform(*WAIT)
-        if self.can_walk():
+        if now < self._due:
+            self.can_walk()                                    # (keeps track of when she last worked for you)
+            return
+        self._due = now + self.rng.uniform(*WAIT)
+        if not self.can_walk():
+            return
+        if self.home_x is not None:                            # away: back to her corner
+            self.walk(self.home_x)
+        else:
             self.walk()
 
     @property
@@ -336,7 +361,15 @@ class RoamShow(QObject):
             to_x = here + direction * far
         to_x = max(area.left() + margin, min(float(to_x), area.right() + 1 - margin))
         if abs(to_x - here) < fh * 0.3:
+            if self.home_x is not None and abs(to_x - self.home_x) < fh * 0.3:
+                self.home_x = None
             return False
+        going_home = self.home_x is not None and abs(to_x - self.home_x) < 1
+        if going_home:
+            self.home_x = None
+        elif self.home_x is None:
+            self.home_x = here                                 # where to come back to
+            self._due = time.monotonic() + self.rng.uniform(*self.HOME_AFTER)
         self._ground, self._to = float(body.bottom() + 1), to_x
         f = self.fx
         f.rig, f.fh = rig, fh

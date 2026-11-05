@@ -241,7 +241,7 @@ def test_brains_without_any_ai():
 def test_the_extras_tab_turns_on_what_you_pick():
     from test_stage5 import settle
     from capri.ui.extras_tab import ExtrasTab
-    s = Settings(watch_screen=False, clips=False, roam=True, throwable=True, show_panel=True, panel_popup=False)
+    s = Settings(watch_screen=False, clips=False, roaming=True, throwable=True, show_panel=True, panel_popup=False)
     s.save = lambda: None
     saved, turned = [], []
 
@@ -256,7 +256,7 @@ def test_the_extras_tab_turns_on_what_you_pick():
     tab.glitch_every.setCurrentIndex(tab.glitch_every.findData(0))
     tab.apply()
     assert settle(3, lambda: turned and s.clips)
-    assert s.watch_screen and not s.roam and saved and s.show_panel and s.panel_popup and s.glitches == 0
+    assert s.watch_screen and not s.roaming and saved and s.show_panel and s.panel_popup and s.glitches == 0
     tab.panel_mode.setCurrentIndex(tab.panel_mode.findData("never"))
     tab.apply()
     assert not s.show_panel

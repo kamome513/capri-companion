@@ -308,6 +308,24 @@ class GameSeen:
         return False
 
 
+def game_title(exe: str, library: list[tuple[str, str]]) -> str:
+    """A game's name from its program: the Steam game whose folder it's in ("Deadlock"), else the program's name
+    tidied up ("HollowKnight.exe" -> "Hollow Knight")."""
+    path = (exe or "").replace("\\", "/")
+    low = path.lower()
+    for name, folder in sorted(library, key=lambda g: -len(g[1])):
+        f = folder.replace("\\", "/").lower().rstrip("/")
+        if f and (low.startswith(f + "/") or low == f):
+            return name
+    stem = re.sub(r"\.(exe|x86_64|x86|bin|sh|app)$", "", path.rsplit("/", 1)[-1], flags=re.I)
+    tag = re.compile(r"[-_ ](win64|win32|shipping|dx11|dx12|vulkan|x64|game|client|launcher)$", re.I)
+    while tag.search(stem):                                 # "VALORANT-Win64-Shipping" -> "VALORANT"
+        stem = tag.sub("", stem)
+    stem = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", stem).replace("_", " ").replace("-", " ")
+    words = " ".join(stem.split())
+    return words[:1].upper() + words[1:] if words else ""
+
+
 def sounding_for_platform() -> Callable[[], list[str]] | None:
     if sys.platform == "win32":
         return windows_sounding

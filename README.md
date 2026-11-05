@@ -115,6 +115,22 @@ open Chrome") or pause after her name. Her frame turns green while she's listeni
 - **Stop her talking:** "stop talking" / "shut up".
 - **Cancel:** "never mind".
 
+**Your language**
+
+Capri speaks 25 languages: Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French,
+German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak,
+Slovenian, Spanish, Swedish and Ukrainian. Pick yours in Settings → Wake word → **Language** (or say "speak
+German"), press **Download Parakeet** (about 490 MB, once) and Apply.
+
+- Wake her with "Hey Capri" as usual, then talk in your language. NVIDIA's Parakeet v3 hears it, on your PC.
+- Everyday commands work by themselves: open / close apps, play, pause, next, previous, louder, quieter, the
+  time, the weather, screenshots, minimise everything.
+- With an AI set up she understands everything else too, answers in your language, and her own lines are
+  translated (once, then remembered on your PC).
+- Her voice: her neural voice speaks Spanish, French, Italian and Portuguese; otherwise a Windows voice for your
+  language if one is installed (Windows Settings → Time & language → Speech → Add voices), or espeak-ng.
+  ElevenLabs and Fish Audio speak them all.
+
 ### What she does
 
 **Apps, games and websites**
@@ -400,7 +416,7 @@ install something.
 | **Restart Capri** | Closes and starts her again (installs a downloaded update) |
 | **Game hype** (cheer for kills, say something when I die, watch my screen, encourage me) / **Preview** | Hype while you play: CS2, Dota 2 and League directly, any game by reading your screen |
 | **Toggle Mute / Deafen keybind** | Your Discord keybinds, if you changed Discord's defaults |
-| **Show "Playing Capri" on my Discord profile** | Your friends see animated Capri on your profile with **Get Capri** and **Join her Discord** buttons (Discord hides your own buttons from you; friends see them). It says **Plugged in**, or **Vibing to music** while a music app or music site plays (never which song). While you're in a game she steps off Discord, so your game shows instead. She's back when it closes |
+| **Show "Playing Capri" on my Discord profile** | Your friends see animated Capri on your profile with **Get Capri** and **Join her Discord** buttons (Discord hides your own buttons from you; friends see them). It says **Plugged in**, or **Vibing to music** while a music app or music site plays (never which song). While you're in a game it says **Playing <your game> with Capri** (the name from your Steam library, or the game's own program) |
 | **Your voice channel** / **Leave call keybind** / **Join it now** | For "join call" and "leave call". Right-click the channel in Discord → Copy Link |
 | **Save** | Saves your changes |
 
@@ -417,7 +433,7 @@ install something.
 | **Clip my games** / Record / "Clip that" saves / Frame rate / Resolution / With sound / Save big moments | Clips (see Clips above). *Save big moments* clips triple kills, aces and wins by itself (needs Game hype) |
 | **Choose folder / Open clips folder** | Where clips go (Videos\Capri Clips) |
 | **Watch my screen and comment** / How often / Remember what she sees | She glances at your screen and comments (see Your screen above) |
-| **Throw her** / **Roam around** / **Head pats** | Flick-and-throw, teleporting around the bottom of the screen, reacting to clicks |
+| **Throw her** / **Roam around** / **Head pats** | Flick-and-throw; teleporting along the bottom now and then (off unless you turn it on; never while she is busy or you are in a game, and she always comes back to her corner); reacting to clicks |
 | **Also play her voice on** | Her voice in your mic: pick a virtual cable (VB-Audio "CABLE Input", free) or "Steam Streaming Speakers", then pick the matching mic in Discord or Roblox. Your friends hear her |
 
 ### Privacy
@@ -429,7 +445,7 @@ install something.
   (`%LOCALAPPDATA%\Capri` on Windows, `~/.config/Capri` on Linux). Delete `settings.json` there to reset her.
 - Only what you say to the AI (if you set one up) goes to that AI. Personal things don't, and your
   Windows user name is removed from anything that does.
-- On Discord, your profile shows "Playing Capri" while she's open, and whether you're listening to music
+- On Discord, your profile shows "Playing Capri" while she's open, whether you're listening to music, and "Playing <game> with Capri" while you game
   (never which song). While you're in a game she isn't shown at all. Nothing else about what you do is shown. To check for music, she
   asks Windows' sound mixer (Linux: your media players) which apps are making sound. Turn it off in
   Settings → PC & chat (Discord's own Activity Privacy setting also applies).

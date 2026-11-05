@@ -71,42 +71,51 @@ def test_presence_sends_the_new_mode_when_it_changes():
         fake.stop()
 
 
-def test_she_steps_off_discord_while_you_game_so_your_game_shows():
-    """Discord's member list / DMs show one "Playing ..." line: hers would hide your game's."""
+def test_while_you_game_she_says_playing_your_game_with_capri():
+    """v2.3: "Playing Deadlock with Capri" - the member list shows the details line (status_display_type 2)."""
     from test_discord_presence import FakeDiscord, presence, settle
     fake = FakeDiscord()
     try:
         p, clock = presence(fake)
+        p.game_name = lambda: "Deadlock"
         p.step()
         assert settle(lambda: len(fake.activities()) == 1) and p.shown
-        p.set_state("drone")
         p.set_doing("gaming")
         clock[0] += 10
         p.step()
-        assert settle(lambda: fake.activities()[-1:] == [None] and fake.got[-1][0] == 2)   # cleared, disconnected
-        assert p.conn is None and not p.shown
-        clock[0] += 60
+        assert settle(lambda: len(fake.activities()) == 2)
+        act = fake.activities()[-1]
+        assert act["details"] == "Deadlock with Capri" and act["status_display_type"] == 2
+        assert act["assets"]["small_image"].split("?")[0].endswith("gaming.gif") and p.shown and p.conn is not None
+        p.game_name = lambda: "Valorant"                                     # another game: updated
+        clock[0] += 10
         p.step()
-        assert fake.connections == 1                                        # stays off Discord while you play
-        p.set_state("desktop")
-        p.set_doing("")                                                     # the game closed: she's back
+        assert settle(lambda: fake.activities()[-1]["details"] == "Valorant with Capri")
+        p.set_doing("")                                                     # the game closed
+        clock[0] += 10
         p.step()
-        assert settle(lambda: fake.connections == 2 and fake.activities()[-1] is not None)
-        assert fake.activities()[-1]["details"] == "Plugged in" and p.shown
+        assert settle(lambda: fake.activities()[-1]["details"] == "Plugged in")
     finally:
         fake.stop()
 
 
-def test_never_sent_while_gaming_from_the_start():
-    from test_discord_presence import FakeDiscord, presence
-    fake = FakeDiscord()
-    try:
-        p, _clock = presence(fake)
-        p.set_doing("gaming")
-        p.step()
-        assert fake.connections == 0 and p.conn is None
-    finally:
-        fake.stop()
+def test_a_game_she_cant_name():
+    from capri.integrations.discord_presence import activity
+    act = activity("desktop", 0, "", "gaming", "")
+    assert act["details"] == "a game with Capri"
+
+
+@pytest.mark.parametrize("exe,name", [
+    ("C:\\Program Files (x86)\\Steam\\steamapps\\common\\Deadlock\\game\\bin\\win64\\project8.exe", "Deadlock"),
+    ("D:\\Riot Games\\VALORANT\\live\\ShooterGame\\Binaries\\Win64\\VALORANT-Win64-Shipping.exe", "VALORANT"),
+    ("C:\\Games\\HollowKnight\\HollowKnight.exe", "Hollow Knight"),
+    ("/home/u/.local/share/Steam/steamapps/common/Valheim/valheim.x86_64", "Valheim"),
+])
+def test_the_games_name(exe, name):
+    from capri.integrations.now_doing import game_title
+    library = [("Deadlock", "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Deadlock"),
+               ("Valheim", "/home/u/.local/share/Steam/steamapps/common/Valheim")]
+    assert game_title(exe, library) == name
 
 
 # -- is music playing? ------------------------------------------------------------------------------------------

@@ -278,8 +278,9 @@ class Assistant(QObject):
 
     # -- results -------------------------------------------------------------------
     def show_result(self, state: State, message: str, speak: bool = True, emotion: str = "",
-                    follow_up: bool = False) -> None:
+                    follow_up: bool = False, translated: bool = False) -> None:
         """Show an outcome (and say it, with feeling), then fall back to standby after she's done.
+        In another language her built-in lines are translated first (translated=True: already in it, e.g. the AI's).
 
         follow_up: it's a conversation - once she's finished talking she listens for your
         reply for a few seconds, no wake word needed (up to CONVERSATION_TURNS times).
@@ -288,6 +289,16 @@ class Assistant(QObject):
             self.collect.append((state, message))
             self.controller.set_state(State.PROCESSING, message)
             return
+        translator = getattr(self, "translator", None)
+        if not translated and translator is not None and message and translator.cached(message) != message:
+            known = translator.cached(message)
+            if known is not None:
+                message = known
+            elif translator.wanted(message):
+                generation = self._generation
+                return translator.translate(message, lambda text: self.show_result(
+                    state, text, speak, emotion, follow_up, translated=True) if self._generation == generation
+                    else None)
         self._busy = False
         self._generation += 1
         generation = self._generation

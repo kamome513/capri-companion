@@ -87,7 +87,10 @@ def system_prompt(slang: bool, persona: str = "edgerunner") -> str:
         about = ABOUT_USER() or ""
     except Exception:
         about = ""
-    return text + ("\n\n" + SLANG_PROMPT if slang else "") + ("\n\n" + about if about else "")
+    from .. import languages
+    rule = languages.reply_rule()
+    return text + ("\n\n" + SLANG_PROMPT if slang else "") + ("\n\n" + about if about else "") + \
+        ("\n\n" + rule if rule else "")
 
 
 def _tool(name: str, description: str, properties: dict) -> dict:

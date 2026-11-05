@@ -68,12 +68,12 @@ def test_nvidia_also_gets_its_inline_picture_format():
 
     def fetch(method, url, json_body=None, headers=None, timeout=None):
         sent.append(json_body)
-        if isinstance(json_body["messages"][1]["content"], list):
+        if isinstance(json_body["messages"][-1]["content"], list):
             raise http.HttpError(400, '{"detail": "Input should be a valid string"}')
         return {"choices": [{"message": {"content": "Looks like Fortnite."}}]}
     reply = brain("nvidia", fetch).look("what do you see", "QUJD")
     assert reply.text == "Looks like Fortnite."
-    assert '<img src="data:image/jpeg;base64,QUJD" />' in sent[-1]["messages"][1]["content"]
+    assert '<img src="data:image/jpeg;base64,QUJD" />' in sent[-1]["messages"][-1]["content"]
 
 
 def test_a_refused_look_says_the_real_reason_not_just_400():

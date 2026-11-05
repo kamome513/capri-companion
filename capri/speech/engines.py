@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import threading
 from pathlib import Path
 import shutil
@@ -26,6 +27,8 @@ from typing import Callable
 import numpy as np
 
 from ..voice.model import MODELS_DIR
+
+log = logging.getLogger("capri")
 
 VOICES_DIR = MODELS_DIR / "voices"
 KOKORO_DIR = MODELS_DIR / "kokoro"
@@ -73,6 +76,26 @@ class SapiEngine:
     def voices(self) -> list[str]:
         tokens = self._voice.GetVoices()
         return [tokens.Item(i).GetDescription() for i in range(tokens.Count)]
+
+    LANG_IDS = {"en": 0x09, "de": 0x07, "fr": 0x0C, "es": 0x0A, "it": 0x10, "pt": 0x16, "nl": 0x13, "pl": 0x15,
+                "ru": 0x19, "uk": 0x22, "sv": 0x1D, "da": 0x06, "fi": 0x0B, "cs": 0x05, "sk": 0x1B, "sl": 0x24,
+                "hr": 0x1A, "bg": 0x02, "ro": 0x18, "hu": 0x0E, "el": 0x08, "et": 0x25, "lv": 0x26, "lt": 0x27,
+                "mt": 0x3A}
+
+    def voice_for(self, code: str) -> str:
+        """An installed Windows voice that speaks this language ("" if none): its Language attribute is a list
+        of Windows language numbers (e.g. "407" = German)."""
+        want = self.LANG_IDS.get(code)
+        tokens = self._voice.GetVoices()
+        for i in range(tokens.Count):
+            token = tokens.Item(i)
+            try:
+                ids = [int(x, 16) & 0x3FF for x in str(token.GetAttribute("Language") or "").split(";") if x]
+            except (ValueError, Exception):
+                continue
+            if want in ids:
+                return token.GetDescription()
+        return ""
 
     def synthesize(self, text: str, voice: str, speed: float, pitch: float = 0.0) -> Audio:
         tokens = self._voice.GetVoices()
@@ -172,17 +195,28 @@ class KokoroEngine:
             self._kokoro = Kokoro(str(self.folder / KOKORO_MODEL), str(self.folder / KOKORO_VOICES))
         return self._kokoro
 
+    @staticmethod
+    def speaks(code: str) -> bool:
+        from .. import languages
+        return code == "en" or languages.get(code).kokoro is not None
+
     def synthesize(self, text: str, voice: str, speed: float, pitch: float = 0.0) -> Audio:
+        from .. import languages
         k = self._model()
         name = voice[len(self.PREFIX):]
-        if name == self.CAPRI:
-            style = sum(w * k.get_voice_style(v) for v, w in self.CAPRI_BLEND.items())
+        own = languages.get().kokoro                                # Spanish, French, Italian, Portuguese
+        if own is not None:
+            style, lang = own
         else:
-            style = name
+            if name == self.CAPRI:
+                style = sum(w * k.get_voice_style(v) for v, w in self.CAPRI_BLEND.items())
+            else:
+                style = name
+            lang = "en-gb" if name.startswith("bf_") else "en-us"
         lift = 2 ** (pitch * self.PITCH_SCALE / 12)
         tempo = (0.8 + 0.6 * speed) / lift                          # 0.5 -> 1.1x, before the lift
-        lang = "en-gb" if name.startswith("bf_") else "en-us"
-        samples, rate = k.create(respell(text), voice=style, speed=max(0.5, min(2.0, tempo)), lang=lang)
+        said = respell(text) if own is None else text               # (her slang respellings are English)
+        samples, rate = k.create(said, voice=style, speed=max(0.5, min(2.0, tempo)), lang=lang)
         x = np.asarray(samples, dtype=np.float32)
         if abs(lift - 1) > 1e-3:
             n = int(len(x) / lift)
@@ -216,11 +250,15 @@ class _EspeakLib:
             raise RuntimeError("espeak-ng didn't start")
         self.lib.espeak_SetSynthCallback(self._callback)
         self.lib.espeak_SetVoiceByName(b"en")
+        self.voice = "en"
         self.lock = threading.Lock()
 
-    def synth(self, text: str, wpm: int, pitch: int) -> Audio:
+    def synth(self, text: str, wpm: int, pitch: int, voice: str = "en") -> Audio:
         c = self.ctypes
         with self.lock:
+            if voice != self.voice:
+                self.lib.espeak_SetVoiceByName(voice.encode())
+                self.voice = voice
             self.samples = []
             self.lib.espeak_SetParameter(1, int(wpm), 0)          # espeakRATE
             self.lib.espeak_SetParameter(3, int(pitch), 0)        # espeakPITCH
@@ -252,17 +290,20 @@ class EspeakEngine:
         return [self.PREFIX + "en"] if importlib.util.find_spec("espeakng_loader") is not None else []
 
     def synthesize(self, text: str, voice: str, speed: float, pitch: float = 0.0) -> Audio:
+        from .. import languages
         exe = shutil.which("espeak-ng") or shutil.which("espeak")
         p = max(0, min(99, round(50 + pitch * 4)))
+        lang = languages.get()
+        said = respell(text) if lang.code == "en" else text
         if not exe:
             lib = self._library()
             if lib is None:
                 raise RuntimeError("espeak-ng isn't available")
-            audio = lib.synth(respell(text), int(130 + speed * 80), p)
+            audio = lib.synth(said, int(130 + speed * 80), p, lang.espeak)
             audio.pitched = True
             return audio
-        wav = subprocess.run([exe, "--stdout", "-s", str(int(130 + speed * 80)), "-p", str(p), "--", respell(text)],
-                             capture_output=True, check=True).stdout
+        wav = subprocess.run([exe, "--stdout", "-v", lang.espeak, "-s", str(int(130 + speed * 80)), "-p", str(p),
+                              "--", said], capture_output=True, check=True).stdout
         with wave.open(io.BytesIO(wav)) as w:
             audio = _from_int16(w.readframes(w.getnframes()), w.getframerate())
         audio.pitched = True
@@ -361,6 +402,19 @@ class ElevenLabsEngine:
         return [self.NAME] if (type(self).key() or "").strip() else []
 
     @staticmethod
+    def _detail(exc) -> str:
+        """ElevenLabs' own words: {"detail": {"status": "voice_limit_reached", "message": "..."}} or a string."""
+        import json
+        try:
+            data = json.loads(exc.read().decode("utf-8", "replace") or "{}")
+        except Exception:
+            return ""
+        detail = data.get("detail") if isinstance(data, dict) else None
+        if isinstance(detail, dict):
+            return str(detail.get("message") or detail.get("status") or "")[:200]
+        return str(detail or "")[:200]
+
+    @staticmethod
     def _post(url: str, body: dict, headers: dict) -> bytes:
         import json
         import urllib.request
@@ -372,16 +426,34 @@ class ElevenLabsEngine:
     def synthesize(self, text: str, voice: str, speed: float, pitch: float = 0.0) -> Audio:
         import urllib.error
         voice_id = (type(self).voice_id() or "").strip() or self.DEFAULT_VOICE
-        body = {"text": respell(text, plain=True), "model_id": self.MODEL,      # "chooom", never "chom"
+        from .. import languages
+        said = respell(text, plain=True) if languages.english() else text     # (her slang respellings are English)
+        body = {"text": said, "model_id": self.MODEL,      # "chooom", never "chom"
                 "voice_settings": {"stability": 0.45, "similarity_boost": 0.8,
                                    "speed": round(0.85 + 0.3 * max(0.0, min(1.0, speed)), 2)}}
+        headers = {"xi-api-key": type(self).key().strip()}
+        url = "https://api.elevenlabs.io/v1/text-to-speech/{}?output_format=pcm_22050"
         try:
-            raw = self._fetch(f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=pcm_22050",
-                              body, {"xi-api-key": type(self).key().strip()})
+            raw = self._fetch(url.format(voice_id), body, headers)
         except urllib.error.HTTPError as exc:
-            reason = {401: "the key doesn't work", 402: "out of credit", 429: "too many requests / out of credit",
-                      404: "no voice with that ID", 422: "no voice with that ID"}.get(exc.code, f"error {exc.code}")
-            raise RuntimeError(f"ElevenLabs: {reason}") from None
+            detail = self._detail(exc)
+            log.warning("speech: ElevenLabs refused (HTTP %s): %s", exc.code, detail)
+            low = detail.lower()
+            limited = any(w in low for w in ("library", "voice_limit", "voice limit", "free", "subscription",
+                                             "custom voices", "not allowed", "upgrade"))
+            if exc.code in (400, 402, 403, 422) and limited and voice_id != self.DEFAULT_VOICE:
+                try:                     # your plan can't use that voice: her default ElevenLabs voice instead
+                    raw = self._fetch(url.format(self.DEFAULT_VOICE), body, headers)
+                    log.info("speech: ElevenLabs won't use voice %s on this plan - used the default voice", voice_id)
+                    audio = _from_int16(raw[: len(raw) // 2 * 2], 22050)
+                    audio.pitched, audio.natural, audio.as_is = True, True, True
+                    return audio
+                except (urllib.error.HTTPError, OSError):
+                    pass
+            reason = {401: "the key doesn't work (or it's out of credit)", 402: "out of credit",
+                      429: "too many requests / out of credit", 404: "no voice with that ID",
+                      422: "no voice with that ID"}.get(exc.code, f"error {exc.code}")
+            raise RuntimeError(f"ElevenLabs: {detail or reason}"[:160]) from None
         except OSError as exc:
             raise RuntimeError("ElevenLabs: can't reach it") from exc
         audio = _from_int16(raw[: len(raw) // 2 * 2], 22050)
@@ -469,7 +541,8 @@ def is_online(voice: str) -> bool:
 
 def available_engines() -> list:
     engines = []
-    for cls in (KokoroEngine,) + ((SapiEngine,) if sys.platform == "win32" else (EspeakEngine,)) + (PiperEngine,):
+    for cls in (KokoroEngine,) + ((SapiEngine, EspeakEngine) if sys.platform == "win32" else (EspeakEngine,)) + \
+            (PiperEngine,):
         try:
             engine = cls()
             if engine.voices():
@@ -493,6 +566,7 @@ class VoiceBox:
         if not self.voices():
             raise RuntimeError("no text-to-speech voices available")
         voice = voice if voice and any(voice in e.voices() for e in self.engines) else self.default_voice()
+        voice = self.for_language(voice)
         engine = next(e for e in self.engines if voice in e.voices())
         try:
             audio = engine.synthesize(text, voice, speed, pitch)
@@ -506,6 +580,31 @@ class VoiceBox:
             return audio
         self.last = (voice, "")
         return audio
+
+    def for_language(self, voice: str) -> str:
+        """Your voice if it speaks your language; else one that does: her neural voice (Spanish, French, Italian,
+        Portuguese), a Windows voice for that language, then espeak-ng. Online voices and beeps speak them all."""
+        from .. import languages
+        code = languages.current()
+        if code == "en" or voice.startswith((ElevenLabsEngine.PREFIX, FishAudioEngine.PREFIX, BeepEngine.PREFIX)):
+            return voice
+        if voice.startswith(KokoroEngine.PREFIX) and KokoroEngine.speaks(code):
+            return voice
+        for engine in self.engines:
+            if isinstance(engine, KokoroEngine) and KokoroEngine.speaks(code) and engine.voices():
+                return engine.voices()[0]
+        for engine in self.engines:
+            if isinstance(engine, SapiEngine):
+                try:
+                    found = engine.voice_for(code)
+                except Exception:
+                    found = ""
+                if found:
+                    return found
+        for engine in self.engines:
+            if isinstance(engine, EspeakEngine) and engine.voices():
+                return engine.voices()[0]
+        return voice
 
     def warm_up(self, voice: str = "") -> None:
         """Load the neural voice now (on the speech thread, ~1 s) so her first line isn't late."""

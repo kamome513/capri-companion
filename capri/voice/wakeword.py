@@ -211,6 +211,8 @@ class WakeWordListener:
         self.verify_wake = False                # second listen with the full recogniser (on in the app)
         self.learned: list[str] = []            # how the full recogniser hears *you* say her name (taught)
         self.training = False                   # teaching her your voice: report each "Hey Capri", never wake
+        self.any_language = False               # another language: Parakeet hears the command, even when these
+                                                # (English) ears made out no words at all
 
     # -- public -----------------------------------------------------------
     @property
@@ -342,7 +344,10 @@ class WakeWordListener:
             if self._lead:                                    # only ever said "can you": that's all there is
                 texts = [f"{self._lead} {t}" for t in texts] if texts else [self._lead]
                 self._lead = ""
-            return self._finish(command_from(texts, self._audio_since(self._command_sample)) if texts else NoCommand())
+            audio = self._audio_since(self._command_sample)
+            if not texts and self.any_language and len(audio) >= int(0.4 * self.rate) * BYTES_PER_SAMPLE:
+                return self._finish(Command("", (), audio))           # for the multilingual ears to hear
+            return self._finish(command_from(texts, audio) if texts else NoCommand())
         return []
 
     # -- audio history -------------------------------------------------------------

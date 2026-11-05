@@ -145,6 +145,7 @@ class Services:
     clips: Any | None = None            # integrations.clips.ClipRecorder: "clip that"
     screen_watch: Any | None = None     # integrations.screen_watch.ScreenWatch: "what do you see?"
     game_agent: Any | None = None       # integrations.game_agent.GameAgent: "play this for me"
+    language_changed: Any | None = None  # () -> [notes]: her ears / voice switched to the new language
     clips_turn_on: Callable[[Callable[[str], None]], None] | None = None   # progress -> turn clips on (downloads)
 
 
@@ -199,6 +200,12 @@ class CommandRouter(QObject):
         shortcut = self._shortcut_for(text)
         if shortcut is not None:                        # one of your own shortcuts ("gaming time")
             return self._run_shortcut(*shortcut)
+        from .. import languages
+        if not languages.english():                     # your language: the everyday commands in English words
+            english = languages.to_english(text)
+            if english != text:
+                self.controller.log("Language", f'"{text[:28]}" -> "{english[:28]}"')
+                text = english
         own = self._own_app_command(text)
         if own is not None:                             # your own app names / "also say" names come first
             self._learn_from_rephrase(own, text)
@@ -404,7 +411,7 @@ class CommandRouter(QObject):
             Kind.SCREEN: self._screen, Kind.REPEAT: self._repeat, Kind.MOVE: self._move, Kind.AI_SETUP: self._ai_setup,
             Kind.SHORTCUT: self._shortcut, Kind.FORGET: self._forget, Kind.MUSIC_SERVICE: self._music_service,
             Kind.LEARN_BUTTON: self._learn_button, Kind.FORGET_BUTTON: self._forget_button, Kind.TYPE: self._type, Kind.HAIR: self._hair, Kind.SETTINGS: self._settings, Kind.UPDATE: self._update, Kind.RESTART_APP: self._restart_app, Kind.ROAM: self._roam, Kind.MUSIC_DECK: self._music_deck, Kind.SIZE: self._size,
-            Kind.ARRANGE: self._arrange, Kind.APP_VOLUME: self._app_volume, Kind.SETTING: self._setting, Kind.CLIP: self._clip, Kind.LOOK: self._look, Kind.WATCH: self._watch,
+            Kind.LANGUAGE: self._language, Kind.ARRANGE: self._arrange, Kind.APP_VOLUME: self._app_volume, Kind.SETTING: self._setting, Kind.CLIP: self._clip, Kind.LOOK: self._look, Kind.WATCH: self._watch,
             Kind.PLAY_GAME: self._play_game, Kind.STOP_GAME: self._stop_game,
             Kind.QUIET: self._quiet, Kind.VOICE: self._voice, Kind.TIMER: self._timer,
             Kind.PERCH_ON: lambda i: self._perch(True), Kind.PERCH_OFF: lambda i: self._perch(False),
@@ -2181,12 +2188,12 @@ class CommandRouter(QObject):
         if roam is None or s is None:
             return self.assistant.show_result(State.ERROR, "I can't walk around here.")
         if intent.query == "stay":
-            s.roam = False
+            s.roaming = False
             s.save()
             roam.stop()
             return self.assistant.show_result(State.SUCCESS, "Okay, I'll stay put.")
         if intent.query == "on":
-            s.roam = True
+            s.roaming = True
             s.save()
             return self.assistant.show_result(State.SUCCESS, "I'll wander around now and then.")
         self.assistant.show_result(State.SUCCESS, "Stretching my legs.")
@@ -2212,6 +2219,29 @@ class CommandRouter(QObject):
             return "that window", desktop.foreground() if hasattr(desktop, "foreground") else None
         name, pids, _mode = self.catalog.running_for(spoken, processes)
         return name, (desktop.main_window(pids) if pids and hasattr(desktop, "main_window") else None)
+
+    def _language(self, intent: Intent) -> None:
+        """'Speak German' / 'switch to French' / 'talk in English'."""
+        from .. import languages
+        from ..voice import parakeet
+        s = self.services.settings
+        code = intent.targets[0] if intent.targets else "en"
+        if s is None or code not in languages.LANGUAGES:
+            return self.assistant.show_result(State.ERROR, "I don't speak that one yet.")
+        s.language = code
+        s.save()
+        apply = getattr(self.services, "language_changed", None)
+        notes = apply() if apply is not None else []
+        languages.set_current(code)
+        lang = languages.get(code)
+        self.controller.log("Language", lang.name)
+        if code == "en":
+            return self.assistant.show_result(State.SUCCESS, "Back to English.", translated=True)
+        line = f"Okay, {lang.name} from now on."
+        if not parakeet.ready(code):
+            line += (f" To hear you in {lang.name} I need Parakeet: Settings, Wake word, Download Parakeet "
+                     f"({parakeet.model_mb(code)} MB). Typing to me works now.")
+        self.assistant.show_result(State.SUCCESS, line)
 
     def _arrange(self, intent: Intent) -> None:
         """'Put Chrome on the left and Discord on the right' / 'Spotify full screen' / 'side by side'."""
@@ -2806,6 +2836,6 @@ class CommandRouter(QObject):
                 return self.dispatch(reply.intent)        # same rules as a spoken command
             s = self.services.settings
             self.assistant.show_result(State.ERROR if reply.error else State.SPEAKING, reply.text,
-                                       emotion=reply.emotion,
+                                       emotion=reply.emotion, translated=not reply.error,
                                        follow_up=not reply.error and bool(s is None or s.conversation))
         self._background(lambda: brain.ask(text), done)

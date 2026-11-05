@@ -1,23 +1,21 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.2.1.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.0.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
 
-**2.2.1:** "What do you see?" no longer ends in an AI error. If your AI won't take the picture, she reads the text on your screen (on your PC, with Windows' own text reader, or Tesseract on Linux) and asks your AI about that instead, so it works with any AI. Tries are quicker too.
+**Capri speaks your language.** 25 of them: Bulgarian, Croatian, Czech, Danish, Dutch, English, Estonian, Finnish, French, German, Greek, Hungarian, Italian, Latvian, Lithuanian, Maltese, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish and Ukrainian.
+- Pick yours in **Settings → Wake word → Language**, or say "speak German", "switch to French"...
+- **She hears you** in it with NVIDIA's Parakeet v3 speech model (about 490 MB, downloaded once, runs on your PC). You still wake her with "Hey Capri".
+- **Everyday commands work by themselves** in every one of these languages: open and close apps, play, pause, next, previous, louder, quieter, the time, the weather, screenshots. With an AI set up, she understands everything you say and answers in your language.
+- **She talks in it.** Her neural voice speaks Spanish, French, Italian and Portuguese; for the others she uses a Windows voice for that language if you have one installed, or espeak-ng. ElevenLabs and Fish Audio voices speak them all.
+- **Her own lines are in your language too** when an AI is set up: each one is translated the first time and remembered on your PC.
 
-**2.2.1, Linux:** voice commands no longer break her hearing on PCs set to a language that writes decimals with a comma (German, French, Dutch, Portuguese, Polish, Russian...). The speech recogniser's numbers came out as "0,97", which stopped her hearing right after showing what you said.
+**Discord: "Playing Deadlock with Capri".** While you're in a game, her Discord status now says what you're playing, with Capri (the name comes from your Steam library, or the game's own program). Your friends see it right in the member list.
 
-**Capri 2.2**
-- **"AI error 400" fixed.** She now reads every AI service's error properly (NVIDIA's included), and fixes what it complains about by herself: a setting it doesn't take, a broken chat history, or tools it doesn't support. If it still can't answer, she tells you the actual reason.
-- **"What do you see?" works with any AI.** If your model can't look at pictures, she uses that service's own model that can (NVIDIA, Groq, Mistral, xAI, OpenAI, OpenRouter, Gemini). She looks at the monitor your window is on, and if the screenshot comes out black (a game in exclusive fullscreen, or Wayland) she tries the window itself, then tells you why instead of sending the AI a black picture.
-- **Fish Audio sounds like it does on their site.** Capri asks for Fish's full-quality voice instead of the faster, rougher one, and keeps the speed and volume steady instead of changing them with her mood.
-- **Her tools:**
-  - "Put Chrome on the left and Discord on the right", "Spotify full screen", "Chrome and Discord side by side".
-  - "Turn Discord down", "make Spotify louder", "set Chrome to 30%": only that app's volume.
-  - "Why is my game lagging?": CPU, memory, graphics card, heat, disk and ping, with the most likely cause first.
-  - "How's my internet?": ping and a quick download speed test.
-  - Your AI can now also set timers, arrange windows, change one app's volume and change her own settings (size, text box, music bar, roaming, glitches...) when you ask it to.
-- **She vibes to your music.** While music plays she bounces and sways to it, and stops when you pause. Turn it off in Settings → Extras.
-- **The music bar's pause button** switches to play straight away, and the bar waits for you while it's paused.
-- **If she crashes**, she says so the next time she starts and tells you where `crash.log` is, so it can be sent in and fixed.
+**Fixes**
+- She stays in her corner. Roaming is off now unless you turn it on (Settings → Extras), and even then she never teleports while she's doing something for you, for a minute after, or while you're in a game, and she always comes back to her spot.
+- Her voice no longer breaks up while a game is loading: when the PC is busy she gets the whole line ready before she starts talking.
+- "What do you see?" and "play this for me" work with more AIs: some picture models refuse a separate system message next to a picture, so she asks those in one message instead.
+- Throwing her into a wall no longer leaves two of her on screen (one at the wall and one back in her corner) when her text box is set to pop up.
+- ElevenLabs: when your plan won't let Capri use the voice you picked (free plans can't use voices from the Voice Library), she uses ElevenLabs' own default voice instead of failing, and any other refusal shows ElevenLabs' actual reason.
 
 Join the Capri Discord: https://discord.gg/FBxdDSCaA7

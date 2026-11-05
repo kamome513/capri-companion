@@ -223,6 +223,8 @@ def main(argv: list[str] | None = None) -> int:
             pass
     first_run = not Settings.path().exists()
     settings = Settings.load()
+    from . import languages
+    languages.set_current(settings.language)          # before her ears, brain and voice are set up
     if not args.preview and apply_waiting_update(settings):   # a downloaded update: install it, then she restarts
         return 0
     if not args.preview:
@@ -423,8 +425,9 @@ def main(argv: list[str] | None = None) -> int:
     from .speech import speaker as speaker_mod
     speaker_mod.mic_device = lambda: settings.mic_voice_device     # "Her voice in your mic"
     from .ui.roam import RoamShow
-    roam_show = RoamShow(companion, figure_rig, enabled=lambda: settings.roam,
-                         idle=lambda: not assistant._busy and not throw_show.active and not visit_show.active)
+    roam_show = RoamShow(companion, figure_rig, enabled=lambda: settings.roaming,
+                         idle=lambda: not assistant._busy and not throw_show.active and not visit_show.active,
+                         quiet=lambda: in_game())            # never while you're in (or starting) a game
     roam_show.start()                         # a little walk along the bottom of the screen now and then
     services.roam = roam_show
     app._roam_show = roam_show
@@ -541,6 +544,22 @@ def main(argv: list[str] | None = None) -> int:
         return front.pid if front and looks_like_game(front, games.game_dirs()) else None
     from .commands.games import _pid_alive
     gaming = now_doing.GameSeen(lambda: services.games.active, front_game, _pid_alive)
+
+    def game_title() -> str:
+        """The game you're in, for her Discord status: its name in your Steam library, else its program's name."""
+        pid = gaming.pid or front_game()
+        if not pid:
+            return ""
+        exe = ""
+        try:
+            for p in system.processes():
+                if p.pid == pid:
+                    exe = p.exe or p.name or ""
+                    break
+        except Exception:
+            return ""
+        return now_doing.game_title(exe, [(g.name, str(g.install_dir)) for g in catalog.games if g.install_dir])
+    presence.game_name = game_title
     sounding = now_doing.sounding_for_platform()
     music = now_doing.MusicWatch(sounding, lambda: now_doing.browser_titles(system.processes, desktop)) \
         if sounding else None
@@ -752,6 +771,10 @@ def main(argv: list[str] | None = None) -> int:
     router = CommandRouter(assistant, companion, catalog, system, services)
     assistant.command_handler = router.handle
     assistant.choose = router.choose
+    from .logs import log_dir as _log_dir
+    from .translate import LineTranslator
+    assistant.translator = LineTranslator(brain.look if brain is not None else None, _log_dir(),
+                                          available=router._ai_available)   # her lines in your language
     QTimer.singleShot(1500, catalog.rescan)   # find Steam games / shortcuts once she's on screen
 
     windows = {}
@@ -853,13 +876,25 @@ def main(argv: list[str] | None = None) -> int:
     parakeet_ears = parakeet.ParakeetEars()
 
     def parakeet_rest(on: bool) -> None:
-        if settings.hearing == "parakeet" and parakeet.ready():
+        if (settings.hearing == "parakeet" or settings.language != "en") and parakeet.ready():
             parakeet_ears.rest(on)        # ~900 MB back to your game; Vosk hears you meanwhile
     companion.drone_changed.connect(parakeet_rest)
 
     def apply_hearing() -> list[str]:
-        """Whisper re-hears your commands (better with accents) when it's picked and installed."""
+        """Whisper re-hears your commands (better with accents) when it's picked and installed. In another
+        language than English, Parakeet v3 hears every command (her quick ears only speak English)."""
+        from . import languages
+        languages.set_current(settings.language)
         service.cleanup = settings.mic_cleanup
+        service.any_language = not languages.english()
+        if not languages.english():
+            if parakeet.ready():
+                service.refine = parakeet_ears.transcribe
+                parakeet_ears.preload()
+                return []
+            service.refine = None
+            return [f"To hear you in {languages.get().name}, Capri needs Parakeet: Settings -> Wake word -> "
+                    f"Download Parakeet ({parakeet.model_mb()} MB). Typing to her works meanwhile."]
         if settings.hearing == "parakeet":
             if parakeet.ready():
                 service.refine = parakeet_ears.transcribe
@@ -883,6 +918,7 @@ def main(argv: list[str] | None = None) -> int:
 
     register_hotkeys()
     apply_hearing()
+    services.language_changed = apply_hearing
 
     # Saying hi when you sign in (Windows start-up, unlocking, waking from sleep).
     last_greeting = [-1e9]

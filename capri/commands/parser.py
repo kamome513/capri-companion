@@ -53,6 +53,7 @@ class Kind(Enum):
                                   #   in front), query = their layouts, comma separated (left, right, maximize...)
     APP_VOLUME = "app_volume"     # "turn discord down": targets = (app,), query = down | up | set:<0-100> | mute | unmute
     SETTING = "setting"           # one of her own settings (from the AI): targets = (name,), query = value
+    LANGUAGE = "language"         # "speak german" / "switch to french": targets = (code,)
     SIZE = "size"                 # query: "bigger" / "smaller" / "tiny" / "small" / "normal" / "big" / "huge"
     MUSIC_DECK = "music_deck"     # query: "on" / "off" - the bar she stands on while music plays
     ROAM = "roam"                 # query: "walk" (go for a walk now) / "stay" (stop roaming) / "on" (roam again)
@@ -878,6 +879,11 @@ SIZE_MEANS = {"larger": "bigger", "tinier": "smaller", "regular": "normal", "nor
               "massive": "huge", "large": "big", "grow": "bigger", "shrink": "smaller"}
 
 
+LANGUAGE_WORDS = (rf"{_PLS}(?:speak|talk|reply|answer|chat)(?: to me)?(?: in)? (?P<lang>[a-z]+)(?: now| from now on)?"
+                  rf"{_END}|{_PLS}(?:switch|change|set)(?: your)?(?: language)? to (?P<lang2>[a-z]+){_END}"
+                  rf"|{_PLS}(?:use|learn) (?P<lang3>[a-z]+)(?: language)?{_END}")
+
+
 RESTART_HER = re.compile(r"\b(?:restart|reboot|relaunch|reload)\s+(?:yourself|capri|the app|your app|your program)\b")
 
 
@@ -897,6 +903,12 @@ def parse(text: str) -> Intent:
     turned = app_volume_intent(t)
     if turned is not None:
         return turned                                              # "turn discord down"
+    m = re.fullmatch(LANGUAGE_WORDS, t)
+    if m:
+        from .. import languages
+        code = languages.find(m.group("lang") or m.group("lang2") or m.group("lang3") or "")
+        if code:
+            return Intent(Kind.LANGUAGE, (code,))                  # "speak german"
     m = re.fullmatch(SIZE_WORDS, t)
     if m:
         which = m.group("size") or m.group("size2") or "normal"

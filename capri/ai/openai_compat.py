@@ -330,12 +330,14 @@ class OpenAIBrain:
         blind, problem, tries = 0, "", 0
         for model in candidates:
             cant_see = False
-            for shape in (("parts", "inline") if preset == "nvidia" else ("parts",)):
+            for shape in (("parts", "merged", "inline") if preset == "nvidia" else ("parts", "merged")):
                 if cant_see:
                     break
                 for plain in (False, True):                            # with her token limits, then without
+                    if shape == "merged" and not plain:
+                        continue                                       # (that one's already the plain way)
                     tries += 1
-                    if tries > 6:
+                    if tries > 9:
                         break
                     body = self._look_body(model, prompt, jpeg_b64, shape, plain)
                     try:
@@ -347,8 +349,9 @@ class OpenAIBrain:
                                     (detail or exc.body or "")[:300])
                         if exc.status in (401, 402, 403, 429) or exc.status >= 500:
                             return AIReply(self._problem(exc), error=True, detail=f"HTTP {exc.status}: {detail}")
-                        if any(w in detail.lower() for w in ("image", "vision", "multimodal", "image_url",
-                                                              "content type", "content must be a string")):
+                        low = detail.lower()
+                        if "system" not in low and any(w in low for w in ("image", "vision", "multimodal", "image_url",
+                                                                          "content type", "content must be a string")):
                             blind += 1
                             cant_see = True
                             break                                      # this model can't see: the next one
@@ -398,6 +401,11 @@ class OpenAIBrain:
 
     def _look_body(self, model: str, prompt: str, jpeg_b64: str, shape: str, plain: bool) -> dict:
         url = "data:image/jpeg;base64," + jpeg_b64
+        system = system_prompt(self._slang(), self._persona())
+        if shape == "merged":        # some picture models refuse a system message next to a picture: one message
+            body = {"model": model, "messages": [{"role": "user", "content": [
+                {"type": "text", "text": system + "\n\n" + prompt}, {"type": "image_url", "image_url": {"url": url}}]}]}
+            return body
         if shape == "words":         # no picture at all
             user = {"role": "user", "content": prompt}
         elif shape == "inline":        # NVIDIA's own way: the picture as an <img> tag in the text
@@ -405,8 +413,7 @@ class OpenAIBrain:
         else:
             user = {"role": "user", "content": [{"type": "text", "text": prompt},
                                                 {"type": "image_url", "image_url": {"url": url}}]}
-        body = {"model": model, "messages": [
-            {"role": "system", "content": system_prompt(self._slang(), self._persona())}, user]}
+        body = {"model": model, "messages": [{"role": "system", "content": system}, user]}
         if not plain:
             if "api.openai.com" in self.base():
                 body["max_completion_tokens"] = 1500 if reasoning_model(model) else 300

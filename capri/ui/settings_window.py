@@ -491,10 +491,31 @@ class SettingsWindow(QDialog):
         self.teach_btn.setEnabled(True)
         self.teach_status.setText(note)
 
-    @staticmethod
-    def _parakeet_words() -> str:
+    def _picked_language(self) -> str:
+        box = getattr(self, "language", None)
+        return box.currentData() if box is not None else "en"
+
+    def _language_changed(self) -> None:
+        """Another language: Parakeet v3 hears it (her quick ears only speak English), so hearing is Parakeet."""
+        from .. import languages
         from ..voice import parakeet
-        if parakeet.ready():
+        code = self._picked_language()
+        lang = languages.get(code)
+        other = code != "en"
+        if other:
+            self.hearing.setCurrentIndex(max(0, self.hearing.findData("parakeet")))
+        self.hearing.setEnabled(not other)
+        self.parakeet_btn.setText(f"Download Parakeet ({parakeet.model_mb(code)} MB)")
+        self.language_note.setText("" if not other else (
+            f"Say \u201cHey Capri\u201d, then talk in {lang.name}. Everyday commands (open, close, play, pause, next, "
+            f"louder, quieter, the time, the weather...) work by themselves; with an AI set up she understands "
+            f"everything you say and answers in {lang.name}, and her own lines are translated too. Hearing "
+            f"{lang.name} needs Parakeet ({parakeet.model_mb(code)} MB, once). Press Apply after."))
+        self._hearing_changed()
+
+    def _parakeet_words(self) -> str:
+        from ..voice import parakeet
+        if parakeet.ready(self._picked_language()):
             return ("Parakeet is downloaded. Press Apply to use it. It runs on your PC and uses about 900 MB of "
                     "RAM (given back to your game while she's in drone mode).")
         if not parakeet.installed():
@@ -508,7 +529,7 @@ class SettingsWindow(QDialog):
         picked = self.hearing.currentData()
         if getattr(self, "_parakeet_busy", False):
             return self._voice_form.setRowVisible(self.whisper_size, False)
-        need_parakeet = picked == "parakeet" and not parakeet.ready() and parakeet.installed()
+        need_parakeet = picked == "parakeet" and not parakeet.ready(self._picked_language()) and parakeet.installed()
         need_whisper = picked == "whisper" and not whisper.installed()
         self.parakeet_btn.setVisible(need_parakeet)
         self.parakeet_btn.setEnabled(True)
@@ -539,7 +560,7 @@ class SettingsWindow(QDialog):
 
         def run() -> None:
             try:
-                parakeet.download(progress)
+                parakeet.download(progress, language=self._picked_language())
                 self._parakeet_progress = "done"
             except Exception as exc:
                 log.warning("Parakeet download failed: %s", exc)
@@ -580,6 +601,16 @@ class SettingsWindow(QDialog):
     def _voice_tab(self) -> QWidget:
         page = QWidget()
         form = QFormLayout(page)
+        from .. import languages
+        self.language = QComboBox()
+        for lang in sorted(languages.LANGUAGES.values(), key=lambda l: (l.code != "en", l.name)):
+            self.language.addItem(lang.name if lang.native == lang.name else f"{lang.name} - {lang.native}", lang.code)
+        self.language.setCurrentIndex(max(0, self.language.findData(self.settings.language)))
+        form.addRow("Language", self.language)
+        self.language_note = QLabel("")
+        self.language_note.setObjectName("hint")
+        self.language_note.setWordWrap(True)
+        form.addRow("", self.language_note)
         self.threshold = QSlider(Qt.Orientation.Horizontal)
         self.threshold.setRange(50, 99)
         self.threshold.setValue(round(self.settings.wake_threshold * 100))
@@ -642,6 +673,8 @@ class SettingsWindow(QDialog):
         form.addRow("", self.parakeet_status)
         self._voice_form = form
         self.hearing.currentIndexChanged.connect(lambda _i: self._hearing_changed())
+        self.language.currentIndexChanged.connect(lambda _i: self._language_changed())
+        self._language_changed()
         self._hearing_changed()
         from PySide6.QtWidgets import QCheckBox
         self.mic_cleanup = QCheckBox("Clean up my mic: turn a quiet mic up, cut rumble and hiss (on this PC)")
@@ -757,6 +790,7 @@ class SettingsWindow(QDialog):
         self.settings.hotkey_listen = self.hk_listen.text().strip().lower()
         self.settings.hotkey_click_through = self.hk_click.text().strip().lower()
         self.settings.hearing = self.hearing.currentData()
+        self.settings.language = self._picked_language()
         self.settings.whisper_size = self.whisper_size.currentData()
         self.settings.mic_cleanup = self.mic_cleanup.isChecked()
         self.settings.save()

@@ -23,6 +23,7 @@ from ..settings import Settings
 from .effects import LEVEL_FRAME, apply_style, apply_tone, intonation, levels
 
 ECHO_TAIL = 0.35   # keep the mic deaf this long after she stops (room echo)
+SLOW_RENDER = 0.45  # making a piece took more than this share of its length: the PC's busy, make the line first
 MASTER_GAIN = 0.7  # she's a desktop companion, not an alarm: even 100% volume stays gentle
 PITCH_RANGE = 12   # semitones across the pitch slider (0.5 = the voice's own pitch)
 
@@ -273,6 +274,23 @@ class Speaker(QObject):
                 seed=len(part))
         return apply_tone(audio, persona.tone)
 
+    @staticmethod
+    def _joined(pieces):
+        """Pieces of one line as one sound, with the little pause there'd have been between them."""
+        import numpy as np
+        rate = pieces[0].rate
+        gap = np.zeros(int(0.06 * rate), np.float32)
+        out = []
+        for a in pieces:
+            x = np.asarray(a.samples, np.float32)
+            if a.rate != rate and len(x):
+                n = int(len(x) * rate / a.rate)
+                x = np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x).astype(np.float32)
+            out += [x, gap]
+        joined = pieces[0]
+        joined.samples = np.concatenate(out[:-1]) if out else np.zeros(0, np.float32)
+        return joined
+
     def _speak(self, text: str, emotion: str = "neutral", line: int = 0) -> None:
         """Say it a chunk at a time, with no waiting: the first chunk is short so she starts
         talking quickly, and each next chunk is made while the one before is playing."""
@@ -288,7 +306,15 @@ class Speaker(QObject):
         # (an online voice says the whole line in one go: one request, one consistent read)
         talking = False
         try:
+            started = time.monotonic()
             upcoming = self._render(parts[0], speed, pitch)
+            took = time.monotonic() - started
+            length = len(upcoming.samples) / max(1, upcoming.rate)
+            if len(parts) > 1 and length > 0 and took > SLOW_RENDER * length:
+                # The PC is busy (a game loading...): making the next piece while this one plays would leave gaps
+                # and stutters. Make the whole line first, then play it in one go.
+                upcoming = self._joined([upcoming] + [self._render(p, speed, pitch) for p in parts[1:]])
+                parts = [text]
             for i, part in enumerate(parts):
                 audio, upcoming = upcoming, None
                 if self._interrupt.is_set():

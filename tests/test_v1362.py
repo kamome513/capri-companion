@@ -103,7 +103,7 @@ def window(**settings):
 
 def test_only_what_the_picked_hearing_needs(monkeypatch):
     from capri.voice import parakeet, whisper
-    monkeypatch.setattr(parakeet, "ready", lambda: False)
+    monkeypatch.setattr(parakeet, "ready", lambda *a, **k: False)
     monkeypatch.setattr(parakeet, "installed", lambda: True)
     monkeypatch.setattr(whisper, "installed", lambda: False)
     win = window(hearing="vosk")
@@ -113,7 +113,7 @@ def test_only_what_the_picked_hearing_needs(monkeypatch):
     assert "Press Download" in win.parakeet_status.text()
     win.hearing.setCurrentIndex(win.hearing.findData("whisper"))
     assert win.parakeet_btn.isHidden() and not win.whisper_btn.isHidden() and not win.whisper_size.isHidden()
-    monkeypatch.setattr(parakeet, "ready", lambda: True)
+    monkeypatch.setattr(parakeet, "ready", lambda *a, **k: True)
     win.hearing.setCurrentIndex(win.hearing.findData("parakeet"))
     assert win.parakeet_btn.isHidden() and "Press Apply" in win.parakeet_status.text()
 
@@ -131,7 +131,7 @@ def test_a_failed_download_says_why(monkeypatch):
 
     def fail(progress=None, **k):
         raise OSError("<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed>")
-    monkeypatch.setattr(parakeet, "ready", lambda: False)
+    monkeypatch.setattr(parakeet, "ready", lambda *a, **k: False)
     monkeypatch.setattr(parakeet, "installed", lambda: True)
     monkeypatch.setattr(parakeet, "download", fail)
     win = window(hearing="parakeet")

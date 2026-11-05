@@ -131,10 +131,39 @@ def test_now_and_then_by_herself():
     c = companion()
     show = roam.RoamShow(c, rig, enabled=lambda: True)
     show._due = 0
+    home = c.content_geometry().center().x()
     show._maybe_walk()
-    assert show.active
+    assert show.active and show.home_x is not None
     run(show)
+    assert time.monotonic() + roam.RoamShow.HOME_AFTER[0] - 15 < show._due < time.monotonic() + 46
+    show._due = 0
+    show._maybe_walk()                                   # v2.3: back to her corner after a while
+    run(show)
+    assert show.home_x is None and abs(c.content_geometry().center().x() - home) < 3
     assert show._due > time.monotonic() + roam.WAIT[0] - 15
+
+
+def test_she_stays_put_right_after_a_command_and_in_games():
+    """v2.3: "close opera and open deadlock" - she teleported mid-command while the game started."""
+    from capri.states import State
+    c = companion()
+    gaming = [False]
+    show = roam.RoamShow(c, rig, enabled=lambda: True, quiet=lambda: gaming[0])
+    c.controller.state = State.LAUNCHING                 # "Opening Deadlock..."
+    assert not show.can_walk()
+    c.controller.state = State.SUCCESS                   # "Opened Deadlock."
+    assert not show.can_walk()                           # just worked for you: she waits a minute
+    show._calm_since -= roam.RoamShow.CALM + 1
+    gaming[0] = True
+    assert not show.can_walk()                           # the game's up: no wandering
+    gaming[0] = False
+    show._calm_since -= roam.RoamShow.CALM + 1
+    assert show.can_walk()
+
+
+def test_roaming_is_off_unless_you_turn_it_on():
+    from capri.settings import Settings
+    assert Settings().roaming is False
 
 
 @pytest.mark.parametrize("text,which", [
@@ -155,6 +184,6 @@ def test_stay_there_turns_it_off():
     r.router.services.roam = SimpleNamespace(stop=lambda: stopped.append(1), walk=lambda: True)
     r.router.services.settings = r.assistant.settings
     r.router.handle("stay there")
-    assert r.assistant.settings.roam is False and stopped and "stay put" in r.controller.message
+    assert r.assistant.settings.roaming is False and stopped and "stay put" in r.controller.message
     r.router.handle("start roaming")
-    assert r.assistant.settings.roam is True
+    assert r.assistant.settings.roaming is True

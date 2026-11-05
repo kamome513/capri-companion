@@ -136,7 +136,7 @@ class ExtrasTab(QWidget):
         self.throwable.setChecked(s.throwable)
         form.addRow(self.throwable)
         self.roam = QCheckBox("Roam around: now and then she teleports somewhere else along the bottom")
-        self.roam.setChecked(s.roam)
+        self.roam.setChecked(s.roaming)
         form.addRow(self.roam)
         form.addRow(_hint("Say “teleport” / “go for a walk” or “stay there”."))
         self.music_deck = QCheckBox("Music deck: while music plays, she stands on a neon bar (song, play / pause, skip)")
@@ -205,7 +205,7 @@ class ExtrasTab(QWidget):
         s.music_deck = self.music_deck.isChecked()
         s.music_dance = self.music_dance.isChecked()
         s.mic_voice_device = self.mic_device.currentData() or ""
-        s.roam = self.roam.isChecked()
+        s.roaming = self.roam.isChecked()
         if not self.clip_on.isChecked():
             s.clips = False
         elif not s.clips and self._clips_turn_on is not None:

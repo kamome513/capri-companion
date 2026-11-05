@@ -50,6 +50,7 @@ class Settings:
     shortcuts: list = field(default_factory=list)     # [phrase, command]: "gaming time" -> "open steam and discord"
     learned_buttons: list = field(default_factory=list)   # {"phrase", "app", "name", "x", "y"}: "leave call" ->
                                                           # Discord's red button (taught by pointing at it)
+    language: str = "en"               # the language she hears, understands and speaks (languages.py: 25 of them)
     hearing: str = "vosk"              # "vosk" (light, quick) | "parakeet" (best for heavy accents, 480 MB download)
                                        # | "whisper" (better with accents - setup_hearing.bat)
     mic_cleanup: bool = True           # turn quiet mics up, cut rumble and hiss before she listens
@@ -73,7 +74,7 @@ class Settings:
     elevenlabs_voice: str = ""         # ElevenLabs voice ID ("" = a standard one); the key is kept in secrets
     fish_voice: str = ""               # Fish Audio voice ID or link ("" = their default); the key is in secrets
     throwable: bool = True             # flick her and let go: she's thrown (and slams into the screen's edge)
-    roam: bool = True                  # now and then she walks somewhere else along the bottom of the screen
+    roaming: bool = False              # now and then she teleports along the bottom (off: she stays in her corner)
     clips: bool = False                # "Clip my games": keep the last 2 minutes recording, "clip that" saves it
     clip_when: str = "games"           # "games" (only while you play) / "always"
     clip_length: int = 30              # seconds "clip that" saves

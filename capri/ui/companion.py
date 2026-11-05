@@ -539,6 +539,13 @@ class Companion(QObject):
             self.panel.setVisible(not self.hidden and self.settings.show_panel and busy)
             return
         self.drone_window.setVisible(False)
+        if self.busy_elsewhere:
+            # She's out of her window for a show (thrown, teleporting, greeting, a dash): showing it now made two of
+            # her - the one in the show and a second one back home ("Ow!" popping the text box up did it).
+            # The show puts her back in her window itself when it's done.
+            self.sit_window.setVisible(False)
+            self.character.setVisible(False)
+            return
         self.sit_window.setVisible(not self.hidden and self.perched)
         self.character.setVisible(not self.hidden and not self.perched)
         self._show_panel(not self.hidden and self.settings.show_panel and self._panel_wanted())
