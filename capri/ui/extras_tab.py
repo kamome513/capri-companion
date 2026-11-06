@@ -152,6 +152,16 @@ class ExtrasTab(QWidget):
         self.head_pats = QCheckBox("Head pats: click her head and she reacts (click her body: a poke)")
         self.head_pats.setChecked(s.head_pats)
         form.addRow(self.head_pats)
+        self.nap = QCheckBox("Nap when I'm away: after 10 minutes with no mouse or keyboard she dozes off "
+                             "(she wakes when you're back)")
+        self.nap.setChecked(s.nap_minutes > 0)
+        form.addRow(self.nap)
+        self.pc_warnings = QCheckBox("Tell me when my PC is running out of memory or disk space")
+        self.pc_warnings.setChecked(s.pc_warnings)
+        form.addRow(self.pc_warnings)
+        self.quiet = QCheckBox("Quiet mode: she doesn't comment by herself, only answers you (Ctrl+Alt+P)")
+        self.quiet.setChecked(s.quiet_mode)
+        form.addRow(self.quiet)
         root.addWidget(her)
 
         mic = QGroupBox("Her voice in your mic  (Discord, Roblox, games)")
@@ -201,6 +211,9 @@ class ExtrasTab(QWidget):
         s.watch_remember = self.watch_remember.isChecked()
         s.throwable = self.throwable.isChecked()
         s.head_pats = self.head_pats.isChecked()
+        s.nap_minutes = (s.nap_minutes or 10) if self.nap.isChecked() else 0
+        s.pc_warnings = self.pc_warnings.isChecked()
+        s.quiet_mode = self.quiet.isChecked()
         s.game_play = self.game_play.isChecked()
         s.music_deck = self.music_deck.isChecked()
         s.music_dance = self.music_dance.isChecked()

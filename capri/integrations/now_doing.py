@@ -318,6 +318,9 @@ def game_title(exe: str, library: list[tuple[str, str]]) -> str:
         if f and (low.startswith(f + "/") or low == f):
             return name
     stem = re.sub(r"\.(exe|x86_64|x86|bin|sh|app)$", "", path.rsplit("/", 1)[-1], flags=re.I)
+    from ..commands.games import GAME_NAMES
+    if stem.lower() in GAME_NAMES:                          # "RobloxPlayerBeta.exe" -> "Roblox"
+        return GAME_NAMES[stem.lower()]
     tag = re.compile(r"[-_ ](win64|win32|shipping|dx11|dx12|vulkan|x64|game|client|launcher)$", re.I)
     while tag.search(stem):                                 # "VALORANT-Win64-Shipping" -> "VALORANT"
         stem = tag.sub("", stem)

@@ -36,7 +36,7 @@ GWL_STYLE, GWL_EXSTYLE = -16, -20
 SHELL_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"}
 # Text boxes she can write into directly: Notepad's (old and Windows 11), WordPad-style rich text boxes.
 TEXT_BOX_CLASSES = {"edit", "richedit20w", "richedit20a", "richedit50w", "richeditd2dpt"}
-EM_REPLACESEL, WM_GETTEXTLENGTH, SMTO_ABORTIFHUNG = 0x00C2, 0x000E, 0x0002
+EM_REPLACESEL, WM_GETTEXTLENGTH, WM_GETTEXT, SMTO_ABORTIFHUNG = 0x00C2, 0x000E, 0x000D, 0x0002
 
 
 class Desktop(Protocol):
@@ -142,8 +142,20 @@ class Desktop(Protocol):
         buf = ctypes.create_unicode_buffer(text)
         if before is None or send(EM_REPLACESEL, 1, ctypes.addressof(buf)) is None:
             return False
-        after = send(WM_GETTEXTLENGTH)
-        return after is not None and after > before
+        # Did it go in? Some text boxes (Windows 11 Notepad...) report their new length late or not at all - taking
+        # that as "nothing typed" made her type it all again as key presses: the text twice (2.3.4). So: look again
+        # a moment later, then read the text itself; only when it's surely not there does she type it.
+        for _ in range(3):
+            after = send(WM_GETTEXTLENGTH)
+            if after is not None and after > before:
+                return True
+            time.sleep(0.08)
+        size = max(before or 0, after or 0) + len(text) + 2
+        whole = ctypes.create_unicode_buffer(size)
+        got = send(WM_GETTEXT, size, ctypes.addressof(whole))
+        if got is None:
+            return True                 # it took the text and won't say what it holds: don't risk typing it twice
+        return text[:200] in whole.value
 
     def windows_for(self, pids: list[int]) -> list[int]: ...
     def window_title(self, hwnd: int) -> str: ...

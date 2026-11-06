@@ -36,7 +36,19 @@ GONE_CHECKS = 2            # game processes missing this many checks in a row = 
 GAME_FOLDERS = ("\\steamapps\\common\\", "\\epic games\\", "\\riot games\\", "\\xboxgames\\", "\\gog games\\",
                 "\\gog galaxy\\games\\", "\\ea games\\", "\\electronic arts\\", "\\ubisoft game launcher\\games\\",
                 "\\rockstar games\\", "\\battle.net\\games\\", "\\blizzard\\", "\\roblox\\versions\\",
-                "\\minecraft\\", "\\itch\\apps\\")
+                "\\minecraft\\", "\\.minecraft\\", "\\minecraft launcher\\", "microsoft.4297127d64ec6_",
+                "\\itch\\apps\\",
+                # Roblox started through a bootstrapper lives in the bootstrapper's own folder (2.3.4: with Bloxstrap
+                # she never noticed you were playing, so Discord didn't say "Roblox with Capri")
+                "\\bloxstrap\\versions\\", "\\fishstrap\\versions\\", "\\voidstrap\\versions\\",
+                "\\windowsapps\\robloxcorporation")
+# Games whose program has a name of its own (RobloxPlayerBeta.exe is "Roblox")
+GAME_NAMES = {"robloxplayerbeta": "Roblox", "windows10universal": "Roblox", "javaw": "Minecraft",
+              "minecraft.windows": "Minecraft", "project8": "Deadlock", "cs2": "Counter-Strike 2",
+              "valorant-win64-shipping": "VALORANT", "fortniteclient-win64-shipping": "Fortnite",
+              "r5apex": "Apex Legends", "r5apex_dx12": "Apex Legends", "league of legends": "League of Legends",
+              "rocketleague": "Rocket League", "gta5": "GTA V", "gta5_enhanced": "GTA V", "overwatch": "Overwatch 2",
+              "marvel-win64-shipping": "Marvel Rivals", "eldenring": "Elden Ring", "dota2": "Dota 2"}
 LAUNCHERS = {"steam.exe", "steamwebhelper.exe", "epicgameslauncher.exe", "riotclientservices.exe",
              "riotclientux.exe", "battle.net.exe", "eadesktop.exe", "upc.exe", "ubisoftconnect.exe",
              "galaxyclient.exe", "rockstarlauncher.exe", "launcher.exe", "robloxplayerlauncher.exe",

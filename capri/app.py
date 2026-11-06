@@ -67,7 +67,8 @@ from .ui.greeting import GreetingShow
 from .ui.screen_spots import taskbar_icon, to_logical
 from .ui.psychosis import PsychosisShow
 from .integrations.screen_click import ScreenHands, click_at, click_spotify_play
-from .integrations.screen_targets import Finder, click, cursor_pos, target_window, windows_ocr
+from .integrations.screen_targets import Finder, cursor_pos, target_window, windows_ocr
+from .integrations.screen_targets import click as click_on_screen
 from .typing_watch import TypingWatch
 from . import memory
 from .ui.extras_tab import ExtrasTab
@@ -450,6 +451,29 @@ def main(argv: list[str] | None = None) -> int:
             return zapper.zap_at(None, then, small=True)
         visit_show.visit(target, then, window=window, near=True)
     services.zap_at = zap_button
+    from .ui.her_cursor import HerCursor
+    her_cursor = HerCursor()                   # her little pink pointer: wherever she clicks or types (2.3.4)
+    app._her_cursor = her_cursor
+
+    class _PointBridge(QObject):
+        point = Signal(int, int)               # (physical screen x, y) - from her worker threads
+    point_bridge = _PointBridge()
+    app._point_bridge = point_bridge
+
+    def show_point(x: int, y: int) -> None:
+        r = to_logical((x, y, x + 1, y + 1))
+        her_cursor.glide(r.x(), r.y())
+    point_bridge.point.connect(show_point)
+
+    def click(target, how):                    # her cursor glides to it, then she clicks
+        try:
+            x0, y0, x1, y1 = target.rect
+            point_bridge.point.emit(int((x0 + x1) / 2), int((y0 + y1) / 2))
+            time.sleep(0.28)
+        except Exception:
+            pass
+        return click_on_screen(target, how)
+    services.point_at = lambda x, y: point_bridge.point.emit(int(x), int(y))
     if linux:                                  # "click subscribe": read the window (Tesseract), click it
         from .linux import screen as linux_screen
         services.screen = Finder(linux_screen.NoAccessibility(), target_window, desktop.hwnd_rect, cursor_pos,
@@ -504,7 +528,11 @@ def main(argv: list[str] | None = None) -> int:
                            note=lambda text: controller.log("Games", text[:60]))
     keeper.start()                            # over full-screen games: back on top every 1.5 s (no focus taken)
     app._keep_on_top = keeper
-    hype = GameHype(settings, lambda text: (controller.log("Hype", text), assistant.remark(text, emotion="happy")),
+    def own_remark(text: str, emotion: str) -> None:
+        """Something she'd say by herself: not in quiet mode (Ctrl+Alt+P / "quiet mode") - she still answers you."""
+        if not settings.quiet_mode:
+            assistant.remark(text, emotion=emotion)
+    hype = GameHype(settings, lambda text: (controller.log("Hype", text), own_remark(text, "happy")),
                     lambda: catalog.games, system.processes, busy=lambda: assistant._busy)
     hype.apply()                              # "nice kill!" - only if it's on in Settings
     assistant.settings_changed.connect(hype.apply)
@@ -518,6 +546,16 @@ def main(argv: list[str] | None = None) -> int:
             return False
 
     services.in_game = in_game                # Discord mute / deafen mid-game: never tab you out
+    from .away import NapWatch, PcWarnings, idle_seconds_source
+
+    def may_nap() -> bool:
+        return (controller.state is State.IDLE and not assistant._busy and not companion.hidden
+                and not companion.drone and not in_game())
+    nap = NapWatch(idle_seconds_source(), lambda: settings.nap_minutes, may_nap, companion.character.set_napping)
+    controller.changed.connect(lambda: nap.napping and nap.check())   # she hears you: awake at once
+    app._nap = nap
+    app._pc_warnings = PcWarnings(lambda: settings.pc_warnings and not settings.quiet_mode and not in_game(),
+                                  lambda text: (controller.log("PC", text[:50]), own_remark(text, "serious")))
 
     def game_rect():
         hwnd = target_window()
@@ -698,7 +736,7 @@ def main(argv: list[str] | None = None) -> int:
             return ""
     from .logs import log_dir
     watch = ScreenWatch(settings, brain, screen_picture, front_title,
-                        lambda text, emotion: (controller.log("Watch", text[:60]), assistant.remark(text, emotion=emotion)),
+                        lambda text, emotion: (controller.log("Watch", text[:60]), own_remark(text, emotion)),
                         busy=lambda: assistant._busy or controller.state in (State.LISTENING, State.PROCESSING),
                         memory=SeenMemory(log_dir() / "seen.json"),
                         notice=lambda text: assistant.show_result(State.ERROR, text, emotion="confused"),
@@ -710,10 +748,6 @@ def main(argv: list[str] | None = None) -> int:
     # She plays your game ("play this for me"): looks (vision AI) -> moves (keys / camera / clicks), Esc stops her
     from .integrations import game_agent as gamemod
     from .integrations.game_hands import game_hands
-    from .ui.her_cursor import HerCursor
-    her_cursor = HerCursor()
-    app._her_cursor = her_cursor
-
     class _GameBridge(QObject):
         said = Signal(str)
         done = Signal(str)
@@ -770,6 +804,10 @@ def main(argv: list[str] | None = None) -> int:
         services.open_folder = lambda label, path: visits.open_folder(label, path) if settings.teleport \
             else system.open_item(path)
     router = CommandRouter(assistant, companion, catalog, system, services)
+    QTimer.singleShot(9000, router.watch_reminders)   # reminders you set before (and any missed while she was closed)
+    for window in (companion.character, companion.sit_window, companion.panel, companion.drone_window):
+        if hasattr(window, "file_dropped"):
+            window.file_dropped.connect(router.read_file)   # drop a file on her: she reads it
     assistant.command_handler = router.handle
     assistant.choose = router.choose
     from .logs import log_dir as _log_dir
@@ -862,11 +900,23 @@ def main(argv: list[str] | None = None) -> int:
     assistant.settings_changed.connect(chat_bits)
     remote["click-through"] = toggle_click_through
 
+    def toggle_quiet() -> None:
+        settings.quiet_mode = not settings.quiet_mode
+        settings.save()
+        assistant.settings_changed.emit()
+        controller.log("Quiet", "on" if settings.quiet_mode else "off")
+        assistant.show_result(State.SUCCESS, "Quiet mode." if settings.quiet_mode else "Quiet mode off.", speak=False)
+
     def register_hotkeys() -> list[str]:
         hotkeys.unregister_all()
         errors = []
         for combo, action in ((settings.hotkey_listen, assistant.listen_now),
-                              (settings.hotkey_click_through, toggle_click_through)):
+                              (settings.hotkey_click_through, toggle_click_through),
+                              (settings.hotkey_quiet, toggle_quiet),
+                              (settings.hotkey_hide, lambda: companion.set_hidden(not companion.hidden)),
+                              (settings.hotkey_chat, open_chat)):
+            if not combo or (sys.platform.startswith("linux") and combo.lower() == "ctrl+alt+t"):
+                continue                      # (Linux: Ctrl+Alt+T opens the terminal - not taken from you)
             error = hotkeys.register(combo, action)
             if error and hotkeys_supported:
                 controller.log("Hotkey", error)

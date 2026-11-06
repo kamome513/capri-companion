@@ -28,7 +28,12 @@ video settings. Exclusive fullscreen hides the picture from other apps.
 
 Settings → **Extras** → tick **Let her play games**. Then say "Hey Capri, play this for me". She looks at the
 game in front and presses keys and clicks in it (only game keys, only in that game). **Esc stops her at once.**
-It needs an AI that can see pictures.
+It needs an AI that can see pictures. Her little pink cursor shows where she clicks.
+
+**Minecraft:** put the game in front (not paused), stand somewhere, then say "play this for me and get some wood".
+She turns with the mouse, walks with WASD and holds the left button to mine where the crosshair is. Esc stops her.
+She's slow (she looks, thinks, then moves), and an AI that sees well (Gemini, GPT, Claude) plays much better than a
+small local one.
 
 ## In-game
 

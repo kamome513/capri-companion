@@ -17,7 +17,7 @@ import numpy as np
 
 from .engines import Audio
 
-STYLES = {"capri": "Capri (bright and airy)", "natural": "Natural (no effects)",
+STYLES = {"capri": "Capri (bright and airy)", "studio": "Studio (clean and clear)", "natural": "Natural (no effects)",
           "holocall": "Holocall (on a call - phone line and static)",
           "netrunner": "Netrunner (digital, doubled)", "glitch": "Glitch (breaking signal)",
           "android": "Android (robotic ring)", "cyberspace": "Cyberspace (echoing, far away)"}
@@ -171,6 +171,21 @@ def _static(x: np.ndarray, rng: np.random.Generator, level: float = 0.025) -> np
     return (x + noise).astype(np.float32)
 
 
+def _even(x: np.ndarray, rate: int, amount: float = 0.5) -> np.ndarray:
+    """Gentle level-evening (like a vocal compressor): quiet syllables come up a little, loud ones don't jump."""
+    hop = max(1, rate // 200)
+    n = len(x) // hop
+    if n < 4:
+        return x
+    env = np.sqrt(np.mean(x[:n * hop].reshape(n, hop) ** 2, axis=1) + 1e-9)
+    env = np.convolve(env, np.ones(8) / 8, mode="same")
+    ref = float(np.percentile(env, 90)) or 1.0
+    gain = (np.clip(env / ref, 0.05, 1.0)) ** (-amount * 0.5)
+    gain = np.minimum(gain, 2.5)
+    g = np.interp(np.arange(len(x)) / hop, np.arange(n), gain).astype(np.float32)
+    return (x * g).astype(np.float32)
+
+
 def apply_style(audio: Audio, style: str, seed: int = 0, pitch: float = 0.0) -> Audio:
     """Voice style + pitch (semitones; skipped when the engine already pitched it)."""
     x, rate = audio.samples.astype(np.float32), audio.rate
@@ -183,6 +198,10 @@ def apply_style(audio: Audio, style: str, seed: int = 0, pitch: float = 0.0) -> 
         x = _highpass(x, rate, cutoff=110.0)      # trim the boom
         x = _brighten(x, rate, amount=0.55)       # bright, airy top
         x = _double(x, rate, ms=7.0, mix=0.18)    # a touch of sparkle
+    elif style == "studio":                       # clean and clear (2.3.4): no doubling, just polish
+        x = _highpass(x, rate, cutoff=85.0)
+        x = _brighten(x, rate, amount=0.25)
+        x = _even(x, rate, amount=0.5)
     elif style == "holocall":                     # a light phone-line colour: still clearly her
         line = _lowpass(_highpass(x, rate, cutoff=300.0), rate, cutoff=3400.0)
         line = np.tanh(line * 1.6 / (float(np.max(np.abs(line))) or 1.0)).astype(np.float32)

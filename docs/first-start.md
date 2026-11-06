@@ -10,12 +10,25 @@ Some things to try:
 - "Hey Capri, play some lo-fi" / "pause" / "next song" / "turn it up"
 - "Hey Capri, what's the weather?" / "what time is it?"
 - "Hey Capri, take a screenshot"
-- "Hey Capri, set a timer for 10 minutes"
+- "Hey Capri, set a timer for 10 minutes" / "remind me tomorrow at 9 to call mum"
+- "Hey Capri, let's play rock paper scissors"
 - "Hey Capri, put Chrome on the left and Discord on the right"
 - "Hey Capri, how's my internet?" / "why is my game lagging?"
 
-No mic, or you'd rather type? Right-click her → **Chat with Capri...**. Push-to-talk: **Ctrl+Alt+C**
-makes her listen right away.
+No mic, or you'd rather type? Right-click her → **Chat with Capri...**, or **Ctrl+Alt+T** from anywhere.
+Push-to-talk: **Ctrl+Alt+C** makes her listen right away.
+
+**Drop a file on her** (a text file, Word document, PDF or picture) and she tells you what's in it (needs her AI).
+
+## Hotkeys
+
+| Keys | What it does |
+|---|---|
+| Ctrl+Alt+C | She listens for one command |
+| Ctrl+Alt+T | The chat box |
+| Ctrl+Alt+H | Hide / show her |
+| Ctrl+Alt+P | Quiet mode: she doesn't comment by herself, but still answers you |
+| Ctrl+Alt+Shift+C | Click-through on / off |
 
 ## If she doesn't hear you
 

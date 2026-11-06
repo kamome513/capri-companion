@@ -300,8 +300,9 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 
 | Item | What it does |
 |---|---|
-| **Hide Capri** | Hides her until you show her again (clicking the tray icon does too) |
-| **Chat with Capri...** | A window to type to her |
+| **Hide Capri** | Hides her until you show her again (clicking the tray icon does too, or Ctrl+Alt+H) |
+| **Quiet mode** | She doesn't comment by herself (game hype, screen comments, warnings) but still answers you (Ctrl+Alt+P) |
+| **Chat with Capri...** | A window to type to her (Ctrl+Alt+T from anywhere) |
 | **Listen now** | Push-to-talk: she listens for one command (Ctrl+Alt+C) |
 | **Voice → Voice activation** | Listen for "Hey Capri". Off closes the microphone (push-to-talk still works) |
 | **Voice → Mute microphone** | Fully closes the mic. Nothing can open it, not even push-to-talk |

@@ -537,7 +537,9 @@ class OpenAIBrain:
                         content = self._info[name](args)
                     except Exception as exc:
                         content = f"Error: {exc}"
-                elif len(intents) < MAX_ACTIONS and (candidate := to_intent(name, args)) is not None:
+                elif (candidate := to_intent(name, args)) is not None and candidate in intents:
+                    content = "Already doing that (asked twice) - done once."           # never type it twice
+                elif len(intents) < MAX_ACTIONS and candidate is not None:
                     intents.append(candidate)
                     content = "Sent to Capri's command system, which does it and tells the user."
                 else:

@@ -45,6 +45,10 @@ class CompanionMenu(QObject):
         menu = self.menu = QMenu()
         menu.setStyleSheet(theme.MENU_STYLE)
         self.a_hide = menu.addAction("Hide Capri", self._toggle_hidden)
+        self.a_quiet = menu.addAction("Quiet mode", self._toggle_quiet)
+        self.a_quiet.setCheckable(True)
+        self.a_quiet.setToolTip("She doesn't comment by herself (game hype, screen comments, warnings) - she still "
+                                "answers you. Ctrl+Alt+P")
         if open_chat is not None:
             menu.addAction("Chat with Capri...", open_chat)
         self.a_voice = self.a_mute = None
@@ -270,6 +274,7 @@ class CompanionMenu(QObject):
         self._syncing = True
         try:
             self.a_hide.setText("Show Capri" if c.hidden else "Hide Capri")
+            self.a_quiet.setChecked(bool(getattr(s, "quiet_mode", False)))
             self.a_panel.setChecked(s.show_panel)
             mode = "never" if not s.show_panel else ("name" if getattr(s, "panel_on_name", False) else "popup") \
                 if getattr(s, "panel_popup", False) else "always"
@@ -336,6 +341,14 @@ class CompanionMenu(QObject):
         from ..logs import log_dir
         log_dir().mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_dir())))
+
+    def _toggle_quiet(self) -> None:
+        if self._syncing:
+            return
+        s = self.companion.settings
+        s.quiet_mode = self.a_quiet.isChecked()
+        s.save()
+        self.assistant.settings_changed.emit()
 
     def _toggle_hidden(self) -> None:
         self.companion.set_hidden(not self.companion.hidden)

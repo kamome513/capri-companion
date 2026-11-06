@@ -1,5 +1,6 @@
-"""Her own cursor: a small red, angular pointer that glides to where she's about to click while she plays a
-game for you - so you can see what she's doing. Click-through; it fades away when she stops."""
+"""Her own cursor: a little hot-pink, angular pointer that glides to wherever she's about to click or type - while
+she plays a game for you, clicks a button you asked for, or types into an app - so you can see what she's doing.
+Click-through; it disappears a moment after she's done."""
 
 from __future__ import annotations
 
@@ -11,7 +12,9 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from . import fx
 from .overlay_window import OverlayWindow
 
-SIZE = 46
+SIZE = 34
+PINK = QColor(255, 46, 122)          # hot pink-red, like her hair
+GLOW = QColor(255, 46, 122, 90)
 
 
 class HerCursor(OverlayWindow):
@@ -50,18 +53,20 @@ class HerCursor(OverlayWindow):
         age = time.monotonic() - self._clicked_at
         if 0 <= age < 0.45:                                  # a ripple where she clicks
             k = age / 0.45
-            p.setPen(QPen(QColor(40, 230, 255, int(220 * (1 - k))), 2))
+            ring = QColor(PINK)
+            ring.setAlpha(int(230 * (1 - k)))
+            p.setPen(QPen(ring, 2))
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(tip, 4 + 16 * k, 4 + 16 * k)
+            p.drawEllipse(tip, 3 + 12 * k, 3 + 12 * k)
         elif age > 0.6:
             self._pulse.stop()
         arrow = QPainterPath(tip)
-        for pt in ((26, 14), (17, 17), (21, 30), (15, 32), (11, 20), (4, 26)):
+        for pt in ((19, 11), (12.5, 13), (15.5, 21.5), (11.5, 23), (8.5, 15), (4, 19)):   # a little shard pointer
             arrow.lineTo(QPointF(*pt))
         arrow.closeSubpath()
-        p.setPen(QPen(QColor(255, 40, 90, 90), 6))
+        p.setPen(QPen(GLOW, 5))
         p.drawPath(arrow)                                    # glow
-        p.setPen(QPen(QColor(255, 255, 255), 1.4))
-        p.setBrush(QColor(236, 16, 70))
+        p.setPen(QPen(QColor(255, 255, 255), 1.2))
+        p.setBrush(PINK)
         p.drawPath(arrow)
         p.end()

@@ -40,6 +40,22 @@ def _wait(seconds: float, escape) -> None:
         time.sleep(min(0.05, max(0.0, end - time.monotonic())))
 
 
+def _turning(seconds: float, look: tuple[int, int], nudge, escape) -> None:
+    """Spread a camera turn over `seconds` (while a key is held): smooth steering, not one jerk."""
+    end = time.monotonic() + seconds
+    steps = max(1, int(seconds / 0.03))
+    dx, dy = look
+    done_x = done_y = 0
+    for i in range(1, steps + 1):
+        if escape():
+            return
+        want_x, want_y = round(dx * i / steps), round(dy * i / steps)
+        nudge(want_x - done_x, want_y - done_y)
+        done_x, done_y = want_x, want_y
+        time.sleep(max(0.0, min(0.03, end - time.monotonic())))
+    _wait(max(0.0, end - time.monotonic()), escape)
+
+
 def clean_key(key: str) -> str | None:
     """A key she may press, normalised ("Space" -> "space", "W" -> "w"), or None."""
     k = (key or "").strip().lower()
@@ -80,12 +96,49 @@ class WindowsGameHands:
         inp.u.ki = self.KEYBDINPUT(0, SCAN[key], flags, 0, 0)
         return inp
 
-    def hold(self, key: str, seconds: float) -> None:
+    def hold(self, key: str, seconds: float, look: tuple[int, int] = (0, 0)) -> None:
+        """Hold a key that long - turning the camera at the same time if `look` isn't (0, 0) (walk and steer)."""
         self._send(self._key(key, False))
         try:
-            _wait(max(0.03, min(MAX_HOLD, seconds)), self.escape_pressed)
+            if look != (0, 0):
+                _turning(max(0.03, min(MAX_HOLD, seconds)), look, self._nudge, self.escape_pressed)
+            else:
+                _wait(max(0.03, min(MAX_HOLD, seconds)), self.escape_pressed)
         finally:
             self._send(self._key(key, True))
+
+    def _nudge(self, dx: int, dy: int) -> None:
+        inp = self.INPUT(type=0)
+        inp.u.mi = self.MOUSEINPUT(int(dx), int(dy), 0, 0x0001, 0, 0)                    # MOUSEEVENTF_MOVE
+        self._send(inp)
+
+    def press(self, button: str = "left", hold: float = 0.0) -> None:
+        """Press a mouse button where the pointer is - in a first-person game that's the crosshair (mining in
+        Minecraft: hold it). The pointer isn't moved: that would turn the camera."""
+        down, up = (0x0002, 0x0004) if button == "left" else (0x0008, 0x0010)
+        inp = self.INPUT(type=0)
+        inp.u.mi = self.MOUSEINPUT(0, 0, 0, down, 0, 0)
+        self._send(inp)
+        try:
+            _wait(max(0.05, min(MAX_HOLD, hold)), self.escape_pressed)
+        finally:
+            inp = self.INPUT(type=0)
+            inp.u.mi = self.MOUSEINPUT(0, 0, 0, up, 0, 0)
+            self._send(inp)
+
+    def pointer_hidden(self) -> bool:
+        """The game has hidden the mouse pointer: it's steering the camera with it (Minecraft, shooters...)."""
+        ctypes = self.ctypes
+        from ctypes import wintypes
+
+        class CURSORINFO(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD), ("hCursor", wintypes.HANDLE),
+                        ("ptScreenPos", wintypes.POINT)]
+        info = CURSORINFO()
+        info.cbSize = ctypes.sizeof(CURSORINFO)
+        if not self.user32.GetCursorInfo(ctypes.byref(info)):
+            return False
+        return not (info.flags & 0x0001)                                                  # CURSOR_SHOWING
 
     def look(self, dx: int, dy: int) -> None:
         """Turn the camera: relative mouse movement, in a few small steps (games read deltas)."""
@@ -125,14 +178,17 @@ class LinuxGameHands:
         name = XK_NAMES.get(key, key)
         return self.x.d.keysym_to_keycode(self.XK.string_to_keysym(name))
 
-    def hold(self, key: str, seconds: float) -> None:
+    def hold(self, key: str, seconds: float, look: tuple[int, int] = (0, 0)) -> None:
         code = self._code(key)
         if not code:
             return
         self.xtest.fake_input(self.x.d, self.X.KeyPress, code)
         self.x.d.sync()
         try:
-            _wait(max(0.03, min(MAX_HOLD, seconds)), self.escape_pressed)
+            if look != (0, 0):
+                _turning(max(0.03, min(MAX_HOLD, seconds)), look, self._nudge, self.escape_pressed)
+            else:
+                _wait(max(0.03, min(MAX_HOLD, seconds)), self.escape_pressed)
         finally:
             self.xtest.fake_input(self.x.d, self.X.KeyRelease, code)
             self.x.d.sync()
@@ -143,6 +199,24 @@ class LinuxGameHands:
             self.xtest.fake_input(self.x.d, self.X.MotionNotify, True, x=int(dx / steps), y=int(dy / steps))
             self.x.d.sync()
             time.sleep(0.01)
+
+    def _nudge(self, dx: int, dy: int) -> None:
+        self.xtest.fake_input(self.x.d, self.X.MotionNotify, True, x=int(dx), y=int(dy))
+        self.x.d.sync()
+
+    def press(self, button: str = "left", hold: float = 0.0) -> None:
+        number = 1 if button == "left" else 3
+        self.xtest.fake_input(self.x.d, self.X.ButtonPress, number)
+        self.x.d.sync()
+        try:
+            _wait(max(0.05, min(MAX_HOLD, hold)), self.escape_pressed)
+        finally:
+            self.xtest.fake_input(self.x.d, self.X.ButtonRelease, number)
+            self.x.d.sync()
+
+    @staticmethod
+    def pointer_hidden() -> bool:
+        return False                      # (X11 doesn't say; the AI's "mine" / "use" moves press in place anyway)
 
     def click(self, x: int, y: int, button: str = "left", hold: float = 0.0) -> None:
         number = 1 if button == "left" else 3

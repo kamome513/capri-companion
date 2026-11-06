@@ -88,6 +88,9 @@ class Kind(Enum):
     HYPE_OFF = "hype_off"
     PERCH_ON = "perch_on"         # "sit on my window"
     PERCH_OFF = "perch_off"
+    QUIET_MODE = "quiet_mode"     # "quiet mode" / "you can talk again": query = on | off (2.3.4)
+    REMINDER = "reminder"         # "remind me tomorrow at 9 to call mum": targets = ("<day>|<time>", what)
+    RPS = "rps"                   # rock paper scissors: query = start | rock | paper | scissors
     UNKNOWN = "unknown"
 
 
@@ -1025,6 +1028,13 @@ def parse(text: str) -> Intent:
     m = re.fullmatch(DRONE_CORNER, t)
     if m:
         return Intent(Kind.DRONE_CORNER, (m.group(1) or m.group(2),))
+    from . import more
+    quiet = more.quiet_mode_intent(t)                               # before "be quiet" (that's: stop talking now)
+    if quiet:
+        return Intent(Kind.QUIET_MODE, query=quiet)
+    rps = more.rps_intent(t)
+    if rps:
+        return Intent(Kind.RPS, query=rps)
     for pattern, kind in SIMPLE:
         if re.fullmatch(pattern, t):
             return Intent(kind)
@@ -1034,6 +1044,9 @@ def parse(text: str) -> Intent:
     timer = timer_intent(t)
     if timer is not None:
         return timer
+    reminder = more.reminder_intent(t)
+    if reminder is not None:
+        return Intent(Kind.REMINDER, reminder)                    # "remind me tomorrow at 9 to call mum"
     # personalities after the fixed commands, so "switch to normal mode" stays what it was
     if re.fullmatch(PERSONALITY_ASK, t):
         return Intent(Kind.PERSONALITY)

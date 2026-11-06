@@ -64,6 +64,13 @@ class Settings:
     wake_variants: list = field(default_factory=list)   # how she hears your voice say "Capri" (Teach her your voice)
     hotkey_listen: str = "ctrl+alt+c"  # push-to-talk: listen for one command
     hotkey_click_through: str = "ctrl+alt+shift+c"
+    hotkey_quiet: str = "ctrl+alt+p"   # quiet mode on / off (2.3.4)
+    hotkey_hide: str = "ctrl+alt+h"    # hide / show her
+    hotkey_chat: str = "ctrl+alt+t"    # the chat box, from anywhere
+    quiet_mode: bool = False           # she doesn't comment by herself (hype, screen comments, warnings); answers you
+    reminders: list = field(default_factory=list)   # [due "YYYY-MM-DD HH:MM", what] - kept across restarts
+    nap_minutes: int = 10              # she naps after this long with no mouse / keyboard (0 = never)
+    pc_warnings: bool = True           # she tells you when memory or disk space is running out
     # Speech (Stage 5)
     speech_enabled: bool = True        # spoken replies (voice commands work either way)
     speech_voice: str = ""             # voice name, "" = Windows default

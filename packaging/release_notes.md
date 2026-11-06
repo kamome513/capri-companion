@@ -1,6 +1,21 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.3.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.4.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
+
+**2.3.4: lots of new things.**
+- **She plays Minecraft properly.** In games that steer the camera with the mouse she now clicks where the crosshair is instead of moving the pointer (that yanked the view), holds the button to mine, walks and turns at the same time, and knows the Minecraft basics. Minecraft from the Microsoft Store launcher counts as a game now too.
+- **Her little pink cursor** shows where she's about to click or type, whenever she does something on screen.
+- **Drop a file on her** (text, Word, PDF or a picture) and she tells you what's in it. Only your AI reads it, and nothing written in a file can make her do anything.
+- **Reminders on a day or at a time** that survive a restart: "remind me tomorrow at 9 to call mum", "remind me on the 5th of December to pay rent".
+- **Quiet mode** (Ctrl+Alt+P, right-click → Quiet mode, or say "quiet mode"): no comments by herself - she still answers you.
+- **New hotkeys:** Ctrl+Alt+H hides or shows her, Ctrl+Alt+T opens the chat box from anywhere.
+- **She naps** when you've been away 10 minutes, and wakes up when you're back (Settings → Extras).
+- **Rock paper scissors:** "let's play rock paper scissors".
+- **She warns you** when your PC is almost out of memory or disk space (Settings → Extras).
+- **"Playing Roblox with Capri" works**, also with Bloxstrap or Fishstrap. If Bloxstrap's own *Show game activity* is on, Discord may show that one instead: turn it off in Bloxstrap → Integrations.
+- **Typing once, not twice** (some apps, like Windows 11 Notepad, got your text twice).
+- She's smaller when she sits on a window, with a normal foot.
+- New voice style: **Studio (clean and clear)**, in Settings → Assistant → Style.
 
 **2.3.3: her old sitting pose is back.** When she sits on a window she uses her drawn sitting picture again, like before 2.3.2.
 

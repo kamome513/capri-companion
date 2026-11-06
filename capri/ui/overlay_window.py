@@ -24,6 +24,7 @@ class OverlayWindow(QWidget):
     drag_moved = Signal(QPoint)
     drag_finished = Signal()
     clicked = Signal(QPoint)                 # a click without a drag (global position)
+    file_dropped = Signal(str)               # a file dragged onto her and let go (its path) - she reads it (2.3.4)
 
     def __init__(self, always_on_top: bool = True) -> None:
         super().__init__(None)
@@ -39,6 +40,7 @@ class OverlayWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAcceptDrops(True)
         self.setAutoFillBackground(False)
         self._press: QPoint | None = None      # global cursor pos at press
         self._dragging = False
@@ -92,3 +94,28 @@ class OverlayWindow(QWidget):
             self.drag_finished.emit()
         else:
             self.clicked.emit(event.globalPosition().toPoint())
+
+    # -- a file dropped on her: she reads it ---------------------------------------------------------------
+    @staticmethod
+    def _dropped_file(event) -> str:
+        data = event.mimeData()
+        if data is None or not data.hasUrls():
+            return ""
+        files = [u.toLocalFile() for u in data.urls() if u.isLocalFile()]
+        return files[0] if files else ""
+
+    def dragEnterEvent(self, event) -> None:                    # noqa: N802 (Qt name)
+        if self._dropped_file(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:                     # noqa: N802
+        if self._dropped_file(event):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:                         # noqa: N802
+        path = self._dropped_file(event)
+        if path:
+            event.acceptProposedAction()
+            self.file_dropped.emit(path)

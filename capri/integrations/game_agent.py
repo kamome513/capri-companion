@@ -38,10 +38,31 @@ Moves:
   {{"look": [dx, dy]}}              turn the camera / move the mouse that many pixels (-600..600)
   {{"click": [x, y], "button": "left", "hold": 0}}   click at x, y = fractions 0..1 across / down the game window;
                                      "hold" seconds keeps the button down (mining, attacking); "button" left or right
+  {{"key": "w", "hold": 2, "look": [dx, dy]}}   walk (or any key) AND turn at the same time, smoothly
+  {{"mine": 1.5}}                    hold the left mouse button where the crosshair is (break blocks, attack)
+  {{"use": 0}}                       right-click where the crosshair is (place a block, eat, open a door)
   {{"wait": 0.5}}                   wait (up to 2 s)
-If something just went wrong (you died, got caught, a jumpscare, got stuck, fell, lost health), add
+In first-person games the crosshair is the middle of the screen: turn with "look" to aim, then "mine" / "use".
+{hints}If something just went wrong (you died, got caught, a jumpscare, got stuck, fell, lost health), add
   "lesson": "<one short tip so it doesn't happen again>"
 {lessons}Your last moves: {history}"""
+# What a new player is told about a few games (by the game's window title)
+GAME_HINTS = {
+    "minecraft": "Minecraft: W walks, space jumps, shift sneaks, ctrl sprints. To break a block (wood, dirt, stone), "
+                 "turn so the crosshair is ON the block, then \"mine\" for 1-3 s (logs take about 2 s by hand) - "
+                 "too short and it breaks nothing. Look down a bit ([0, 100]) to aim at blocks on the ground. 1-9 "
+                 "pick the hotbar slot. If a menu is open (\"Game Menu\", inventory), click \"Back to Game\" or "
+                 "press e to close the inventory. Don't stare at the sky: keep the view near the horizon.",
+    "roblox": "Roblox: WASD walks, space jumps, the camera turns while the right mouse button is held - use the "
+              "arrow keys left / right to turn instead.",
+}
+
+
+def hints_for(game: str) -> str:
+    low = (game or "").lower()
+    return "".join(text + "\n" for name, text in GAME_HINTS.items() if name in low)
+
+
 LESSONS_INTRO = "What you learned playing this game before - use it, don't repeat these mistakes:\n{items}\n"
 REFLECT = """You were playing this game for the user (goal: {goal}) and it ended: {why}.
 Your last moves: {history}
@@ -141,7 +162,17 @@ def checked(move, window: Rect) -> tuple | None:
     try:
         if "key" in move:
             key = clean_key(str(move["key"]))
-            return ("key", key, max(0.05, min(MAX_HOLD, float(move.get("hold", 0.15))))) if key else None
+            if not key:
+                return None
+            hold = max(0.05, min(MAX_HOLD, float(move.get("hold", 0.15))))
+            if isinstance(move.get("look"), (list, tuple)) and len(move["look"]) == 2:
+                dx, dy = (int(max(-MAX_LOOK, min(MAX_LOOK, float(v)))) for v in move["look"])
+                return ("key", key, hold, dx, dy)                   # walk and turn at once
+            return ("key", key, hold)
+        if "mine" in move or "attack" in move:
+            return ("press", "left", max(0.1, min(MAX_HOLD, float(move.get("mine", move.get("attack")) or 1.0))))
+        if "use" in move:
+            return ("press", "right", max(0.05, min(MAX_HOLD, float(move.get("use") or 0.1))))
         if "look" in move:
             dx, dy = move["look"]
             return ("look", int(max(-MAX_LOOK, min(MAX_LOOK, float(dx)))), int(max(-MAX_LOOK, min(MAX_LOOK, float(dy)))))
@@ -160,7 +191,9 @@ def checked(move, window: Rect) -> tuple | None:
 def describe(move: tuple) -> str:
     kind = move[0]
     if kind == "key":
-        return f"held {move[1]} {move[2]:.1f}s"
+        return f"held {move[1]} {move[2]:.1f}s" + (f" turning {move[3]:+d},{move[4]:+d}" if len(move) > 3 else "")
+    if kind == "press":
+        return ("mined" if move[1] == "left" else "used") + f" {move[2]:.1f}s"
     if kind == "look":
         return f"looked {move[1]:+d},{move[2]:+d}"
     if kind == "click":
@@ -254,7 +287,7 @@ class GameAgent:
     def _prompt(self, history: str) -> str:
         learned = self.lessons.lessons(self.game)
         intro = LESSONS_INTRO.format(items="\n".join(f"- {x}" for x in learned)) if learned else ""
-        return PROMPT.format(goal=self.goal, history=history, lessons=intro)
+        return PROMPT.format(goal=self.goal, history=history, lessons=intro, hints=hints_for(self.game))
 
     def _play(self, hwnd: int, hands) -> str:
         started, last_said = self.clock(), -1e9
@@ -307,13 +340,22 @@ class GameAgent:
     def _do(self, hands, move: tuple) -> None:
         kind = move[0]
         if kind == "key":
-            hands.hold(move[1], move[2])
+            if len(move) > 3:
+                hands.hold(move[1], move[2], look=(move[3], move[4]))
+            else:
+                hands.hold(move[1], move[2])
         elif kind == "look":
             hands.look(move[1], move[2])
+        elif kind == "press":
+            hands.press(move[1], move[2])
         elif kind == "click":
-            self.cursor(move[1], move[2])                       # her cursor glides there first
-            self.sleep(0.25)
-            hands.click(move[1], move[2], move[3], move[4])
+            hidden = getattr(hands, "pointer_hidden", lambda: False)
+            if hidden():                                        # the game steers the camera with the mouse:
+                hands.press(move[3], max(move[4], 0.1))         # moving the pointer would yank the view - press here
+            else:
+                self.cursor(move[1], move[2])                   # her cursor glides there first
+                self.sleep(0.25)
+                hands.click(move[1], move[2], move[3], move[4])
         elif kind == "wait":
             self.sleep(move[1])
 

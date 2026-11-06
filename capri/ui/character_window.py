@@ -85,6 +85,8 @@ class CharacterWindow(OverlayWindow):
         self.lying_width = 280
         self._t0 = time.monotonic()
         self._blink_until = self._look_until = 0.0
+        self.napping = False                    # you've been away a while: eyes shut, little z's (2.3.4)
+        self._nap_since = 0.0
         self._next_blink = self._t0 + 3.0
         self._next_look = self._t0 + 14.0
         self._smooth: dict[str, float] = {}     # body style: her pose right now, easing towards the target
@@ -345,7 +347,7 @@ class CharacterWindow(OverlayWindow):
         act_pose = self.acts.pose(now)
         if act_pose is not None and act_pose in self.sprites.body:
             return act_pose
-        if now < self._blink_until:
+        if now < self._blink_until or self.napping:
             return "blink"
         if now < self._look_until:
             return "look_around"
@@ -353,7 +355,11 @@ class CharacterWindow(OverlayWindow):
 
     # -- animation clock -------------------------------------------------------------
     def _animating(self) -> bool:
-        if self.mode == "classic" or not self.isVisible():
+        if not self.isVisible():
+            return False
+        if self.napping:
+            return True                                  # the z's drift up (an idle frame rate is plenty)
+        if self.mode == "classic":
             return False
         if self.mode == "look":
             return self.talking or self.idle_animation
@@ -563,6 +569,8 @@ class CharacterWindow(OverlayWindow):
                 self.real_glitch.paint(p, snap, QRectF(self.content_rect()), max(0.5, self.display_height / 420))
             else:
                 draw(p)
+            if self.napping and not self.talking:
+                self._paint_zzz(p)
         except Exception:
             # Never leave her invisible (and the panel floating over nothing): log it once, draw her plainly.
             if not self._paint_failed:
@@ -576,6 +584,35 @@ class CharacterWindow(OverlayWindow):
             w, h = image.width() * scale, image.height() * scale
             p.drawImage(QRectF(target.center().x() - w / 2, target.bottom() - h, w, h), image)
         p.end()
+
+    def set_napping(self, on: bool) -> None:
+        """You've been away (no mouse or keyboard) a while: she naps. Any input and she's awake again."""
+        if on == self.napping:
+            return
+        self.napping, self._nap_since = on, time.monotonic()
+        self._update_timer()
+        self.update()
+
+    def _paint_zzz(self, p: QPainter) -> None:
+        """Three z's drifting up from her head, each fading out as it rises."""
+        from PySide6.QtGui import QFont
+        c = self.content_rect()
+        top = self.visual_top() if self.mode == "body" else c.top()
+        size = max(10.0, c.width() * 0.13)
+        x0, y0 = c.center().x() + c.width() * 0.18, top + size * 2.2
+        t = time.monotonic() - self._nap_since
+        p.save()
+        font = QFont()
+        font.setBold(True)
+        for i in range(3):
+            phase = ((t * 0.35) + i / 3.0) % 1.0
+            font.setPixelSize(round(size * (0.6 + 0.6 * phase)))
+            p.setFont(font)
+            col = QColor(theme.GREEN)
+            col.setAlphaF(max(0.0, min(1.0, 1.3 * (1 - phase))) * min(1.0, t / 1.5))
+            p.setPen(col)
+            p.drawText(QPointF(x0 + size * 1.4 * phase + 3 * math.sin(phase * 6.28), y0 - size * 2.4 * phase), "z")
+        p.restore()
 
     def figure_height(self) -> int:
         """How tall her full-body figure is at this size (the dashes use the same size)."""
@@ -732,6 +769,12 @@ class CharacterWindow(OverlayWindow):
         blink = 0.0
         if now < self._blink_until:                                # closes and opens, not on / off
             blink = math.sin(math.pi * min(1.0, 1 - (self._blink_until - now) / BLINK_SECONDS))
+        if self.napping and not self.talking:                      # asleep: eyes shut, head nodding a little
+            blink = min(1.0, (now - self._nap_since) / 0.8)
+            smooth = dict(smooth)
+            smooth["lean"] = smooth.get("lean", 0.0) + 0.03 * math.sin(now * 0.9)
+            smooth["squat"] = max(smooth.get("squat", 0.0), 0.12)
+            smooth["energy"] = 0.0
         eyes = ""
         since = now - self._state_at
         if self.emotion in ("happy", "playful") and self.state in (State.SUCCESS, State.SPEAKING) and not self.talking:

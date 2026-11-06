@@ -437,7 +437,9 @@ class ClaudeBrain:
                         content, is_error = self._info[use.name](dict(use.input)), False
                     except Exception as exc:
                         content, is_error = f"Error: {exc}", True
-                elif len(intents) < MAX_ACTIONS and (candidate := to_intent(use.name, dict(use.input))) is not None:
+                elif (candidate := to_intent(use.name, dict(use.input))) is not None and candidate in intents:
+                    content, is_error = "Already doing that (asked twice) - done once.", False   # never type it twice
+                elif len(intents) < MAX_ACTIONS and candidate is not None:
                     intents.append(candidate)
                     content, is_error = "Sent to Capri's command system, which does it and tells the user.", False
                 else:
