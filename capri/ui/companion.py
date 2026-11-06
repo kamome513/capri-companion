@@ -89,7 +89,7 @@ class Companion(QObject):
 
         self.drone_window = DroneWindow(top)
         self.drone_window.set_style(settings.drone_look)
-        self.sit_window = SitWindow(top, False, size=settings.size, figure=lambda: self.character)
+        self.sit_window = SitWindow(top, False, size=settings.size)
         self.feed = FeedWindow(controller, top, colours=self._call_colours)   # the chat skin's colours
         self.feed.resized.connect(self._place_feed)
         controller.changed.connect(self._on_changed)

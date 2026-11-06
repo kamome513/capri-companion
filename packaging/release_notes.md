@@ -1,11 +1,12 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.2.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.3.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
+
+**2.3.3: her old sitting pose is back.** When she sits on a window she uses her drawn sitting picture again, like before 2.3.2.
 
 **2.3.2: her own voice in all 25 languages.** Her neural voice used to speak only Spanish, French, Italian and Portuguese (with a different speaker); everything else fell back to a robotic voice. Now she speaks every language in her own voice, with that language's pronunciation. Also fixed: the Windows app was missing the pronunciation data for every language but English, which also made her hearing guess "English" more often.
 
 **2.3.2 also:**
-- **New sitting pose.** When she sits on a window she's her full self now - storm hair and all - with her legs hanging over the edge and swinging.
 - **Scrolling in Settings no longer changes settings** when the mouse passes over a drop-down, a slider or a number box.
 - **ElevenLabs "error 400" fixed:** she now repairs the request by herself, accepts a pasted voice link as well as the ID, and shows ElevenLabs' actual reason if it still fails.
 - **Guides:** step-by-step [guides](https://github.com/kamome513/capri-companion/blob/main/docs/README.md) for installing her (and the "Windows protected your PC" screen), the AI, ElevenLabs, Fish Audio, languages, Discord and games. Right-click her → **Guides and help**.

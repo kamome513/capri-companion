@@ -118,69 +118,19 @@ def test_elevenlabs_voice_the_plan_cant_use_falls_back_to_the_default_voice():
     assert ElevenLabsEngine.DEFAULT_VOICE in urls[-1] and len(urls) == 2
 
 
-# -- her new sitting pose: her own figure on the window's edge -------------------------------------------------
-def _companion(**kw):
+# -- sitting on windows: back to her drawn sitting picture (2.3.3) ---------------------------------------------
+def test_she_sits_with_her_drawn_sitting_picture_again():
     from capri.app import asset_root
     from capri.controller import CompanionController
     from capri.settings import Settings
     from capri.ui.art import CharacterArt
     from capri.ui.companion import Companion
     from capri.ui.sprites import SpriteArt
-    c = Companion(CompanionController(), CharacterArt.load(asset_root() / "capri"), Settings(**kw),
+    c = Companion(CompanionController(), CharacterArt.load(asset_root() / "capri"), Settings(),
                   SpriteArt.load(asset_root() / "capri_v2"))
     c.show()
     app.processEvents()
-    return c
-
-
-def test_she_sits_on_the_window_with_her_own_figure():
-    import numpy as np
-    from PySide6.QtCore import QRect
-    from PySide6.QtGui import QGuiApplication, QImage, QPainter
-    from capri.ui import looks
-    c = _companion()
-    a = QGuiApplication.primaryScreen().availableGeometry()
-    win = QRect(a.left() + 100, a.top() + 420, 600, 300)
-    assert c.perch_on(win)
-    app.processEvents()
-    sit = c.sit_window
-    assert sit._geo is not None                                  # her rig, not the old picture
-    seat = sit.pos() + sit.seat_point()
-    assert abs(seat.y() - win.top()) <= 6 and win.left() < seat.x() < win.right()
-    img = QImage(sit.size(), QImage.Format.Format_ARGB32_Premultiplied)
-    img.fill(0)
-    sit.render(img)
-    alpha = looks.to_array(img)[..., 3] > 128
-    edge = sit.seat_point().y()
-    above, below = alpha[:edge].sum(), alpha[edge:].sum()
-    assert above > 0 and below > 0                               # her body above the edge, her shins over it
-    rows = np.flatnonzero(alpha.any(1))
-    assert rows[-1] - edge > 0.15 * sit.height()                 # her legs really hang down
-    box = sit.content_rect()
-    assert sit.rect().contains(box) and box.height() > 100
-
-
-def test_her_shins_swing_out_of_step_and_stay_on_her_knees():
-    c = _companion()
-    sit = c.sit_window
-    import numpy as np
-    kicks = [sit.kicks(t) for t in np.linspace(0, 2, 40)]
-    black, red = [k[0] for k in kicks], [k[1] for k in kicks]
-    assert max(black) > 0.6 and min(black) < -0.6 and max(abs(r) for r in red) > 0.2
-    assert black.index(max(black)) != red.index(max(red))
-    rig = c.character.full_rig()
-    for side in ("left", "right"):                               # each shin's top is at its knee
-        assert rig.shins[side].height() == rig.h and rig.knees[side].y() > rig.hip_joints[side].y()
-
-
-def test_sitting_follows_her_size():
-    c = _companion()
-    sit = c.sit_window
-    h100 = sit.height()
-    sit.set_compact(False, 150)
-    assert sit.height() > h100 * 1.3
-    sit.set_compact(False, 100)
-    assert sit.height() == h100
+    assert c.sit_window._geo is None                     # the old picture, not her full-body figure
 
 
 # -- her own voice in every language ----------------------------------------------------------------------------

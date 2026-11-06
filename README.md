@@ -309,7 +309,7 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 | **Voice → Microphone** | Pick which microphone she uses |
 | **Capri → Design** | Her art style (full body, portrait, classic, or an animated picture) |
 | **Capri → Lie on the panel** | She lies on top of her message panel |
-| **Capri → Sit on windows** | She hops onto the window you're using and sits on its edge, legs swinging |
+| **Capri → Sit on windows** | She hops onto the window you're using |
 | **Capri → Compact mode** | Smaller, one-line text box (she stays her size) |
 | **Capri → Hair** | "Like the show" or "Classic spiky" |
 | **Capri → Personality** | Edgerunner, Sarcastic, Silly, Tsundere, Sweet, Deadpan, Gremlin, Hype, Kuudere |
