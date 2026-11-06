@@ -255,8 +255,14 @@ class StormHair:
         p.drawPath(hair)
         p.setBrushOrigin(QPointF(0, 0))
         p.setBrush(STORM_DARK)
-        for poly in self._place(self._crown, head, t, intensity, energy):     # the black crown over her face
+        # the black crown over her face - with a thick edge of its own colour, so no sliver of desktop shows
+        # between it and her hair or the top of her head
+        seam = QPen(STORM_DARK, max(2.0, hw * 0.07))
+        seam.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        p.setPen(seam)
+        for poly in self._place(self._crown, head, t, intensity, energy):
             p.drawPolygon(poly)
+        p.setPen(Qt.PenStyle.NoPen)
         p.restore()
 
 

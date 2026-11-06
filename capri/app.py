@@ -225,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
     settings = Settings.load()
     from . import languages
     languages.set_current(settings.language)          # before her ears, brain and voice are set up
+    languages.keep_voice = settings.keep_voice
     if not args.preview and apply_waiting_update(settings):   # a downloaded update: install it, then she restarts
         return 0
     if not args.preview:
@@ -887,6 +888,7 @@ def main(argv: list[str] | None = None) -> int:
         language than English, Parakeet v3 hears every command (her quick ears only speak English)."""
         from . import languages
         languages.set_current(settings.language)
+        languages.keep_voice = settings.keep_voice
         service.cleanup = settings.mic_cleanup
         service.any_language = not languages.english()
         if not languages.english():

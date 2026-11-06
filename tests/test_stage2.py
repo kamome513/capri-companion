@@ -155,7 +155,7 @@ def test_compact_mode_keeps_feet_in_place_and_persists():
     anchor = c.content_geometry().bottomRight()
     c.set_compact(True)
     app.processEvents()
-    assert c.character.display_height == CHARACTER_HEIGHT[True]
+    assert c.character.display_height == CHARACTER_HEIGHT[False]       # v2.3.2: compact = a smaller text box, not her
     assert c.content_geometry().bottomRight() == anchor
     assert c.panel.panel_width < 300
     assert_panel_on_capri(c)

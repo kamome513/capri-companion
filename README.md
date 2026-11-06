@@ -6,6 +6,9 @@ A cyberpunk desktop companion. Capri stands in the corner of your screen, listen
 **"Hey Capri"**, and opens your apps and games, plays music, controls Discord, chats with you and more.
 Everything she hears is processed on your PC.
 
+**New here? Read the [guides](docs/README.md):** installing her (and the "Windows protected your PC" screen),
+setting up her AI, ElevenLabs and Fish Audio voices, languages, Discord, games, and fixes for common problems.
+
 ---
 
 ## Windows
@@ -127,9 +130,10 @@ German", press **Download Parakeet** (about 490 MB, once) and Apply.
   time, the weather, screenshots, minimise everything.
 - With an AI set up she understands everything else too, answers in your language, and her own lines are
   translated (once, then remembered on your PC).
-- Her voice: her neural voice speaks Spanish, French, Italian and Portuguese; otherwise a Windows voice for your
-  language if one is installed (Windows Settings → Time & language → Speech → Add voices), or espeak-ng.
-  ElevenLabs and Fish Audio speak them all.
+- Her voice: her own neural voice speaks all 25, with each language's pronunciation. Without it, a Windows
+  voice for your language if one is installed (Windows Settings → Time & language → Speech → Add voices), or
+  espeak-ng. ElevenLabs and Fish Audio speak them all.
+- Want only her hearing to change? Tick Settings → Wake word → "Keep her voice when I change language".
 
 ### What she does
 
@@ -283,7 +287,7 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 | "lie down" / "get up" | Lies on her panel, or stands up |
 | "sit on my window" / "stop sitting on windows" | She sits on top of the window you're using |
 | "go to the bottom left" | Moves her to another corner |
-| "compact mode" / "normal size" | Small or normal size |
+| "compact mode" / "normal size" | Small or normal text box |
 | "hide" / "come back" | Hides her (she still listens) |
 | "drone mode" / "normal mode" | Turns her into a little flying drone, and back |
 | "turn on game hype" / "turn off game hype" | Cheers when you get kills |
@@ -305,12 +309,13 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 | **Voice → Microphone** | Pick which microphone she uses |
 | **Capri → Design** | Her art style (full body, portrait, classic, or an animated picture) |
 | **Capri → Lie on the panel** | She lies on top of her message panel |
-| **Capri → Sit on windows** | She hops onto the window you're using |
-| **Capri → Compact mode** | Small Capri, one-line panel |
+| **Capri → Sit on windows** | She hops onto the window you're using and sits on its edge, legs swinging |
+| **Capri → Compact mode** | Smaller, one-line text box (she stays her size) |
 | **Capri → Hair** | "Like the show" or "Classic spiky" |
 | **Capri → Personality** | Edgerunner, Sarcastic, Silly, Tsundere, Sweet, Deadpan, Gremlin, Hype, Kuudere |
 | **Capri → Do something** | Glitch, play a game, watch something, or call D |
 | **Panel → Show status panel** | Her message panel on or off |
+| **Panel → Text box opens** | Always, when she has something to say, only when you say her name, or never |
 | **Panel → Show activity log** | The log lines under her message |
 | **Panel → Activity log style** | Log inside the panel, or as call cards above it |
 | **Drone → Drone mode now** | Turn into the little drone right now |
@@ -322,6 +327,7 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 | **Start with Windows** (Linux: **Start when I log in**) | Starts Capri when you sign in |
 | **Check for updates** / **Restart to update** | Looks for a newer Capri. Once one is downloaded, restarts her to install it (asks first) |
 | **Settings...** | Opens Settings (below) |
+| **Guides and help** | Opens the step-by-step guides on GitHub |
 | **Open log folder** | Opens `capri.log`, handy if something goes wrong |
 | **Restart Capri** | Closes and starts her again. A downloaded update installs on the way |
 | **Exit Capri** | Quits |
@@ -445,8 +451,8 @@ install something.
   (`%LOCALAPPDATA%\Capri` on Windows, `~/.config/Capri` on Linux). Delete `settings.json` there to reset her.
 - Only what you say to the AI (if you set one up) goes to that AI. Personal things don't, and your
   Windows user name is removed from anything that does.
-- On Discord, your profile shows "Playing Capri" while she's open, whether you're listening to music, and "Playing <game> with Capri" while you game
-  (never which song). While you're in a game she isn't shown at all. Nothing else about what you do is shown. To check for music, she
+- On Discord, your profile shows "Playing Capri" while she's open, whether you're listening to music (never which
+  song), and "Playing <game> with Capri" while you game. Nothing else about what you do is shown. To check for music, she
   asks Windows' sound mixer (Linux: your media players) which apps are making sound. Turn it off in
   Settings → PC & chat (Discord's own Activity Privacy setting also applies).
 - **Watch my screen** and "what do you see?" send a picture of your screen to the AI you picked (with Ollama it

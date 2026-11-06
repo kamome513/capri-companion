@@ -153,10 +153,10 @@ def test_a_voice_that_speaks_your_language_is_picked():
     assert box.for_language("Microsoft Zira") == "Microsoft Zira"
 
 
-def test_her_neural_voice_speaks_spanish_french_italian_portuguese():
+def test_her_neural_voice_speaks_every_language():
     from capri.speech.engines import KokoroEngine
-    assert KokoroEngine.speaks("es") and KokoroEngine.speaks("fr") and KokoroEngine.speaks("pt")
-    assert not KokoroEngine.speaks("de")
+    assert all(KokoroEngine.speaks(code) for code in languages.LANGUAGES)          # (2.3.2: not just es/fr/it/pt)
+    assert not KokoroEngine.speaks("xx")
 
 
 def test_espeak_says_it_in_your_language(monkeypatch):
@@ -469,3 +469,75 @@ def test_things_she_says_by_herself_show_in_her_text_box():
 def test_long_replies_show_whole():
     from capri.ui import status_panel
     assert status_panel.ANSWER_LINES >= 12
+
+
+# -- 2.3.2 --------------------------------------------------------------------------------------------------------------
+def test_text_box_modes_in_the_right_click_menu():
+    from PySide6.QtGui import QImage
+    from test_v111 import companion
+    from capri.ui.tray import CompanionMenu
+    c = companion()
+    menu = CompanionMenu(c, QImage(8, 8, QImage.Format.Format_ARGB32))
+    menu.box_modes["name"].trigger()
+    assert c.settings.show_panel and c.settings.panel_popup and c.settings.panel_on_name
+    menu.box_modes["never"].trigger()
+    assert not c.settings.show_panel
+    menu.sync()
+    assert menu.box_modes["never"].isChecked()
+
+
+def test_compact_mode_keeps_her_size_and_her_text_box_grows_with_her():
+    from test_v111 import companion
+    c = companion()
+    tall = c.character.display_height
+    c.set_compact(True)
+    assert c.character.display_height == tall                  # compact: just a smaller text box
+    narrow = c.panel.panel_width
+    c.set_compact(False)
+    normal = c.panel.panel_width
+    c.set_size(200)
+    assert c.panel.panel_width > normal and narrow < normal      # bigger her, bigger box
+    c.set_size(60)
+    assert c.panel.panel_width < normal
+
+
+def test_keep_my_voice_in_another_language():
+    from capri.speech import engines as e
+    box = e.VoiceBox.__new__(e.VoiceBox)
+    espeak = e.EspeakEngine()
+    espeak.voices = lambda: ["espeak: en"]
+    box.engines = [espeak]
+    languages.set_current("ru")
+    assert box.for_language("neural: Capri") == "espeak: en"
+    languages.keep_voice = True
+    try:
+        assert box.for_language("neural: Capri") == "neural: Capri"          # only what she hears changed
+    finally:
+        languages.keep_voice = False
+
+
+def test_no_gap_between_her_hair_crown_and_head():
+    """The black crown over her face sat in a slightly bigger hole in her hair: a sliver of desktop showed."""
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QColor, QImage, QPainter
+    from capri.ui.hair import StormHair
+    hair = StormHair()
+    head = QRectF(200, 200, 80, 90)
+    img = QImage(480, 480, QImage.Format.Format_ARGB32_Premultiplied)
+    img.fill(QColor(0, 255, 0))
+    p = QPainter(img)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    hair.paint(p, head, 0.0, 1.0)
+    p.end()
+    gaps = []
+    for poly in hair._place(hair._crown, head, 0.0, 1.0, 0.0):
+        for k in range(poly.count()):
+            pt = poly.at(k)
+            if not head.adjusted(4, 4, -4, -4).contains(pt):
+                continue                                    # the outside of her hair may touch the desktop
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    c = img.pixelColor(int(pt.x()) + dx, int(pt.y()) + dy)
+                    if c.green() > 120 and c.red() < 80:    # mostly background showing through
+                        gaps.append((int(pt.x()) + dx, int(pt.y()) + dy))
+    assert not gaps, gaps

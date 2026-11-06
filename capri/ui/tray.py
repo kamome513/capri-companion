@@ -13,6 +13,8 @@ from ..hotkeys import pretty
 from . import theme
 from .companion import Companion
 
+GUIDES_URL = "https://github.com/kamome513/capri-companion/blob/main/docs/README.md"
+
 if TYPE_CHECKING:
     from ..assistant import Assistant
 
@@ -97,6 +99,13 @@ class CompanionMenu(QObject):
                 acts.addAction(label, lambda n=name: companion.play_act(n))
         panel = self._sub(menu, "Panel")
         self.a_panel = self._check("Show status panel", companion.set_show_panel, panel)
+        box = self._sub(panel, "Text box opens")                        # when her text box shows
+        box_group = QActionGroup(box)
+        self.box_modes = {}
+        for key, label in (("always", "Always"), ("popup", "When she talks back"),
+                           ("name", "Only when I say her name"), ("never", "Never (just her)")):
+            self.box_modes[key] = self._check(label, lambda on, k=key: on and self._set_box_mode(k), box)
+            self.box_modes[key].setActionGroup(box_group)
         self.a_log = self._check("Show activity log", companion.set_show_log, panel)
         log_style = self._sub(panel, "Activity log style")
         styles_group = QActionGroup(log_style)
@@ -126,6 +135,7 @@ class CompanionMenu(QObject):
         if open_settings is not None:
             self.a_settings = menu.addAction("Settings...", open_settings)
         self.a_update = None
+        menu.addAction("Guides and help", self._open_guides)
         menu.addAction("Open log folder", self._open_logs)
         about = menu.addAction(f"Capri {__version__}")
         about.setEnabled(False)
@@ -231,6 +241,13 @@ class CompanionMenu(QObject):
         action.toggled.connect(lambda on: self._apply(slot, on))
         return action
 
+    def _set_box_mode(self, mode: str) -> None:
+        """Her text box: always there / pops up when she talks back / only when you say her name / never."""
+        c, s = self.companion, self.companion.settings
+        s.show_panel, s.panel_popup, s.panel_on_name = mode != "never", mode in ("popup", "name"), mode == "name"
+        s.save()
+        c._apply_visibility()
+
     def _set_music_deck(self, on: bool) -> None:
         s = self.companion.settings
         s.music_deck = on
@@ -254,6 +271,10 @@ class CompanionMenu(QObject):
         try:
             self.a_hide.setText("Show Capri" if c.hidden else "Hide Capri")
             self.a_panel.setChecked(s.show_panel)
+            mode = "never" if not s.show_panel else ("name" if getattr(s, "panel_on_name", False) else "popup") \
+                if getattr(s, "panel_popup", False) else "always"
+            for key, action in self.box_modes.items():
+                action.setChecked(key == mode)
             self.a_log.setChecked(s.show_log)
             for key, action in self.log_styles.items():
                 action.setChecked(s.log_style == key)
@@ -300,6 +321,13 @@ class CompanionMenu(QObject):
             action.triggered.connect(lambda _=False, n=name: self.assistant.set_device(n))
         if not names:
             self.mic_menu.addAction("(no microphones found)").setEnabled(False)
+
+    @staticmethod
+    def _open_guides() -> None:
+        """Her guides on GitHub: installing, AI, voices, languages, Discord, games, fixes."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl(GUIDES_URL))
 
     @staticmethod
     def _open_logs() -> None:

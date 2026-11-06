@@ -4,9 +4,9 @@
   language); what you say after it is heard by Parakeet v3 (about 650 MB, downloaded once, runs offline).
 * Understanding: the everyday commands (open, close, play, pause, next, louder, quieter, what time is it...)
   work in every one of these languages by themselves. Anything else goes to your AI, which understands them all.
-* Speaking: she picks a voice that speaks the language (her neural voice for Spanish, French, Italian and
-  Portuguese; a Windows voice for that language if you have one installed; espeak-ng otherwise; ElevenLabs
-  and Fish Audio speak them all). Your AI answers in your language, and her own built-in lines are translated
+* Speaking: her own neural voice speaks all of them, with each language's pronunciation (since 2.3.2); without
+  it, a Windows voice for that language if you have one installed, else espeak-ng. ElevenLabs and Fish Audio
+  speak them all. "Keep her voice" leaves your voice as it is. Your AI answers in your language, and her own built-in lines are translated
   by your AI once and remembered.
 """
 
@@ -22,7 +22,7 @@ class Language:
     name: str            # in English
     native: str          # in itself
     espeak: str          # espeak-ng voice
-    kokoro: tuple[str, str] | None = None     # (Kokoro voice, Kokoro language), if her neural voice speaks it
+    kokoro: tuple[str, str] | None = None     # (Kokoro's own speaker, its language code) for its accent, if Kokoro has one
 
 
 LANGUAGES: dict[str, Language] = {l.code: l for l in (
@@ -84,6 +84,7 @@ CUES = {
 }
 
 _current = "en"
+keep_voice = False       # Settings: keep her voice in any language (even one it can't pronounce)
 
 
 def set_current(code: str) -> str:

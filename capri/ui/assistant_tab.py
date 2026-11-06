@@ -127,7 +127,7 @@ class AssistantTab(QWidget):
         self.eleven_key.editingFinished.connect(self._eleven_key_entered)    # pasted a key: hear it right away
         form.addRow("ElevenLabs key", self.eleven_key)
         self.eleven_voice = QLineEdit(s.elevenlabs_voice)
-        self.eleven_voice.setPlaceholderText("voice ID (Voice Library -> a voice -> copy its ID); empty = a standard voice")
+        self.eleven_voice.setPlaceholderText("voice ID or link (My Voices -> a voice -> copy its ID); empty = a standard voice")
         form.addRow("ElevenLabs voice", self.eleven_voice)
         # Fish Audio: like ElevenLabs, with free credits to start (fish.audio -> API keys)
         self.fish_key = QLineEdit(secrets.get("fish_audio_api_key"))

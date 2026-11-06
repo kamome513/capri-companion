@@ -29,7 +29,13 @@ SIZES = ((60, "Tiny"), (80, "Small"), (100, "Normal"), (125, "Big"), (150, "Bigg
 
 
 def her_height(compact: bool, size: int) -> int:
-    return max(40, round(CHARACTER_HEIGHT[compact] * max(50, min(200, int(size or 100))) / 100))
+    """Her height: her Size only (compact mode makes her text box smaller, not her - v2.3.2)."""
+    return max(40, round(CHARACTER_HEIGHT[False] * max(50, min(200, int(size or 100))) / 100))
+
+
+def box_scale(size: int) -> float:
+    """How much her text box grows / shrinks with her size (a bit less than she does, so it stays readable)."""
+    return max(0.75, min(1.5, (max(50, min(200, int(size or 100))) / 100) ** 0.75))
 LOUNGE_OVERLAP = 7   # px of Capri's body resting over the panel's top edge when lying on it
 
 
@@ -68,7 +74,7 @@ class Companion(QObject):
 
         top = settings.always_on_top
         self.panel = StatusPanel(controller, art.icon, top)
-        self.panel.set_compact(settings.compact)
+        self.panel.set_compact(settings.compact, box_scale(settings.size))
         self.panel.set_show_log(settings.show_log and settings.log_style != "cards")
         self.panel.set_static(settings.panel_static)
         self.character = CharacterWindow(art, her_height(settings.compact, settings.size), top, sprites,
@@ -83,7 +89,7 @@ class Companion(QObject):
 
         self.drone_window = DroneWindow(top)
         self.drone_window.set_style(settings.drone_look)
-        self.sit_window = SitWindow(top, settings.compact, size=settings.size)
+        self.sit_window = SitWindow(top, False, size=settings.size, figure=lambda: self.character)
         self.feed = FeedWindow(controller, top, colours=self._call_colours)   # the chat skin's colours
         self.feed.resized.connect(self._place_feed)
         controller.changed.connect(self._on_changed)
@@ -334,13 +340,13 @@ class Companion(QObject):
 
     def set_compact(self, compact: bool) -> None:
         self.settings.compact = compact
-        self.sit_window.set_compact(compact, self.settings.size)
+        self.sit_window.set_compact(False, self.settings.size)          # (her size, not compact mode)
         window = self.perch_rect
         if window is not None:
             self.leave_perch()
         ch = self.character
         anchor = self.content_geometry().bottomRight()   # keep her feet where they are
-        self.panel.set_compact(compact)
+        self.panel.set_compact(compact, box_scale(self.settings.size))
         ch.lying_width = self._lying_width()
         ch.set_display_height(her_height(compact, self.settings.size))
         self._move_character(anchor - ch.content_rect().bottomRight(), self.screen)
@@ -526,6 +532,12 @@ class Companion(QObject):
         self.settings_changed.emit()
 
     def _apply_visibility(self) -> None:
+        try:
+            import shiboken6
+            if not shiboken6.isValid(self.drone_window):
+                return                                  # a late timer while she's closing: her windows are gone
+        except ImportError:
+            pass
         self._set_visibility()
         self.feed.set_allowed(self._feed_wanted())
 

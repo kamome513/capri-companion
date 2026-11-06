@@ -37,16 +37,18 @@ class PanelMetrics:
     f_log: QFont
 
 
-def normal_metrics() -> PanelMetrics:
-    return PanelMetrics(300, 10, 36, 2, True, 15, 52,
-                        theme.mono(7.5, bold=True, spacing=1.2), theme.mono(7, bold=True, spacing=0.8),
-                        theme.sans(10), theme.mono(8))
+def normal_metrics(scale: float = 1.0) -> PanelMetrics:
+    k = max(0.6, min(1.8, scale))
+    return PanelMetrics(round(300 * k), round(10 * k), round(36 * k), 2, True, round(15 * k), round(52 * k),
+                        theme.mono(7.5 * k, bold=True, spacing=1.2), theme.mono(7 * k, bold=True, spacing=0.8),
+                        theme.sans(10 * k), theme.mono(8 * k))
 
 
-def compact_metrics() -> PanelMetrics:
-    return PanelMetrics(210, 7, 24, 1, False, 13, 44,
-                        theme.mono(6.5, bold=True, spacing=1.0), theme.mono(6, bold=True, spacing=0.6),
-                        theme.sans(8.5), theme.mono(7))
+def compact_metrics(scale: float = 1.0) -> PanelMetrics:
+    k = max(0.6, min(1.8, scale))
+    return PanelMetrics(round(210 * k), round(7 * k), round(24 * k), 1, False, round(13 * k), round(44 * k),
+                        theme.mono(6.5 * k, bold=True, spacing=1.0), theme.mono(6 * k, bold=True, spacing=0.6),
+                        theme.sans(8.5 * k), theme.mono(7 * k))
 
 
 class StatusPanel(OverlayWindow):
@@ -125,8 +127,9 @@ class StatusPanel(OverlayWindow):
     def panel_width(self) -> int:
         return self.m.width
 
-    def set_compact(self, compact: bool) -> None:
-        self.m = compact_metrics() if compact else normal_metrics()
+    def set_compact(self, compact: bool, scale: float = 1.0) -> None:
+        """Compact (smaller text box) and her size: the text box grows and shrinks with her."""
+        self.m = compact_metrics(scale) if compact else normal_metrics(scale)
         self._icon_cache = None
         self.refresh()
 

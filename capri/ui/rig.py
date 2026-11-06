@@ -28,6 +28,13 @@ ELBOW = {"right": (0.80, 0.365), "left": (0.20, 0.37)}      # where each forearm
 FACE_BOX = (0.27, 0.075, 0.64, 0.188)      # x0, y0, x1, y1: her mask, eyes and jaw
 EYES = (((0.341, 0.1311), 0.031), ((0.544, 0.1135), 0.035))    # (centre, radius as a share of width)
 MOUTH = ((0.463, 0.1475), 0.13, -22.0)     # her zigzag grin: centre, length (share of width), angle
+KNEE = 0.725                               # her knees (share of height): sitting, the shins hang from here
+THIGH_TURN = -74                           # sitting: her thighs turned out along the edge (to the picture's right)
+THIGH_SPREAD = 3                           # ...the back one a touch lower
+THIGH_SEEN = 0.8                           # ...and a little shorter (they come toward you a bit)
+SHIN_TOE_IN = 0                            # her shins hang straight down from the knee
+SIT_ARMS = 7                               # sitting: her arms a little out, claws on the edge beside her
+KICK_DEGREES = 14                          # her shins swinging from the knee
 
 
 def _to_array(img: QImage) -> np.ndarray:
@@ -49,6 +56,22 @@ def _runs(row: np.ndarray) -> list[tuple[int, int]]:
     starts = np.r_[xs[0], xs[cuts + 1]]
     ends = np.r_[xs[cuts], xs[-1]]
     return list(zip(starts.tolist(), ends.tolist()))
+
+
+def _connected(mask: np.ndarray, row: int) -> np.ndarray:
+    """The part of `mask` joined to its pixels on `row` (grown outward from there, 8-connected)."""
+    seen = np.zeros_like(mask)
+    seen[row] = mask[row]
+    while True:
+        grown = seen.copy()
+        grown[1:] |= seen[:-1]
+        grown[:-1] |= seen[1:]
+        grown[:, 1:] |= grown[:, :-1]
+        grown[:, :-1] |= grown[:, 1:]
+        grown &= mask
+        if (grown == seen).all():
+            return seen
+        seen = grown
 
 
 def arm_masks(alpha: np.ndarray) -> dict[str, np.ndarray]:
@@ -137,6 +160,7 @@ class Pose:
     blink: float = 0.0         # 0..1: eyes closing
     mouth: float = 0.0         # 0..1: mouth open (lip-sync)
     stride: float = 0.0        # -1..1: walking - which leg is up (+ = the picture's right leg), arms swinging
+    sit: float = 0.0           # 0..1: sitting on a window's edge (paint_sitting)
 
 
 LEAN_DEGREES = 56
@@ -172,11 +196,40 @@ class Rig:
         self.upper, self.lower = part(upper), part(lower)
         # her legs, each on its own below the crotch, so she can walk (None: this figure's legs don't separate)
         self.hips, self.legs, self.hip_joints = None, None, None
+        self.thighs = self.shins = self.knees = self.shin_tilt = None
+        self.thigh_half = 0.0
         split = split_legs(lower, waist)
         if split is not None:
             hips_mask, leg_masks, self.hip_joints = split
             self.hips = part(hips_mask)
             self.legs = {side: part(m) for side, m in leg_masks.items()}
+            knee = int(KNEE * h)
+            self.thighs, self.shins, self.knees, self.shin_tilt = {}, {}, {}, {}
+            lows = {}
+            for side, m in leg_masks.items():
+                bottom = m.copy()
+                bottom[:knee - 4] = False
+                lows[side] = bottom
+            for side, other in (("left", "right"), ("right", "left")):     # bits of the other foot go back to it
+                own = _connected(lows[side], knee - 4)
+                stray = lows[side] & ~own
+                lows[side], lows[other] = own, lows[other] | stray
+            for side, m in leg_masks.items():
+                top = m.copy()
+                top[knee + 4:] = False                  # a little overlap: no gap at the knee
+                self.thighs[side], self.shins[side] = part(top), part(lows[side])
+                cols = np.flatnonzero(m[knee])
+                x = float(cols.mean()) if len(cols) else self.hip_joints[side].x()
+                self.knees[side] = QPointF(x, float(knee))
+                ankle_y = int(self.feet_row(alpha) - 0.05 * h)
+                cols = np.flatnonzero(lows[side][ankle_y])
+                ax = float(cols.mean()) if len(cols) else x
+                # the angle that stands this shin straight up and down (then toed in a little)
+                lean = math.degrees(math.atan2(ax - x, ankle_y - knee))
+                self.shin_tilt[side] = lean + (SHIN_TOE_IN if side == "left" else -SHIN_TOE_IN)
+            widths = [m[y].sum() for m in leg_masks.values()
+                      for y in range(int(self.hip_joints["right"].y()) + 10, knee - 10, 4) if m[y].any()]
+            self.thigh_half = float(np.median(widths)) / 2 if widths else 0.03 * w
         self.arms = {side: part(m) for side, m in arms.items()}
         # each arm again in two pieces, at the elbow, so a wave bends like a real arm
         self.upper_arms, self.forearms = {}, {}
@@ -208,6 +261,10 @@ class Rig:
         self.hair_style = hair_style
         self.hair = make_hair(hair_style, seed=33)
         self._hair_cache: tuple | None = None
+
+    @staticmethod
+    def feet_row(alpha: np.ndarray) -> int:
+        return int(np.flatnonzero(alpha.any(1))[-1])
 
     def set_hair_style(self, style: str) -> None:
         """Settings -> Character -> Hair: "storm" (traced from the show) or "classic" (her first)."""
@@ -280,6 +337,12 @@ class Rig:
         out.legs = {side: small(img) for side, img in self.legs.items()} if self.legs else None
         out.hip_joints = {side: QPointF(pt.x() * kx, pt.y() * ky) for side, pt in self.hip_joints.items()} \
             if self.hip_joints else None
+        out.thighs = {side: small(img) for side, img in self.thighs.items()} if self.thighs else None
+        out.shins = {side: small(img) for side, img in self.shins.items()} if self.shins else None
+        out.knees = {side: QPointF(pt.x() * kx, pt.y() * ky) for side, pt in self.knees.items()} \
+            if self.knees else None
+        out.shin_tilt = dict(self.shin_tilt) if self.shin_tilt else None
+        out.thigh_half = getattr(self, "thigh_half", 0.0) * kx
         out.head = QRectF(self.head.x() * kx, self.head.y() * ky, self.head.width() * kx, self.head.height() * ky)
         out.feet = QPointF(self.feet.x() * kx, self.feet.y() * ky)
         out.hair_style, out.hair = self.hair_style, make_hair(self.hair_style, seed=33)
@@ -310,6 +373,7 @@ class Rig:
             world += out * -6 * pose.reach
         world += lead * SWEEP_DEGREES * pose.sweep             # both trail behind the dash
         world += ARM_SWING * pose.stride * (1 if arm == "right" else -1) * 0.6 + ARM_SWING * pose.stride * 0.4
+        world -= out * SIT_ARMS * pose.sit
         return world - LEAN_DEGREES * pose.lean * 0.92         # and hang with gravity, not the lean
 
     def _arm(self, arm: str, pose: Pose, side: str) -> QTransform:
@@ -432,6 +496,69 @@ class Rig:
         else:
             p.drawImage(QPointF(0, 0), self.lower)
         p.restore()
+        self._paint_upper(p, height, pose, side, hair)
+        p.restore()
+
+    # -- sitting on a window's edge, facing you ------------------------------------------------------------
+    def can_sit(self) -> bool:
+        return bool(self.shins)
+
+    # Sitting: her upper body faces you as when she stands; her thighs lie along the window's edge (toward the
+    # picture's right) and her shins hang off it, swinging from the knee - the black leg behind, the red in front.
+    def _thigh(self, side: str) -> QTransform:
+        hip = self.hip_joints[side]
+        turn = THIGH_TURN + (THIGH_SPREAD if side == "left" else 0.0)
+        return QTransform().translate(hip.x(), hip.y()).rotate(turn).scale(1.0, THIGH_SEEN).translate(-hip.x(), -hip.y())
+
+    def sit_knee(self, side: str) -> QPointF:
+        return self._thigh(side).map(self.knees[side])
+
+    def sit_edge_y(self) -> float:
+        """Where the window's edge goes (figure coordinates, sitting): under her front (red) thigh, so it rests on
+        the edge."""
+        return self.sit_knee("right").y() + self.thigh_half
+
+    def sit_side(self) -> float:
+        """How far her knees reach past her body's right side (figure coordinates)."""
+        return max(0.0, max(self.sit_knee(side).x() for side in ("left", "right")) + self.thigh_half - self.w)
+
+    def sit_feet_y(self) -> float:
+        return max(self.sit_knee(side).y() for side in ("left", "right")) + (self.feet.y() - KNEE * self.h)
+
+    def sit_box(self) -> QRectF:
+        """Her sitting figure's bounds (figure coordinates, without the hair storm)."""
+        xs = [0.0, float(self.w)] + [self.sit_knee(side).x() + 0.12 * self.w for side in ("left", "right")]
+        return QRectF(min(xs), 0.0, max(xs) - min(xs), self.sit_feet_y())
+
+    def paint_sitting(self, p: QPainter, origin: QPointF, height: float, pose: Pose,
+                      kicks: tuple[float, float] = (0.0, 0.0), hair: bool = True) -> None:
+        """Draw her sitting, the figure's (0, 0) at `origin`, `height` = her standing figure's height. `kicks`
+        (-1..1): how far each shin (left = her black leg, right = her red leg) has swung."""
+        s = height / self.h
+        p.save()
+        p.setTransform(QTransform().translate(origin.x(), origin.y()).scale(s, s), True)
+        order = ("left", "right")                       # the black leg behind, the red one in front
+        for side in order:
+            self._paint_leg(p, side, kicks[order.index(side)])
+        p.drawImage(QPointF(0, 0), self.hips)
+        self._paint_upper(p, height, pose, "right", hair)     # her upper body as when she stands
+        p.restore()
+
+    def _paint_leg(self, p: QPainter, side: str, kick: float) -> None:
+        knee = self.sit_knee(side)
+        p.save()
+        p.setTransform(self._thigh(side), True)
+        p.drawImage(QPointF(0, 0), self.thighs[side])
+        p.restore()
+        p.save()
+        p.translate(knee)
+        p.rotate(self.shin_tilt[side] + KICK_DEGREES * kick)
+        p.translate(-self.knees[side])
+        p.drawImage(QPointF(0, 0), self.shins[side])
+        p.restore()
+
+    def _paint_upper(self, p: QPainter, height: float, pose: Pose, side: str, hair: bool) -> None:
+        p.save()
         p.setTransform(self._upper(pose), True)         # everything above the waist bends
         bald = hair and pose.wild > 0 and self.hair_style == "storm"   # (the traced hair replaces her own)
         p.drawImage(QPointF(0, 0), self.upper_bald if bald else self.upper)

@@ -678,12 +678,20 @@ class CharacterWindow(OverlayWindow):
             self._lying_neon = None
             self.update()
 
-    def figure_rig(self) -> Rig:
-        """Her full-body figure, pre-scaled for this size and screen (rebuilt if either changes)."""
+    def full_rig(self) -> Rig | None:
+        """Her full-body figure cut into parts, at full size (None without her sprites). Her sitting window
+        uses it too, so she looks the same sitting on a window."""
+        if self.sprites is None:
+            return None
         if self._rig_full is None:
             from .neon import body_image
             self._rig_full = Rig(body_image(self.sprites.frame("standing"), self.body_look),
                                  self.hair_style if self.hair_style in HAIR_STYLES else "storm")
+        return self._rig_full
+
+    def figure_rig(self) -> Rig:
+        """Her full-body figure, pre-scaled for this size and screen (rebuilt if either changes)."""
+        self.full_rig()
         dpr = self.devicePixelRatioF()
         key = (self._figure_h, dpr)
         if self._rig_key != key:

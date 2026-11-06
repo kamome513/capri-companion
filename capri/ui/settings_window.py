@@ -86,6 +86,8 @@ class SettingsWindow(QDialog):
         layout.addWidget(self.header)
         layout.addWidget(tabs)
         self.load_rows()
+        from .wheel_guard import guard
+        guard(self)                                    # scrolling the page never changes a setting
 
     def _watch(self, tab, i: int) -> None:
         from PySide6.QtWidgets import QAbstractButton, QAbstractSlider, QLineEdit as _Line
@@ -124,6 +126,8 @@ class SettingsWindow(QDialog):
 
     def showEvent(self, event) -> None:
         self.header.update()                           # readouts are fresh each time it opens
+        from .wheel_guard import guard
+        guard(self)                                    # boxes added since (AI fields, new rows...)
         super().showEvent(event)
 
     # -- Apps tab --------------------------------------------------------------------
@@ -607,6 +611,11 @@ class SettingsWindow(QDialog):
             self.language.addItem(lang.name if lang.native == lang.name else f"{lang.name} - {lang.native}", lang.code)
         self.language.setCurrentIndex(max(0, self.language.findData(self.settings.language)))
         form.addRow("Language", self.language)
+        self.keep_voice = QCheckBox("Keep her voice when I change language (only switch what she hears)")
+        self.keep_voice.setChecked(self.settings.keep_voice)
+        self.keep_voice.setToolTip("Off: in a language her voice can't speak, she uses one that can (a Windows "
+                                   "voice for it, or espeak). On: she keeps your voice - it may not pronounce it.")
+        form.addRow("", self.keep_voice)
         self.language_note = QLabel("")
         self.language_note.setObjectName("hint")
         self.language_note.setWordWrap(True)
@@ -676,7 +685,6 @@ class SettingsWindow(QDialog):
         self.language.currentIndexChanged.connect(lambda _i: self._language_changed())
         self._language_changed()
         self._hearing_changed()
-        from PySide6.QtWidgets import QCheckBox
         self.mic_cleanup = QCheckBox("Clean up my mic: turn a quiet mic up, cut rumble and hiss (on this PC)")
         self.mic_cleanup.setChecked(self.settings.mic_cleanup)
         form.addRow("", self.mic_cleanup)
@@ -791,6 +799,7 @@ class SettingsWindow(QDialog):
         self.settings.hotkey_click_through = self.hk_click.text().strip().lower()
         self.settings.hearing = self.hearing.currentData()
         self.settings.language = self._picked_language()
+        self.settings.keep_voice = self.keep_voice.isChecked()
         self.settings.whisper_size = self.whisper_size.currentData()
         self.settings.mic_cleanup = self.mic_cleanup.isChecked()
         self.settings.save()

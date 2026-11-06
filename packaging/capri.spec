@@ -80,9 +80,13 @@ if sys.platform.startswith("linux"):              # the PortAudio copy under the
     a.binaries = [(("libportaudio.so.2" if Path(dest).name.startswith("libportaudio.so") else dest), src, kind)
                   for dest, src, kind in a.binaries]
 a.datas = [d for d in a.datas if "translations" not in Path(d[0]).parts]
-# her neural voice speaks English: espeak's dictionaries for the 100+ other languages stay out (~18 MB)
+# espeak's pronunciation dictionaries: only her 25 languages' (~10 MB) - the 90 others stay out. (Before 2.3.2
+# only English's was kept, so in the built app she couldn't pronounce her other languages, and the spoken cue that
+# tells Parakeet your language was silent.)
+from capri.languages import LANGUAGES as _LANGS                                        # noqa: E402
+KEEP_DICTS = {lang.espeak.split("-")[0] + "_dict" for lang in _LANGS.values()}
 a.datas = [d for d in a.datas if not (Path(d[0]).name.endswith("_dict") and "espeak-ng-data" in Path(d[0]).parts
-                                      and Path(d[0]).name != "en_dict")]
+                                      and Path(d[0]).name not in KEEP_DICTS)]
 pyz = PYZ(a.pure)
 
 version_file = None

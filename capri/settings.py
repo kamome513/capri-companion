@@ -50,6 +50,7 @@ class Settings:
     shortcuts: list = field(default_factory=list)     # [phrase, command]: "gaming time" -> "open steam and discord"
     learned_buttons: list = field(default_factory=list)   # {"phrase", "app", "name", "x", "y"}: "leave call" ->
                                                           # Discord's red button (taught by pointing at it)
+    keep_voice: bool = False           # keep her voice when the language changes (it may not pronounce it right)
     language: str = "en"               # the language she hears, understands and speaks (languages.py: 25 of them)
     hearing: str = "vosk"              # "vosk" (light, quick) | "parakeet" (best for heavy accents, 480 MB download)
                                        # | "whisper" (better with accents - setup_hearing.bat)

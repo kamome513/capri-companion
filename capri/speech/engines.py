@@ -195,27 +195,39 @@ class KokoroEngine:
             self._kokoro = Kokoro(str(self.folder / KOKORO_MODEL), str(self.folder / KOKORO_VOICES))
         return self._kokoro
 
+    # In another language (v2.3.2): still HER voice, reading that language's own sounds (espeak-ng's pronunciation
+    # rules for it, as phonemes), with this much of a native Kokoro speaker blended in for the accent - her
+    # English voice alone said German like an English speaker. Picked by having Parakeet write down what she
+    # said in each of the 25 languages: 45% roughly halved its mistakes. Kokoro's own French, Spanish, Italian
+    # and Portuguese speakers for those; its Spanish one (the clearest elsewhere) for the rest.
+    ACCENT = 0.45
+    ACCENT_VOICE = "ef_dora"
+
     @staticmethod
     def speaks(code: str) -> bool:
         from .. import languages
-        return code == "en" or languages.get(code).kokoro is not None
+        return code in languages.LANGUAGES
+
+    def _style(self, k, name: str):
+        if name == self.CAPRI:
+            return sum(w * k.get_voice_style(v) for v, w in self.CAPRI_BLEND.items())
+        return k.get_voice_style(name)
 
     def synthesize(self, text: str, voice: str, speed: float, pitch: float = 0.0) -> Audio:
         from .. import languages
         k = self._model()
         name = voice[len(self.PREFIX):]
-        own = languages.get().kokoro                                # Spanish, French, Italian, Portuguese
-        if own is not None:
-            style, lang = own
-        else:
-            if name == self.CAPRI:
-                style = sum(w * k.get_voice_style(v) for v, w in self.CAPRI_BLEND.items())
-            else:
-                style = name
+        lang_info = languages.get()
+        english = lang_info.code == "en"
+        style = self._style(k, name)
+        if english:
             lang = "en-gb" if name.startswith("bf_") else "en-us"
+        else:
+            native, lang = lang_info.kokoro if lang_info.kokoro is not None else (self.ACCENT_VOICE, lang_info.espeak)
+            style = (1 - self.ACCENT) * style + self.ACCENT * k.get_voice_style(native)
         lift = 2 ** (pitch * self.PITCH_SCALE / 12)
         tempo = (0.8 + 0.6 * speed) / lift                          # 0.5 -> 1.1x, before the lift
-        said = respell(text) if own is None else text               # (her slang respellings are English)
+        said = respell(text) if english else text                   # (her slang respellings are English)
         samples, rate = k.create(said, voice=style, speed=max(0.5, min(2.0, tempo)), lang=lang)
         x = np.asarray(samples, dtype=np.float32)
         if abs(lift - 1) > 1e-3:
@@ -406,12 +418,22 @@ class ElevenLabsEngine:
         """ElevenLabs' own words: {"detail": {"status": "voice_limit_reached", "message": "..."}} or a string."""
         import json
         try:
-            data = json.loads(exc.read().decode("utf-8", "replace") or "{}")
+            text = exc.read().decode("utf-8", "replace")
         except Exception:
             return ""
+        try:
+            data = json.loads(text or "{}")
+        except ValueError:
+            return "" if "<" in text[:20] else text.strip()[:200]      # plain words, not a web page
         detail = data.get("detail") if isinstance(data, dict) else None
         if isinstance(detail, dict):
-            return str(detail.get("message") or detail.get("status") or "")[:200]
+            return str(detail.get("message") or detail.get("status") or detail.get("code") or "")[:200]
+        if isinstance(detail, list) and detail and isinstance(detail[0], dict):     # [{"loc": [...], "msg": ...}]
+            first = detail[0]
+            where = ".".join(str(x) for x in first.get("loc", [])[1:])
+            return f"{first.get('msg', '')}{' (' + where + ')' if where else ''}"[:200]
+        if isinstance(data, dict) and data.get("message"):
+            return str(data["message"])[:200]
         return str(detail or "")[:200]
 
     @staticmethod
@@ -423,39 +445,72 @@ class ElevenLabsEngine:
         with urllib.request.urlopen(req, timeout=20) as r:
             return r.read()
 
+    @staticmethod
+    def voice_from(text: str) -> str:
+        """A pasted voice link (...voice-library?voiceId=XYZ, .../voices/XYZ), "Name - XYZ" or the bare ID -> the ID.
+        Pasting the link or the name with it made ElevenLabs answer a bare "400"."""
+        import re
+        text = (text or "").strip()
+        m = re.search(r"voice_?id=([A-Za-z0-9]{16,32})", text, re.I)
+        if m:
+            return m.group(1)
+        ids = re.findall(r"(?<![A-Za-z0-9])[A-Za-z0-9]{20}(?![A-Za-z0-9])", text)
+        if ids:
+            return ids[-1]
+        return text.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1].strip()
+
+    # What she tries when ElevenLabs refuses a request (400/422), one change at a time: without the speed (some
+    # voices and models don't take it), with no voice settings at all, then their other two models.
+    REPAIRS = (("speed",), ("settings",), ("model", "eleven_turbo_v2_5"), ("model", "eleven_multilingual_v2"))
+
     def synthesize(self, text: str, voice: str, speed: float, pitch: float = 0.0) -> Audio:
         import urllib.error
-        voice_id = (type(self).voice_id() or "").strip() or self.DEFAULT_VOICE
+        voice_id = self.voice_from(type(self).voice_id()) or self.DEFAULT_VOICE
         from .. import languages
         said = respell(text, plain=True) if languages.english() else text     # (her slang respellings are English)
+        said = "".join(ch for ch in said if ch.isprintable() or ch in "\n").strip()
+        if not said:
+            raise RuntimeError("ElevenLabs: nothing to say")
         body = {"text": said, "model_id": self.MODEL,      # "chooom", never "chom"
                 "voice_settings": {"stability": 0.45, "similarity_boost": 0.8,
                                    "speed": round(0.85 + 0.3 * max(0.0, min(1.0, speed)), 2)}}
         headers = {"xi-api-key": type(self).key().strip()}
         url = "https://api.elevenlabs.io/v1/text-to-speech/{}?output_format=pcm_22050"
-        try:
-            raw = self._fetch(url.format(voice_id), body, headers)
-        except urllib.error.HTTPError as exc:
-            detail = self._detail(exc)
-            log.warning("speech: ElevenLabs refused (HTTP %s): %s", exc.code, detail)
-            low = detail.lower()
-            limited = any(w in low for w in ("library", "voice_limit", "voice limit", "free", "subscription",
-                                             "custom voices", "not allowed", "upgrade"))
-            if exc.code in (400, 402, 403, 422) and limited and voice_id != self.DEFAULT_VOICE:
-                try:                     # your plan can't use that voice: her default ElevenLabs voice instead
-                    raw = self._fetch(url.format(self.DEFAULT_VOICE), body, headers)
-                    log.info("speech: ElevenLabs won't use voice %s on this plan - used the default voice", voice_id)
-                    audio = _from_int16(raw[: len(raw) // 2 * 2], 22050)
-                    audio.pitched, audio.natural, audio.as_is = True, True, True
-                    return audio
-                except (urllib.error.HTTPError, OSError):
-                    pass
-            reason = {401: "the key doesn't work (or it's out of credit)", 402: "out of credit",
-                      429: "too many requests / out of credit", 404: "no voice with that ID",
-                      422: "no voice with that ID"}.get(exc.code, f"error {exc.code}")
-            raise RuntimeError(f"ElevenLabs: {detail or reason}"[:160]) from None
-        except OSError as exc:
-            raise RuntimeError("ElevenLabs: can't reach it") from exc
+        repairs = list(self.REPAIRS)
+        tried_default = voice_id == self.DEFAULT_VOICE
+        while True:
+            try:
+                raw = self._fetch(url.format(voice_id), body, headers)
+                break
+            except urllib.error.HTTPError as exc:
+                detail = self._detail(exc)
+                log.warning("speech: ElevenLabs refused (HTTP %s): %s", exc.code, detail)
+                low = detail.lower()
+                limited = any(w in low for w in ("library", "voice_limit", "voice limit", "free", "subscription",
+                                                 "custom voices", "not allowed", "upgrade", "fine_tuned",
+                                                 "fine-tuned", "not found", "not_found", "does not exist"))
+                if exc.code in (400, 402, 403, 404, 422) and limited and not tried_default:
+                    log.info("speech: ElevenLabs won't use voice %s (%s) - trying the default voice", voice_id, detail)
+                    voice_id, tried_default = self.DEFAULT_VOICE, True       # your plan can't use that voice
+                    continue
+                if exc.code in (400, 422) and repairs:
+                    what = repairs.pop(0)                   # change one thing and ask again
+                    if what[0] == "speed":
+                        body["voice_settings"].pop("speed", None)
+                    elif what[0] == "settings":
+                        body.pop("voice_settings", None)
+                    else:
+                        body["model_id"] = what[1]
+                    log.info("speech: ElevenLabs - retrying with %s", " ".join(what))
+                    continue
+                reason = {400: "it refused the request (check the voice ID)",
+                          401: "the key doesn't work (or it's out of credit, or the key isn't allowed Text to "
+                               "Speech)", 402: "out of credit", 429: "too many requests / out of credit",
+                          404: "no voice with that ID", 422: "no voice with that ID"}.get(exc.code,
+                                                                                         f"error {exc.code}")
+                raise RuntimeError(f"ElevenLabs: {detail or reason}"[:200]) from None
+            except OSError as exc:
+                raise RuntimeError("ElevenLabs: can't reach it") from exc
         if len(raw) < 64:
             raise RuntimeError("ElevenLabs: sent no sound")
         audio = _from_int16(raw[: len(raw) // 2 * 2], 22050)
@@ -604,13 +659,15 @@ class VoiceBox:
         return audio
 
     def for_language(self, voice: str) -> str:
-        """Your voice if it speaks your language; else one that does: her neural voice (Spanish, French, Italian,
-        Portuguese), a Windows voice for that language, then espeak-ng. Online voices and beeps speak them all."""
+        """Your voice if it speaks your language; else one that does: her neural voice (all 25 languages since
+        2.3.2), a Windows voice for that language, then espeak-ng. Online voices and beeps speak them all."""
         from .. import languages
         code = languages.current()
-        if code == "en" or voice.startswith((ElevenLabsEngine.PREFIX, FishAudioEngine.PREFIX, BeepEngine.PREFIX)):
+        if code == "en" or languages.keep_voice or \
+                voice.startswith((ElevenLabsEngine.PREFIX, FishAudioEngine.PREFIX, BeepEngine.PREFIX)):
             return voice
-        if voice.startswith(KokoroEngine.PREFIX) and KokoroEngine.speaks(code):
+        if voice.startswith(KokoroEngine.PREFIX) and KokoroEngine.speaks(code) and \
+                any(isinstance(e, KokoroEngine) and voice in e.voices() for e in self.engines):
             return voice
         for engine in self.engines:
             if isinstance(engine, KokoroEngine) and KokoroEngine.speaks(code) and engine.voices():

@@ -45,7 +45,8 @@ FLASH = 0.4             # seconds of the teleport flash
 FLASH_SIZE = 200
 RED = QColor(236, 16, 70)
 ART = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2])) / "assets" / "perch"
-SIT_HEIGHT = {False: 300, True: 170}     # normal / compact
+SIT_HEIGHT = {False: 300, True: 170}     # normal / compact (the old drawn picture)
+FIGURE_HEIGHT = 250                      # her standing figure's height at size 100% (as in her own window)
 SINK = 4                                 # px of her thigh resting below the window's top edge
 PAD = 24                                 # room round her for the swinging foot
 FPS = 30
@@ -104,16 +105,17 @@ class _Flash(OverlayWindow):
 
 
 class SitWindow(OverlayWindow):
-    """Her sitting on the window's edge, swinging her legs: the black one and the red one each
-    swing from their own knee, out of step. Each lower leg is its own layer (the part the other
-    leg hid is painted in), and the top of each shin also stays in her body, so a knee never
-    opens up and nothing shows a gap as they swing. She breathes a little, pivoting on her
-    seat, so she stays put on the edge."""
+    """Her sitting on the window's edge (v2.3.2): her own full-body figure - the same as when she stands, storm
+    hair and all - with her thighs resting along the edge and her shins hanging off it, swinging from the knee
+    out of step. She blinks, and her mouth moves while she talks.
+
+    Without her figure (another look), the old drawn sitting picture: each lower leg swinging from its knee."""
 
     def __init__(self, always_on_top: bool = True, compact: bool = False, art: Path = ART,
-                 size: int = 100) -> None:
+                 size: int = 100, figure: Callable[[], object] | None = None) -> None:
         super().__init__(always_on_top)
         self.art = art
+        self.figure = figure or (lambda: None)          # -> her CharacterWindow (her rig, hair, voice level)
         info = json.loads((art / "sit.json").read_text())
         self.art_w, self.art_h = info["size"]
         self.knees = {"black": QPointF(*info["black_knee"]), "red": QPointF(*info["red_knee"])}
@@ -122,34 +124,79 @@ class SitWindow(OverlayWindow):
         self._t0 = time.monotonic()
         self._scaled: dict = {}
         self._scaled_key = None
+        self._rig_small = None
+        self._rig_key = None
+        self._geo = None                                 # (rig, figure height, box, edge) for the rig layout
         self._timer = QTimer(self)
         self._timer.setInterval(1000 // FPS)
         self._timer.timeout.connect(self.update)
+        self.size_pct = size
         self.set_compact(compact, size)
 
+    # -- which figure: her rig, or the old picture --------------------------------------------------------
+    def _rig(self):
+        ch = self.figure()
+        rig = ch.full_rig() if ch is not None and hasattr(ch, "full_rig") else None
+        return rig if rig is not None and rig.can_sit() else None
+
     def set_compact(self, compact: bool, size: int = 100) -> None:
-        self.height_px = round(SIT_HEIGHT[compact] * size / 100)
-        self.s = self.height_px / self.art_h
-        self.setFixedSize(QSize(round(self.art_w * self.s) + PAD * 2, self.height_px + PAD * 2))
+        self.size_pct = size
+        rig = self._rig()
+        if rig is None:
+            self._geo = None
+            self.height_px = round(SIT_HEIGHT[compact] * size / 100)
+            self.s = self.height_px / self.art_h
+            self.setFixedSize(QSize(round(self.art_w * self.s) + PAD * 2, self.height_px + PAD * 2))
+        else:
+            fig_h = max(40, round(FIGURE_HEIGHT * size / 100))
+            k = fig_h / rig.h
+            head = rig.head
+            pad, hh = head.width() * 1.35, head.height()
+            reach = rig.shins["right"].height() * 0.3     # her feet swinging out
+            left = min(0.0, head.left() - pad)
+            right = max(rig.w + rig.sit_side() + reach, head.right() + pad)
+            top = head.top() - hh * 1.8
+            bottom = rig.sit_feet_y() + 6
+            origin = QPointF((-left) * k + 4, (-top) * k + 4)          # the figure's (0, 0) in the window
+            self._geo = (rig, fig_h, k, origin)
+            self.height_px = round((bottom - top) * k)
+            self.setFixedSize(QSize(round((right - left) * k) + 8, self.height_px + 8))
         self.update()
+
+    def refresh(self) -> None:
+        """Her look, hair or size changed: lay her out again."""
+        self._rig_small = self._rig_key = None
+        self.set_compact(False, self.size_pct)
 
     def set_talking(self, on: bool) -> None:
         self.talking = on
 
     def seat_point(self) -> QPoint:
-        """Where on the window she sits on the edge: under her black knee, at seat height."""
+        """Where on the window she sits: the window's top edge goes through this point."""
+        if self._geo is not None:
+            rig, _h, k, origin = self._geo
+            knee = rig.sit_knee("right")
+            return QPoint(round(origin.x() + knee.x() * k), round(origin.y() + rig.sit_edge_y() * k))
         return QPoint(round(PAD + self.knees["black"].x() * self.s), round(PAD + self.seat * self.s))
 
     def content_rect(self) -> QRect:
+        if self._geo is not None:
+            rig, _h, k, origin = self._geo
+            box = rig.sit_box()
+            return QRect(round(origin.x() + box.x() * k), round(origin.y() + box.y() * k),
+                         round(box.width() * k), round(box.height() * k))
         return QRect(PAD, PAD, round(self.art_w * self.s), self.height_px)
 
     def showEvent(self, event) -> None:
+        if (self._rig() is None) != (self._geo is None):
+            self.refresh()                              # her look changed while she wasn't sitting
         self._timer.start()
         super().showEvent(event)
 
     def hideEvent(self, event) -> None:
         self._timer.stop()
         self._scaled, self._scaled_key = {}, None          # nothing kept while she isn't sitting
+        self._rig_small = self._rig_key = None
         super().hideEvent(event)
 
     def _layers(self, dpr: float) -> dict:
@@ -175,7 +222,18 @@ class SitWindow(OverlayWindow):
         breath = 0.01 * math.sin(t * 1.6)
         return black, red, breath
 
+    def kicks(self, t: float) -> tuple[float, float]:
+        """Her shins' swing (-1..1, black leg, red leg) at time t: out of step, livelier while she talks."""
+        black, red, _breath = self.pose(t)
+        return black / 10.0, red / 3.2 * 0.55
+
     def paintEvent(self, event) -> None:
+        rig = self._rig()
+        if (rig is None) != (self._geo is None) or (rig is not None and rig is not self._geo[0]):
+            self.refresh()                              # her look or hair changed: lay her out again
+            rig = self._rig()
+        if self._geo is not None and rig is not None:
+            return self._paint_rig()
         layers = self._layers(self.devicePixelRatioF())
         black, red, breath = self.pose(time.monotonic() - self._t0)
         p = QPainter(self)
@@ -195,6 +253,28 @@ class SitWindow(OverlayWindow):
             p.translate(-knee)
             p.drawImage(QPointF(0, 0), layers[name])
             p.restore()
+        p.end()
+
+    def _paint_rig(self) -> None:
+        from .rig import Pose
+        rig, fig_h, _k, origin = self._geo
+        dpr = self.devicePixelRatioF()
+        key = (fig_h, dpr, id(rig))
+        if self._rig_key != key:                        # pre-scaled for this size and screen: sharp and quick
+            self._rig_small, self._rig_key = rig.resized(max(8, round(fig_h * dpr))), key
+        small = self._rig_small
+        ch = self.figure()
+        t = time.monotonic() - self._t0
+        level = float(getattr(ch, "level", 0.0) or 0.0) if self.talking else 0.0
+        wild = float(getattr(ch, "wild_hair", 0.7))
+        blink = max(0.0, 1.0 - abs((t % 4.3) - 0.12) / 0.12)        # a blink every few seconds
+        pose = Pose(sit=1.0, wild=wild, t=t, energy=level, blink=blink, mouth=min(1.0, level * 1.6))
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.translate(origin)
+        p.scale(1 / dpr, 1 / dpr)
+        small.paint_sitting(p, QPointF(0, 0), small.h, pose, self.kicks(t))
         p.end()
 
 
