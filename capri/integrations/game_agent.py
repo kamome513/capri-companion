@@ -259,7 +259,16 @@ class GameAgent:
         self.stop_event.set()
 
     # -- the loop --------------------------------------------------------------------------------------------------
+    @staticmethod
+    def _blank(image) -> bool:
+        try:
+            from .screen_watch import is_blank
+            return is_blank(image)
+        except Exception:
+            return False
+
     def _run(self, hwnd: int) -> None:
+        log.info("game: playing %r (goal: %s)", self.game, self.goal)
         why = "done"
         try:
             hands = self.hands_factory()
@@ -267,6 +276,7 @@ class GameAgent:
         except Exception as exc:
             log.exception("game: stopped by a problem")
             why = f"problem: {exc}"
+        log.info("game: stopped - %s (%d moves)", why, len(self.moves))
         self.finished(why)
         try:
             self._reflect(why)
@@ -304,6 +314,9 @@ class GameAgent:
             if window is None:
                 return "closed"
             image = self.grab(window)
+            if image is not None and self._blank(image):
+                log.info("game: the picture of %s came out black", self.game or "the game")
+                return "black"                          # exclusive fullscreen hides the picture from other apps
             jpeg = self.jpeg(image) if image is not None else ""
             if not jpeg:
                 return "no picture"
@@ -315,6 +328,7 @@ class GameAgent:
             if getattr(reply, "error", False):
                 return "ai: " + (reply.text or "it didn't answer")
             plan = parse_plan(reply.text)
+            log.info("game: step %d - AI said: %s", _step + 1, re.sub(r"\s+", " ", reply.text or "")[:300])
             if plan is None:
                 self.moves.append("(answer wasn't a plan)")
                 continue
@@ -333,6 +347,7 @@ class GameAgent:
                     return "switched"
                 self._do(hands, move)
                 self.moves.append(describe(move))
+                log.info("game: did %s", describe(move))
             if plan["done"]:
                 return "done"
         return "steps"
@@ -369,6 +384,8 @@ ENDINGS = {
     "time": "That's five minutes - I'll hand it back.",
     "steps": "I've done all I can for now. Your turn.",
     "no picture": "I can't see the game window, so I stopped.",
+    "black": "Your game shows up black to me - it's in exclusive fullscreen. Switch it to windowed (F11 in "
+             "Minecraft) or borderless, then ask me again.",
     "no ai": "I need an AI that can see to play. Pick one in my Settings.",
 }
 

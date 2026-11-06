@@ -174,3 +174,55 @@ def rps_winner(you: str, her: str) -> str:
         return "draw"
     beats = {"rock": "scissors", "paper": "rock", "scissors": "paper"}
     return "you" if beats[you] == her else "her"
+
+
+# -- in a game: what you say is done in the game ("turn around", "jump", "mine that") -----------------------------
+# Camera turns are in mouse counts: about 1200 for half a turn at Minecraft's default sensitivity.
+HALF_TURN = 1200
+GAME_MOVES: list[tuple[str, list[dict]]] = [
+    (r"(?:turn|spin|look) (?:all the way )?(?:around|round|over|behind(?: you| me| us)?)|do a 180|180|about face",
+     [{"look": [HALF_TURN, 0]}]),
+    (r"(?:turn|look|face) (?:to the )?left(?: a bit| a little)?", [{"look": [-HALF_TURN // 2, 0]}]),
+    (r"(?:turn|look|face) (?:to the )?right(?: a bit| a little)?", [{"look": [HALF_TURN // 2, 0]}]),
+    (r"look (?:up|at the sky)(?: a bit| a little)?", [{"look": [0, -300]}]),
+    (r"look (?:down|at the ground|at the floor)(?: a bit| a little)?", [{"look": [0, 300]}]),
+    (r"look (?:straight|ahead|forward)", [{"look": [0, 0]}]),
+    (r"jump(?: up)?(?: again)?|hop", [{"key": "space", "hold": 0.25}]),
+    (r"(?:jump|hop) (?:forward|over(?: it| that)?|up there)", [{"key": "w", "hold": 0.25}, {"key": "space", "hold": 0.25}, {"key": "w", "hold": 0.8}]),
+    (r"(?:go|walk|move|run|keep going|go straight)(?: forward| ahead| straight| on)?(?: a bit| a little)?",
+     [{"key": "w", "hold": 1.5}]),
+    (r"(?:go|walk|move|run) (?:a lot|far|forward a lot)|keep (?:walking|running)", [{"key": "w", "hold": 3.0}]),
+    (r"(?:go|walk|move|step) back(?:wards?)?(?: a bit| a little)?|back up|backwards", [{"key": "s", "hold": 1.2}]),
+    (r"(?:go|walk|move|step|strafe) left(?: a bit| a little)?", [{"key": "a", "hold": 1.0}]),
+    (r"(?:go|walk|move|step|strafe) right(?: a bit| a little)?", [{"key": "d", "hold": 1.0}]),
+    (r"(?:crouch|sneak|duck|shift)(?: down)?", [{"key": "shift", "hold": 1.5}]),
+    (r"(?:mine|break|dig|chop|punch|hit|attack|kill)(?: it| this| that| the (?:block|tree|wood|log|stone|dirt|mob|"
+     r"zombie|creeper|thing))?(?: down| up)?", [{"mine": 2.5}]),
+    (r"(?:place|put down|build|use|eat|open)(?: it| this| that| a block| the block| the door| the chest| food)?",
+     [{"use": 0.15}]),
+    (r"(?:open (?:my |the )?)?inventory|open (?:my |the )?bag|close (?:my |the )?inventory", [{"key": "e", "hold": 0.1}]),
+    (r"(?:hotbar |slot |item )?(?:number )?(one|two|three|four|five|six|seven|eight|nine|[1-9])"
+     r"(?: slot)?|(?:switch|go) to slot (one|two|three|four|five|six|seven|eight|nine|[1-9])", "slot"),
+]
+_DIGITS = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8",
+           "nine": "9"}
+
+
+def game_move(t: str) -> list[dict]:
+    """The moves for something you said mid-game, or [] if it isn't one."""
+    t = re.sub(r"^(?:(?:capri|hey capri|can you|could you|please|now|and|ok|okay)\s+)+", "", t)
+    t = re.sub(r"(?:\s+(?:please|now|capri|for me))+$", "", t)
+    for pattern, moves in GAME_MOVES:
+        m = re.fullmatch(pattern, t)
+        if not m:
+            continue
+        if moves == "slot":
+            if not re.search(r"slot|hotbar|item|number", t):
+                continue                                       # a bare "three" isn't a slot
+            digit = next(g for g in m.groups() if g)
+            return [{"key": _DIGITS.get(digit, digit), "hold": 0.1}]
+        return [dict(move) for move in moves]
+    return []
+
+
+GAME_WORDS = ("the game", "this game", "game", "this", "it", "that", "for me", "")

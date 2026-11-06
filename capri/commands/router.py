@@ -223,6 +223,11 @@ class CommandRouter(QObject):
             if english != text:
                 self.controller.log("Language", f'"{text[:28]}" -> "{english[:28]}"')
                 text = english
+        if self._in_game_now():                         # in a game: "turn around", "jump", "mine that" happen there
+            from .more import game_move
+            moves = game_move(normalise(text))
+            if moves:
+                return self._game_moves(moves, text)
         own = self._own_app_command(text)
         if own is not None:                             # your own app names / "also say" names come first
             self._learn_from_rephrase(own, text)
@@ -244,8 +249,89 @@ class CommandRouter(QObject):
             if meant is not None:
                 self.controller.log("Heard", f'"{normalise(text)}" -> "{meant}"')
                 intent = parse(meant)
+        intent = self._game_ask(intent, text)
         self._learn_from_rephrase(intent, text)
         self.dispatch(intent, text)
+
+    # -- in a game -----------------------------------------------------------------------------------------------
+    def _in_game_now(self) -> bool:
+        agent, in_game = self.services.game_agent, getattr(self.services, "in_game", None)
+        try:
+            if (agent is not None and agent.running) or (callable(in_game) and in_game()):
+                return True
+        except Exception:
+            pass
+        desktop = self.services.desktop             # Minecraft from any launcher (CurseForge, Prism, plain Java):
+        try:                                        # its window says so
+            hwnd = desktop.foreground() if hasattr(desktop, "foreground") else None
+            title = desktop.window_title(hwnd) if hwnd and hasattr(desktop, "window_title") else ""
+        except Exception:
+            return False
+        return bool(re.match(r"(?:minecraft|roblox)\b", (title or "").strip().lower()))
+
+    def _game_ask(self, intent: Intent, text: str) -> Intent:
+        """'Play minecraft' / 'play the game for me' / 'play for me' while that game is in front: she plays it -
+        not a song called "Minecraft" on Spotify. Also 'play <one of your games> for me' from anywhere."""
+        from .more import GAME_WORDS
+        t = re.sub(r"[^\w' ]+", " ", (text or "").lower())          # as said ("for me" is dropped by normalise)
+        what = (intent.query or "").strip().lower()
+        if intent.kind is Kind.PLAY:
+            for_me = bool(re.search(r"\bfor me\b", t))
+            if self._is_game(what) and (for_me or self._in_game_now()):
+                return Intent(Kind.PLAY_GAME)
+            if self._in_game_now() and what in GAME_WORDS:
+                return Intent(Kind.PLAY_GAME)
+        if intent.kind is Kind.MEDIA and intent.query == "resume" and re.search(r"\bplay\b.*\bfor me\b", t) \
+                and self._in_game_now():
+            return Intent(Kind.PLAY_GAME)                             # "play for me" mid-game: not "resume music"
+        return intent
+
+    def _is_game(self, name: str) -> bool:
+        if not name:
+            return False
+        from .games import GAME_NAMES
+        known = {v.lower() for v in GAME_NAMES.values()} | {"minecraft", "roblox", "fortnite", "valorant", "terraria",
+                                                            "deadlock", "rocket league", "among us", "fall guys"}
+        if name in known:
+            return True
+        try:
+            return any(normalise(g.name) == name or name in [normalise(a) for a in getattr(g, "aliases", [])]
+                       for g in self.catalog.games)
+        except Exception:
+            return False
+
+    def _game_moves(self, moves: list[dict], text: str) -> None:
+        """Something you said mid-game, done in the game: turn, walk, jump, mine, place, inventory, hotbar slot."""
+        from ..integrations.game_agent import Rect, checked, describe
+        agent = self.services.game_agent
+        factory = getattr(agent, "hands_factory", None) if agent is not None else None
+        if factory is None:
+            return self.assistant.show_result(State.ERROR, "I can't press keys in games here.")
+        done: list[str] = []
+
+        def work() -> None:
+            hands = factory()
+            for raw in moves:
+                if "look" in raw:                       # your own turns can be bigger than hers
+                    dx, dy = raw["look"]
+                    hands.look(int(dx), int(dy))
+                    done.append(f"looked {dx:+d},{dy:+d}")
+                    continue
+                move = checked(raw, Rect(0, 0, 100, 100))
+                if move is None:
+                    continue
+                if move[0] == "key":
+                    hands.hold(move[1], move[2])
+                elif move[0] == "press":
+                    hands.press(move[1], move[2])
+                done.append(describe(move))
+
+        def finished(result) -> None:
+            if isinstance(result, Exception):
+                return self.assistant.show_result(State.ERROR, f"Couldn't do that in the game: {str(result)[:50]}")
+            self.controller.log("In game", f"{normalise(text)[:20]}: {', '.join(done)}"[:60])
+            self.controller.set_state(State.IDLE, "")
+        self._background(work, finished)
 
     OWN_VERBS = {"open": Kind.OPEN, "launch": Kind.OPEN, "start": Kind.OPEN, "run": Kind.OPEN, "load": Kind.OPEN,
                  "close": Kind.CLOSE, "quit": Kind.CLOSE, "exit": Kind.CLOSE, "kill": Kind.CLOSE, "shut": Kind.CLOSE}

@@ -1,6 +1,13 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.4.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.5.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
+
+**2.3.5: games.**
+- **Tell her what to do in the game.** While a game is in front, "turn around", "turn left", "look up", "jump", "go forward", "go back", "crouch", "mine that", "place a block", "open inventory" and "slot 3" happen in the game.
+- **"Play minecraft" / "play the game" / "play for me" make her play the game** in front - no more Spotify playing a song called "Minecraft". "Play minecraft for me" works from anywhere.
+- Minecraft is recognised from any launcher (CurseForge, Prism...), by its window.
+- If your game shows up black to her (exclusive fullscreen), she says so and tells you the fix (windowed or borderless) instead of playing blind.
+- Every step she takes while playing goes in her log (what the AI saw and decided, each key and click), so when she gets stuck it's clear why.
 
 **2.3.4: lots of new things.**
 - **She plays Minecraft properly.** In games that steer the camera with the mouse she now clicks where the crosshair is instead of moving the pointer (that yanked the view), holds the button to mine, walks and turns at the same time, and knows the Minecraft basics. Minecraft from the Microsoft Store launcher counts as a game now too.

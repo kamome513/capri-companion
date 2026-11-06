@@ -429,3 +429,97 @@ def test_minecraft_counts_as_a_game_wherever_its_launcher_put_it():
     for exe in (r"C:\Users\K\AppData\Roaming\.minecraft\runtime\java-runtime-gamma\windows-x64\java-runtime-gamma\bin\javaw.exe",
                 r"C:\Users\K\AppData\Local\Packages\Microsoft.4297127D64EC6_8wekyb3d8bbwe\LocalCache\Local\runtime\java-runtime-delta\windows-x64\java-runtime-delta\bin\javaw.exe"):
         assert looks_like_game(Front(4242, exe)) == "library"
+
+
+def test_a_black_game_picture_stops_her_with_the_fix():
+    from PySide6.QtGui import QColor, QImage
+    from capri.integrations.game_agent import GameAgent, Rect, ending
+    black = QImage(320, 200, QImage.Format.Format_RGB32)
+    black.fill(QColor(0, 0, 0))
+    ended = []
+
+    class Hands:
+        def escape_pressed(self):
+            return False
+    agent = GameAgent(object(), Hands, lambda r: black, lambda: 7, lambda h: Rect(0, 0, 320, 200), print,
+                      ended.append, sleep=lambda s: None)
+    agent.start("get wood", background=False)
+    assert ended == ["black"] and "windowed" in ending("black")
+
+
+# -- 2.3.5: in a game, your words happen in the game ----------------------------------------------------------------
+def test_game_words_become_game_moves():
+    from capri.commands.more import game_move
+    assert game_move("turn over") == [{"look": [1200, 0]}] == game_move("turn around")
+    assert game_move("jump") == [{"key": "space", "hold": 0.25}]
+    assert game_move("capri go forward please") == [{"key": "w", "hold": 1.5}]
+    assert game_move("mine that") == [{"mine": 2.5}] and game_move("place a block") == [{"use": 0.15}]
+    assert game_move("slot 3") == [{"key": "3", "hold": 0.1}] and game_move("three") == []
+    assert game_move("play some music") == [] and game_move("open discord") == []
+
+
+class _GameDesktop:
+    def __init__(self, title):
+        self.title = title
+
+    def foreground(self):
+        return 77
+
+    def window_title(self, hwnd):
+        return self.title
+
+
+def _game_rig(title="Minecraft 1.21.4"):
+    from test_v11 import FakeDesktop, rig
+    r = rig(FakeDesktop())
+    pressed = []
+
+    class Hands:
+        def look(self, dx, dy):
+            pressed.append(("look", dx, dy))
+        def hold(self, key, seconds, look=(0, 0)):
+            pressed.append(("hold", key))
+        def press(self, button, hold):
+            pressed.append(("press", button))
+
+    class Agent:
+        running = False
+        hands_factory = Hands
+        started = []
+        def start(self, goal):
+            self.started.append(goal)
+            return ""
+    r.router.services.game_agent = Agent()
+    r.router.services.desktop = _GameDesktop(title)
+    r.assistant.settings.game_play = True
+    return r, pressed
+
+
+def _settle():
+    import time as _t
+    from PySide6.QtWidgets import QApplication
+    for _ in range(30):
+        QApplication.processEvents()
+        _t.sleep(0.01)
+
+
+def test_in_minecraft_turn_around_turns_her_around_in_the_game():
+    r, pressed = _game_rig()
+    r.router.handle("turn over")
+    r.router.handle("jump")
+    _settle()
+    assert ("look", 1200, 0) in pressed and ("hold", "space") in pressed
+
+
+def test_play_minecraft_in_minecraft_plays_the_game_not_spotify():
+    from capri.commands.parser import Intent, Kind
+    r, _pressed = _game_rig()
+    assert r.router._game_ask(Intent(Kind.PLAY, query="minecraft"), "play minecraft") == Intent(Kind.PLAY_GAME)
+    assert r.router._game_ask(Intent(Kind.PLAY, query="the game"), "play the game") == Intent(Kind.PLAY_GAME)
+    assert r.router._game_ask(Intent(Kind.MEDIA, query="resume"), "play for me") == Intent(Kind.PLAY_GAME)
+    music = Intent(Kind.PLAY, query="lofi beats")
+    assert r.router._game_ask(music, "play lofi beats") == music          # real music is still music
+    away, _ = _game_rig(title="Untitled - Notepad")
+    assert away.router._game_ask(Intent(Kind.PLAY, query="minecraft"), "play minecraft") == \
+        Intent(Kind.PLAY, query="minecraft")                               # not in a game: as before
+    assert away.router._game_ask(Intent(Kind.PLAY, query="minecraft"), "play minecraft for me") == Intent(Kind.PLAY_GAME)

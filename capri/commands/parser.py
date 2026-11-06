@@ -763,7 +763,7 @@ LOOK_WORDS = (rf"{_PLS}(?:look at (?:my|the|this) screen|(?:take a )?look at (?:
               rf"what do you think (?:of|about) (?:this|that|my screen)|check (?:out )?my screen|"
               rf"what(?:'s|s| is) (?:this|that)(?: on my screen)?|read my screen|help me with (?:this|what'?s on my screen))"
               rf"(?: right now| please| for me)*")
-PLAY_FOR_ME = (rf"{_PLS}(?:play (?:this|it|the game|this game|for me|this for me|it for me|this game for me)"
+PLAY_FOR_ME = (rf"{_PLS}(?:play (?:this game for me|this for me|it for me|the game|this game|for me|this|it)"
                rf"(?: for me)?|take over(?: the game)?|your turn|you play(?: for me)?|you try|you have a go|"
                rf"have a go(?: at this)?|take the wheel|take control)(?:,? (?:and |to |then )?(?P<goal>.+))?")
 STOP_PLAYING = (rf"{_PLS}(?:stop playing (?:the game|for me|this|it)|my turn|give it back|i'?ll play|hands off|let me play|stop the game|"
