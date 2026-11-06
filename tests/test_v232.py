@@ -523,3 +523,55 @@ def test_play_minecraft_in_minecraft_plays_the_game_not_spotify():
     assert away.router._game_ask(Intent(Kind.PLAY, query="minecraft"), "play minecraft") == \
         Intent(Kind.PLAY, query="minecraft")                               # not in a game: as before
     assert away.router._game_ask(Intent(Kind.PLAY, query="minecraft"), "play minecraft for me") == Intent(Kind.PLAY_GAME)
+
+
+def test_scrolling_settings_never_crashes_even_over_the_scroll_bar():
+    """2.3.6: the guard caught the page's scroll bar too, which handed the wheel to itself forever (a crash)."""
+    from PySide6.QtWidgets import QScrollBar
+    from capri.ui.wheel_guard import guard
+    page = QWidget()
+    v = QVBoxLayout(page)
+    boxes = [QComboBox() for _ in range(30)]
+    for b in boxes:
+        b.addItems(["a", "b"])
+        v.addWidget(b)
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    area.setWidget(page)
+    area.resize(300, 200)
+    area.show()
+    app.processEvents()
+    guard(area)
+    bar = area.verticalScrollBar()
+    assert not bar.property("capri_wheel_guard")                  # scroll bars are never guarded
+    for _ in range(5):
+        _wheel(bar)                                                 # over the scroll bar itself
+        _wheel(boxes[3])                                            # over a drop-down
+        _wheel(area.viewport())                                     # over the page
+    assert bar.value() > 0 and all(b.currentIndex() == 0 for b in boxes)
+    for sb in area.findChildren(QScrollBar):
+        assert not sb.property("capri_wheel_guard")
+    area.close()
+
+
+def test_scrolling_the_real_settings_window_doesnt_crash():
+    from capri.app import asset_root
+    from capri.ui.art import CharacterArt
+    from test_v11 import FakeDesktop, rig
+    from capri.ui.settings_window import SettingsWindow
+    from capri.ui.extras_tab import ExtrasTab
+    r = rig(FakeDesktop())
+    s = r.assistant.settings
+    win = SettingsWindow(r.router, s, CharacterArt.load(asset_root() / "capri").icon, lambda: [],
+                         [(ExtrasTab(s, lambda: None, lambda: None), "Extras")])
+    win.show()
+    app.processEvents()
+    for tab in range(win.tabs.count()):
+        win.tabs.setCurrentIndex(tab)
+        app.processEvents()
+        page = win.tabs.currentWidget()
+        for w in [page] + page.findChildren(QWidget)[:80]:
+            if w.isVisible():
+                _wheel(w)
+                _wheel(w, down=False)
+    win.close()

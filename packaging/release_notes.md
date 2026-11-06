@@ -1,6 +1,8 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.5.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.6.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
+
+**2.3.6: scrolling in Settings no longer crashes Capri.** The 2.3.2 fix that stopped scrolling from changing settings also caught the page's own scroll bar, which then passed the scroll to itself over and over until Capri crashed. Fixed.
 
 **2.3.5: games.**
 - **Tell her what to do in the game.** While a game is in front, "turn around", "turn left", "look up", "jump", "go forward", "go back", "crouch", "mine that", "place a block", "open inventory" and "slot 3" happen in the game.
