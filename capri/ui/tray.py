@@ -64,6 +64,13 @@ class CompanionMenu(QObject):
         size.addSeparator()
         size.addAction("Bigger", lambda: companion.set_size(_step(companion.settings.size, +1)))
         size.addAction("Smaller", lambda: companion.set_size(_step(companion.settings.size, -1)))
+        from ..ai import tiers
+        brain = self._sub(menu, "Intelligence")             # Low / Medium / High: how smart her AI is
+        brain_group = QActionGroup(brain)
+        self.levels = {}
+        for value in tiers.LEVELS:
+            self.levels[value] = self._check(tiers.LABELS[value], lambda on, v=value: on and self._set_level(v), brain)
+            self.levels[value].setActionGroup(brain_group)
         menu.addSeparator()
         # everything else sorted into folders
         if assistant is not None:
@@ -275,6 +282,9 @@ class CompanionMenu(QObject):
         try:
             self.a_hide.setText("Show Capri" if c.hidden else "Hide Capri")
             self.a_quiet.setChecked(bool(getattr(s, "quiet_mode", False)))
+            from ..ai import tiers
+            for value, action in getattr(self, "levels", {}).items():
+                action.setChecked(value == tiers.level(getattr(s, "intelligence", tiers.DEFAULT)))
             self.a_panel.setChecked(s.show_panel)
             mode = "never" if not s.show_panel else ("name" if getattr(s, "panel_on_name", False) else "popup") \
                 if getattr(s, "panel_popup", False) else "always"
@@ -341,6 +351,18 @@ class CompanionMenu(QObject):
         from ..logs import log_dir
         log_dir().mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_dir())))
+
+    def _set_level(self, value: str) -> None:
+        """Right-click -> Intelligence -> Low / Medium / High."""
+        if self._syncing or self.assistant is None:
+            return
+        handle = getattr(self.assistant, "command_handler", None)
+        if callable(handle):
+            handle(f"set your intelligence to {value}")        # same as saying it (free-key help included)
+        else:
+            from ..ai import tiers
+            tiers.apply(self.companion.settings, value)
+            self.assistant.settings_changed.emit()
 
     def _toggle_quiet(self) -> None:
         if self._syncing:

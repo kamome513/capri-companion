@@ -163,7 +163,7 @@ def test_the_menu_is_sorted_into_folders():
     # (not QAction.menu(): on PySide 6.8 the menu it returns gets deleted when Python lets go of it)
     subs = {m.menuAction(): m.title() for m in menu.menu.findChildren(QMenu)}
     folders = [subs[a] for a in menu.menu.actions() if a in subs]
-    assert folders == ["Size", "Capri", "Panel", "Drone", "Window"]
+    assert folders == ["Size", "Intelligence", "Capri", "Panel", "Drone", "Window"]
     menu.log_styles["cards"].trigger()
     assert c.settings.log_style == "cards" and not c.panel.show_log
     menu.log_styles["panel"].trigger()

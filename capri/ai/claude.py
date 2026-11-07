@@ -264,8 +264,10 @@ class AIReply:
 class ClaudeBrain:
     def __init__(self, api_key: Callable[[], str], info: dict[str, Callable[[dict], str]],
                  client_factory: Callable | None = None, clock: Callable[[], float] = time.monotonic,
-                 slang: Callable[[], bool] = lambda: False, persona: Callable[[], str] = lambda: "edgerunner") -> None:
+                 slang: Callable[[], bool] = lambda: False, persona: Callable[[], str] = lambda: "edgerunner",
+                 intelligence: Callable[[], str] = lambda: "high") -> None:
         self._slang, self._persona = slang, persona
+        self._intelligence = intelligence             # Low / Medium / High: which Claude model (ai/tiers.py)
         self._api_key = api_key
         self._info = info
         self._client_factory = client_factory or self._default_client
@@ -274,6 +276,13 @@ class ClaudeBrain:
         self._client_key = None
         self._no_fallback = False         # this key / account turned down the fallback option (400): sent without it
         self.reset()
+
+    def model_name(self) -> str:
+        from .tiers import claude_model
+        try:
+            return claude_model(self._intelligence())
+        except Exception:
+            return MODEL
 
     @staticmethod
     def _default_client(key: str):
@@ -367,7 +376,7 @@ class ClaudeBrain:
             self._client, self._client_key = self._client_factory(key), key
         try:
             response = self._create(
-                model=MODEL, max_tokens=2000,
+                model=self.model_name(), max_tokens=2000,
                 output_config={"effort": "low"},
                 system=system_prompt(self._slang(), self._persona()),
                 messages=[{"role": "user", "content": ([
@@ -396,7 +405,7 @@ class ClaudeBrain:
         import anthropic
 
         def send():
-            return self._create(model=MODEL, max_tokens=8000,
+            return self._create(model=self.model_name(), max_tokens=8000,
                                 output_config={"effort": "low"},     # quick chat replies
                                 cache_control={"type": "ephemeral"},
                                 system=system_prompt(self._slang(), self._persona()),

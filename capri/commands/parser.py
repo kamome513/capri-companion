@@ -91,6 +91,7 @@ class Kind(Enum):
     QUIET_MODE = "quiet_mode"     # "quiet mode" / "you can talk again": query = on | off (2.3.4)
     REMINDER = "reminder"         # "remind me tomorrow at 9 to call mum": targets = ("<day>|<time>", what)
     RPS = "rps"                   # rock paper scissors: query = start | rock | paper | scissors
+    INTELLIGENCE = "intelligence" # "set your intelligence to high" / "be smarter": query = low | medium | high | ""
     UNKNOWN = "unknown"
 
 
@@ -1035,6 +1036,9 @@ def parse(text: str) -> Intent:
     rps = more.rps_intent(t)
     if rps:
         return Intent(Kind.RPS, query=rps)
+    smart = more.intelligence_intent(t)
+    if smart is not None:
+        return Intent(Kind.INTELLIGENCE, query=smart)
     for pattern, kind in SIMPLE:
         if re.fullmatch(pattern, t):
             return Intent(kind)

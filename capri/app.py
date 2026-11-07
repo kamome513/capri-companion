@@ -344,12 +344,14 @@ def main(argv: list[str] | None = None) -> int:
         settings.save()
     brain = Brains(settings,
                    ClaudeBrain(lambda: secrets.get("anthropic_api_key"), info=info, slang=lambda: settings.slang,
-                               persona=lambda: settings.personality),
+                               persona=lambda: settings.personality, intelligence=lambda: settings.intelligence),
                    LocalBrain(lambda: settings.ollama_url, lambda: settings.ollama_model, info,
-                              slang=lambda: settings.slang, persona=lambda: settings.personality),
+                              slang=lambda: settings.slang, persona=lambda: settings.personality,
+                              intelligence=lambda: settings.intelligence),
                    OpenAIBrain(lambda: settings.openai_preset, lambda: settings.openai_url,
                                lambda: settings.openai_model, lambda: secrets.get("openai_api_key"), info,
-                               slang=lambda: settings.slang, persona=lambda: settings.personality))
+                               slang=lambda: settings.slang, persona=lambda: settings.personality,
+                               intelligence=lambda: settings.intelligence))
     if not linux:
         desktop = WindowsDesktop()      # power, minimising, Discord keys - fixed actions only
     ui = WindowsUI()               # presses apps' own buttons (Discord's Mute, Spotify's Play)
@@ -474,6 +476,13 @@ def main(argv: list[str] | None = None) -> int:
             pass
         return click_on_screen(target, how)
     services.point_at = lambda x, y: point_bridge.point.emit(int(x), int(y))
+
+    def open_url(url: str) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        if url.startswith("https://"):
+            QDesktopServices.openUrl(QUrl(url))
+    services.open_url = open_url
     if linux:                                  # "click subscribe": read the window (Tesseract), click it
         from .linux import screen as linux_screen
         services.screen = Finder(linux_screen.NoAccessibility(), target_window, desktop.hwnd_rect, cursor_pos,

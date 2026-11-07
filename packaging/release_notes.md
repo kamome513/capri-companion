@@ -1,6 +1,12 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.7.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.8.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
+
+**2.3.8: Intelligence - Low, Medium, High.** One setting for how smart she is: right-click her → **Intelligence**, Settings → Assistant → **Intelligence**, or say "set your intelligence to high" / "be smarter".
+- **Low:** quick and light (or the small AI on your PC). Fine for chat and commands.
+- **Medium (default):** a capable model that can see your screen - free with a Google Gemini key. This is what makes her good at games and "what do you see?".
+- **High:** the smartest model your AI has. A bit slower.
+It works with every AI she supports (Gemini, NVIDIA, ChatGPT, Claude, Groq, OpenRouter, Mistral, xAI, DeepSeek, and Ollama on your PC). Picking Medium or High without a key opens Google's free-key page and sets everything else up for you - just paste the key. And if you ask her to play a game on low power, she tells you.
 
 **2.3.7: she actually plays now, and updates install straight away.**
 - **She works the game out.** On her first look she figures out what game it is, who she's playing, how you win and what to do next - and keeps that plan, updating it as she goes, every look after.

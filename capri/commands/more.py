@@ -226,3 +226,31 @@ def game_move(t: str) -> list[dict]:
 
 
 GAME_WORDS = ("the game", "this game", "game", "this", "it", "that", "for me", "")
+
+
+# -- her intelligence: "set your intelligence to high", "be smarter", "what's your intelligence" ---------------------
+INTEL_SET = (r"(?:set|switch|change|put|turn)(?: up| down)? (?:your |my |the |capri s )?(?:intelligence|brain|iq|smarts|"
+             r"ai level|brain level)(?: level| mode)? (?:to |on |at )?(?P<lvl>low|medium|mid|normal|high|max(?:imum)?|"
+             r"min(?:imum)?)(?: level| mode)?"
+             r"|(?:use |go |switch to |turn on )?(?:your )?(?P<lvl2>low|medium|high|max(?:imum)?) intelligence(?: mode)?"
+             r"|intelligence (?P<lvl3>low|medium|high|max)")
+INTEL_UP = r"(?:be|get|go) (?:a lot |way |much )?smarter|(?:use|turn on) (?:your )?big brain|max(?:imum)? brain power"
+INTEL_DOWN = r"be (?:a bit )?dumber(?: please)?|(?:use|go to) (?:your )?small brain|(?:use )?less brain power"
+INTEL_ASK = (r"(?:what s|whats|what is) your (?:intelligence|brain|iq)(?: level| set to)?"
+             r"|how smart are you(?: set to)?")
+
+
+def intelligence_intent(t: str) -> str | None:
+    """"low" / "medium" / "high", "up", "down", "" (asking), or None (not about her intelligence)."""
+    m = re.fullmatch(INTEL_SET, t)
+    if m:
+        word = m.group("lvl") or m.group("lvl2") or m.group("lvl3") or ""
+        return {"mid": "medium", "normal": "medium", "max": "high", "maximum": "high", "min": "low",
+                "minimum": "low"}.get(word, word)
+    if re.fullmatch(INTEL_UP, t):
+        return "up"
+    if re.fullmatch(INTEL_DOWN, t):
+        return "down"
+    if re.fullmatch(INTEL_ASK, t):
+        return ""
+    return None

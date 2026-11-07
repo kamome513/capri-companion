@@ -254,6 +254,18 @@ class AssistantTab(QWidget):
         self.ai_on = QCheckBox("Chatbot: chat with her about anything (commands still work as usual)")
         self.ai_on.setChecked(s.ai_enabled)
         form.addRow(self.ai_on)
+        from ..ai import tiers
+        self.intelligence = QComboBox()                  # Low / Medium / High (2.3.8)
+        for value in tiers.LEVELS:
+            self.intelligence.addItem(tiers.LABELS[value], value)
+        self.intelligence.setCurrentIndex(max(0, self.intelligence.findData(tiers.level(s.intelligence))))
+        self.intelligence.setToolTip("How smart she is: which model she uses on the AI you picked below. Medium and "
+                                     "High are best for games and \u201cwhat do you see?\u201d.")
+        self.intelligence.currentIndexChanged.connect(self._intelligence_picked)
+        self.free_key_btn = QPushButton("Get a free key (Google Gemini)")
+        self.free_key_btn.setToolTip("Opens Google's page: click Create API key, copy it, paste it in API key below")
+        self.free_key_btn.clicked.connect(self._free_key)
+        form.addRow("Intelligence", self._with_button(self.intelligence, self.free_key_btn))
         # One list: every AI she can use. Only the boxes that AI needs are shown.
         from ..ai.openai_compat import PRESETS
         self.ai_pick = QComboBox()
@@ -387,6 +399,8 @@ class AssistantTab(QWidget):
             s.openai_preset = picked.split(":", 1)[1]
         s.openai_url = self.ai_url.text().strip()
         s.openai_model = self.ai_model.text().strip()
+        from ..ai import tiers
+        s.intelligence = tiers.level(self.intelligence.currentData())
         if self.ai_key.text().strip() != secrets.get("openai_api_key"):
             secrets.set_many({"openai_api_key": self.ai_key.text().strip()})
         s.ollama_model = self.ollama_model.text().strip() or "llama3.2"
@@ -395,6 +409,22 @@ class AssistantTab(QWidget):
             secrets.set_many({"anthropic_api_key": key})
         s.save()
         self.assistant.settings_changed.emit()
+
+    def _intelligence_picked(self, _index: int) -> None:
+        """A new level: the model box goes back to empty, so the level picks the model."""
+        self.ai_model.setText("")
+
+    def _free_key(self) -> None:
+        """The free Google Gemini key: pick Gemini and open Google's key page."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from ..ai import tiers
+        i = self.ai_pick.findData("openai:gemini")
+        if i >= 0:
+            self.ai_pick.setCurrentIndex(i)
+        self.ai_on.setChecked(True)
+        QDesktopServices.openUrl(QUrl(tiers.FREE_KEY_URL))
+        self.ai_key.setFocus()
 
     def _memory(self):
         return getattr(getattr(self.router, "chatbot", None), "memory", None)

@@ -6,6 +6,20 @@ understand odd ways of saying things, answer in your language, and look at your 
 Open Settings → **Assistant** → **AI conversation**, tick **Chatbot**, then pick one under **AI**.
 Paste the key into **API key** (she checks it straight away) and press **Test AI**.
 
+## Intelligence: Low, Medium, High
+
+How smart she is, on whatever AI you picked: right-click her → **Intelligence**, Settings → Assistant →
+**Intelligence**, or say "set your intelligence to high" / "be smarter".
+
+| Level | What it means |
+|---|---|
+| Low | Quick and light, or the small AI on your PC. Fine for chat and commands, bad at games |
+| Medium (default) | A capable model that can see your screen. Free with a Google Gemini key. Good at games and "what do you see?" |
+| High | The smartest model your AI has. A bit slower (and on paid AIs, more per message) |
+
+The quickest way: pick **Medium** and press **Get a free key (Google Gemini)**. She opens Google's page: click
+**Create API key**, copy it, and paste it into **API key**. That's it.
+
 ## Free options
 
 ### Google Gemini (free, easiest)

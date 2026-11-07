@@ -138,6 +138,7 @@ class Services:
     in_game: Callable[[], bool] | None = None   # are you in a game right now (then: never tab you out of it)
     open_settings: Callable[[], None] | None = None   # "open your settings": her Settings window
     point_at: Callable[[int, int], None] | None = None  # her little pink cursor glides there (physical pixels)
+    open_url: Callable[[str], None] | None = None        # a web page in your browser (the free-key page)
     updates: Any = None             # ui.updates.UpdateManager: "check for updates" / "update yourself"
     restart: Callable[[], None] | None = None   # "restart yourself": a fresh Capri (installs a waiting update)
     doctor: Any = None              # ai.doctor.AIDoctor: "set up your brain"
@@ -519,6 +520,7 @@ class CommandRouter(QObject):
             Kind.QUIET: self._quiet, Kind.VOICE: self._voice, Kind.TIMER: self._timer,
             Kind.PERCH_ON: lambda i: self._perch(True), Kind.PERCH_OFF: lambda i: self._perch(False),
             Kind.QUIET_MODE: self._quiet_mode, Kind.REMINDER: self._reminder, Kind.RPS: self._rps,
+            Kind.INTELLIGENCE: self._intelligence,
             Kind.HYPE_ON: lambda i: self._hype(True), Kind.HYPE_OFF: lambda i: self._hype(False),
         }.get(intent.kind)
         if handler is None:
@@ -2242,8 +2244,13 @@ class CommandRouter(QObject):
             return self.assistant.confirm("Want me to take over? I'll press keys and click in the game window "
                                           "you've got in front - Esc stops me any time. Say yes or no.", answer)
         goal = intent.query
-        self.assistant.show_result(State.SUCCESS, "My turn! Esc takes it back." + (f" Goal: {goal}." if goal else ""),
-                                   emotion="playful")
+        from ..ai import tiers
+        weak = tiers.level(getattr(s, "intelligence", tiers.DEFAULT)) == "low" or \
+            getattr(s, "ai_provider", "") == "local"
+        tip = (" Heads up: my brain's on low power, so I'll be clumsy - say \u201cset your intelligence to "
+               "medium\u201d for a free, much smarter one.") if weak else ""
+        self.assistant.show_result(State.SUCCESS, "My turn! Esc takes it back." + (f" Goal: {goal}." if goal else "")
+                                   + tip, emotion="playful")
 
         def go() -> None:                        # once she's done talking and the game's back in front
             why = agent.start(goal)
@@ -2977,6 +2984,31 @@ class CommandRouter(QObject):
                 (" " + said if said else "")
             self.assistant.show_result(State.SUCCESS, f"That's {content.facts}.{tip}")
         self._background(work, done)
+
+    def _intelligence(self, intent: Intent) -> None:
+        """'Set your intelligence to high' / 'be smarter' / 'what's your intelligence' (Low / Medium / High)."""
+        from ..ai import tiers
+        s = self.services.settings
+        if s is None:
+            return self._result(State.ERROR, "unknown")
+        now = tiers.level(getattr(s, "intelligence", tiers.DEFAULT))
+        want = intent.query
+        if want == "":
+            return self.assistant.show_result(State.SUCCESS, tiers.describe(s))
+        if want in ("up", "down"):
+            i = tiers.LEVELS.index(now) + (1 if want == "up" else -1)
+            if not 0 <= i < len(tiers.LEVELS):
+                return self.assistant.show_result(State.SUCCESS, "I'm already on High - that's my biggest brain."
+                                                  if want == "up" else "I'm already on Low.")
+            want = tiers.LEVELS[i]
+        said, needs_key = tiers.apply(s, want)
+        self.assistant.settings_changed.emit()
+        self.controller.log("Intelligence", tiers.SHORT[tiers.level(want)])
+        if needs_key:
+            open_url = getattr(self.services, "open_url", None)
+            if callable(open_url):
+                open_url(tiers.FREE_KEY_URL)
+        self.assistant.show_result(State.SUCCESS, said, emotion="happy")
 
     RPS_WAIT = 45.0                # seconds she waits for your hand after "rock paper scissors"
 

@@ -181,8 +181,10 @@ class OpenAIBrain:
     def __init__(self, preset: Callable[[], str], url: Callable[[], str], model: Callable[[], str],
                  api_key: Callable[[], str], info: dict[str, Callable[[dict], str]], fetch: Callable = http.request,
                  clock: Callable[[], float] = time.monotonic, slang: Callable[[], bool] = lambda: False,
-                 persona: Callable[[], str] = lambda: "edgerunner") -> None:
+                 persona: Callable[[], str] = lambda: "edgerunner", intelligence: Callable[[], str] = lambda: "") -> None:
         self._preset, self._url, self._model, self._key = preset, url, model, api_key
+        self._intelligence = intelligence             # Low / Medium / High (ai/tiers.py) - unless you typed a model
+        self._level_seen = None
         self._info, self._fetch, self._clock, self._slang, self._persona = info, fetch, clock, slang, persona
         self._skip: set[str] = set()          # options this service turned out not to accept
         self.stand_in = ""                    # the model she switched to when yours doesn't exist (any more)
@@ -198,8 +200,24 @@ class OpenAIBrain:
     def base(self) -> str:
         return ((self._url() or "").strip() or self.preset()[1]).rstrip("/")
 
+    def _level(self) -> str:
+        try:
+            level = self._intelligence() or ""
+        except Exception:
+            level = ""
+        if level != self._level_seen:                 # you changed her intelligence: forget the old stand-ins
+            self._level_seen, self.stand_in = level, ""
+            self.__dict__.pop("_vision_model", None)
+        return level
+
+    def typed_model(self) -> str:
+        return (self._model() or "").strip()
+
     def model(self) -> str:
-        return self.stand_in or (self._model() or "").strip() or self.preset()[2]
+        from .tiers import chat_model
+        level = self._level()
+        tier = chat_model(self._preset() or DEFAULT_PRESET, level) if level else ""
+        return self.stand_in or self.typed_model() or tier or self.preset()[2]
 
     def list_models(self) -> list[str]:
         """The models this key can use (the service's own /models list). Blocking."""
@@ -322,7 +340,10 @@ class OpenAIBrain:
         if not jpeg_b64:
             return self._look_words(prompt, headers)
         candidates = []
-        for m in [self.model(), getattr(self, "_vision_model", "")] + list(VISION_MODELS.get(preset, ())):
+        from .tiers import vision_model
+        level = self._level()
+        eyes = vision_model(preset, level) if level and not self.typed_model() else ""
+        for m in [eyes, self.model(), getattr(self, "_vision_model", "")] + list(VISION_MODELS.get(preset, ())):
             if m and m not in candidates:
                 candidates.append(m)
         if getattr(self, "_vision_model", "") in candidates:          # the one that worked last time, first

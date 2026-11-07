@@ -693,3 +693,50 @@ def test_a_downloaded_update_installs_right_away_when_she_is_idle():
 def test_she_checks_for_updates_soon_after_starting():
     from capri.ui import updates
     assert updates.FIRST_CHECK_MS <= 30_000
+
+
+# -- 2.3.8: intelligence Low / Medium / High -------------------------------------------------------------------------
+def test_intelligence_picks_the_model_on_every_kind_of_ai():
+    from capri.ai import tiers
+    from capri.ai.claude import ClaudeBrain
+    from capri.ai.local import LocalBrain
+    from capri.ai.openai_compat import OpenAIBrain
+    level = ["low"]
+    typed = [""]
+    o = OpenAIBrain(lambda: "gemini", lambda: "", lambda: typed[0], lambda: "k", {}, intelligence=lambda: level[0])
+    assert o.model() == "gemini-flash-lite-latest"
+    level[0] = "high"
+    assert o.model() == "gemini-pro-latest"
+    typed[0] = "my-own-model"
+    assert o.model() == "my-own-model"                              # a model you typed wins
+    c = ClaudeBrain(lambda: "k", {}, intelligence=lambda: level[0])
+    assert c.model_name() == "claude-opus-5-5"
+    level[0] = "low"
+    assert c.model_name() == "claude-haiku-5-5"
+    assert tiers.local_model("high", ["llama3.2:latest", "gemma3:12b"]) == "gemma3:12b"
+    assert tiers.local_model("medium", ["llama3.2:latest"]) == "llama3.2:latest"
+    assert tiers.local_model("medium", []) == ""
+    for preset in ("gemini", "nvidia", "openai", "groq", "openrouter", "mistral", "xai"):
+        assert all(tiers.vision_model(preset, v) for v in tiers.LEVELS), preset
+
+
+def test_set_your_intelligence_by_voice_and_the_free_key_help(monkeypatch):
+    from capri import secrets
+    from test_v11 import FakeDesktop, rig
+    monkeypatch.setattr(secrets, "get", lambda k: "")
+    r = rig(FakeDesktop())
+    s = r.assistant.settings
+    opened = []
+    r.router.services.open_url = opened.append
+    s.openai_model = "something-old"
+    r.router.handle("set your intelligence to high")
+    assert s.intelligence == "high" and s.openai_model == "" and s.openai_preset == "gemini"
+    assert opened == ["https://aistudio.google.com/apikey"] and "free Google key" in r.controller.message
+    monkeypatch.setattr(secrets, "get", lambda k: "a-key" if k == "openai_api_key" else "")
+    r.router.handle("be dumber")
+    assert s.intelligence == "medium" and len(opened) == 1          # has a key now: no page
+    r.router.handle("what is your intelligence")
+    assert "Medium" in r.controller.message
+    r.router.handle("be smarter")
+    r.router.handle("be smarter")
+    assert s.intelligence == "high" and "already on High" in r.controller.message

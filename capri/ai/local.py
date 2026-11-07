@@ -72,8 +72,10 @@ def ollama_error(exc) -> str:
 class LocalBrain:
     def __init__(self, url: Callable[[], str], model: Callable[[], str], info: dict[str, Callable[[dict], str]],
                  fetch: Callable = http.request, clock: Callable[[], float] = time.monotonic,
-                 slang: Callable[[], bool] = lambda: False, persona: Callable[[], str] = lambda: "edgerunner") -> None:
+                 slang: Callable[[], bool] = lambda: False, persona: Callable[[], str] = lambda: "edgerunner",
+                 intelligence: Callable[[], str] = lambda: "") -> None:
         self._url, self._model, self._info = url, model, info
+        self._intelligence = intelligence             # Low / Medium / High: the best model you have for it
         self._fetch, self._clock, self._slang, self._persona = fetch, clock, slang, persona
         self.reset()
 
@@ -98,7 +100,13 @@ class LocalBrain:
                            f"clock), or say \u201cset up your brain\u201d.")
         names = [m.get("name", "") for m in tags.get("models", [])]
         wanted = self._model() or DEFAULT_MODEL
-        model = pick_model(names, wanted)
+        level = ""
+        try:
+            level = self._intelligence() or ""
+        except Exception:
+            pass
+        from .tiers import local_model
+        model = (local_model(level, names) if level else "") or pick_model(names, wanted)
         if not model:
             return False, f"Ollama's running, but a chat model isn't downloaded yet. Run:  ollama pull {wanted}"
         self.chosen = model
@@ -108,6 +116,13 @@ class LocalBrain:
         return (self._url() or default_url()).rstrip("/")
 
     def _use_model(self) -> str:
+        try:
+            level = self._intelligence() or ""
+        except Exception:
+            level = ""
+        if level != getattr(self, "_level_seen", level):
+            self.chosen = ""                           # you changed her intelligence: pick again
+        self._level_seen = level
         if not self.chosen:
             try:
                 self.available()                       # find out what Ollama has

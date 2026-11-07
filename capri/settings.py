@@ -110,6 +110,7 @@ class Settings:
     share_memory_with_ai: bool = False # what she remembers about you goes to the AI too (off: it stays on your PC)
     ai_enabled: bool = True            # a chatbot: chat (and anything that isn't a command) goes to an AI
     ai_provider: str = "auto"          # auto | openai (ChatGPT or any OpenAI-style AI) | claude | local (Ollama)
+    intelligence: str = "medium"       # low | medium | high: which model on your AI (ai/tiers.py) - 2.3.8
     openai_preset: str = "openai"      # which service (ai/openai_compat.py PRESETS): openai, groq, gemini...
     openai_url: str = ""               # "" = the preset's address
     openai_model: str = ""             # "" = the preset's suggestion (ChatGPT: gpt-5-nano, the cheapest)
