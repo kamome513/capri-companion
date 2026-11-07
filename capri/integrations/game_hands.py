@@ -107,6 +107,17 @@ class WindowsGameHands:
         finally:
             self._send(self._key(key, True))
 
+    def hold_many(self, keys, seconds: float) -> None:
+        """Hold up to two keys together (run and jump), then let both go."""
+        keys = [k for k in keys if k in SCAN][:2]
+        for k in keys:
+            self._send(self._key(k, False))
+        try:
+            _wait(max(0.03, min(MAX_HOLD, seconds)), self.escape_pressed)
+        finally:
+            for k in reversed(keys):
+                self._send(self._key(k, True))
+
     def _nudge(self, dx: int, dy: int) -> None:
         inp = self.INPUT(type=0)
         inp.u.mi = self.MOUSEINPUT(int(dx), int(dy), 0, 0x0001, 0, 0)                    # MOUSEEVENTF_MOVE
@@ -199,6 +210,18 @@ class LinuxGameHands:
             self.xtest.fake_input(self.x.d, self.X.MotionNotify, True, x=int(dx / steps), y=int(dy / steps))
             self.x.d.sync()
             time.sleep(0.01)
+
+    def hold_many(self, keys, seconds: float) -> None:
+        codes = [c for c in (self._code(k) for k in list(keys)[:2]) if c]
+        for c in codes:
+            self.xtest.fake_input(self.x.d, self.X.KeyPress, c)
+        self.x.d.sync()
+        try:
+            _wait(max(0.03, min(MAX_HOLD, seconds)), self.escape_pressed)
+        finally:
+            for c in reversed(codes):
+                self.xtest.fake_input(self.x.d, self.X.KeyRelease, c)
+            self.x.d.sync()
 
     def _nudge(self, dx: int, dy: int) -> None:
         self.xtest.fake_input(self.x.d, self.X.MotionNotify, True, x=int(dx), y=int(dy))

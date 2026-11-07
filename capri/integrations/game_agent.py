@@ -28,24 +28,29 @@ log = logging.getLogger("capri")
 
 MAX_TIME = 300.0              # seconds
 MAX_STEPS = 120
-MAX_ACTIONS = 4               # per look
+MAX_ACTIONS = 6               # per look
 SAY_GAP = 9.0                 # seconds between her comments
-PROMPT = """You're playing the game on this screen for the user, as Capri. Their goal: {goal}.
-Look at the screen and pick your next moves. Reply with ONLY a JSON object, nothing else:
-{{"say": "<a few words in your own voice, or empty>", "do": [<1 to 4 moves>], "done": <true once the goal is done or impossible>}}
+PROMPT = """You're Capri, playing the game on this screen for the user. Their goal: {goal}.
+{notes}Look carefully at the screen. Work out: what game is this, who is the player's character, what's the
+objective (beat enemies? reach the exit? survive? collect things?), what's happening right now - then act.
+Reply with ONLY a JSON object, nothing else:
+{{"game": "<what game this is>", "objective": "<how you win, in a few words>", "plan": "<what you're doing next
+and why, one short sentence>", "say": "<a few words to the user in your own voice, or empty>",
+"do": [<2 to 6 moves>], "done": <true only once the goal is done or impossible>}}
 Moves:
-  {{"key": "w", "hold": 1.0}}       hold a key that long (0.05-3 s). Keys: a-z, 0-9, space, shift, ctrl, tab, up, down, left, right
-  {{"look": [dx, dy]}}              turn the camera / move the mouse that many pixels (-600..600)
-  {{"click": [x, y], "button": "left", "hold": 0}}   click at x, y = fractions 0..1 across / down the game window;
-                                     "hold" seconds keeps the button down (mining, attacking); "button" left or right
-  {{"key": "w", "hold": 2, "look": [dx, dy]}}   walk (or any key) AND turn at the same time, smoothly
-  {{"mine": 1.5}}                    hold the left mouse button where the crosshair is (break blocks, attack)
-  {{"use": 0}}                       right-click where the crosshair is (place a block, eat, open a door)
-  {{"wait": 0.5}}                   wait (up to 2 s)
-In first-person games the crosshair is the middle of the screen: turn with "look" to aim, then "mine" / "use".
-{hints}If something just went wrong (you died, got caught, a jumpscare, got stuck, fell, lost health), add
-  "lesson": "<one short tip so it doesn't happen again>"
-{lessons}Your last moves: {history}"""
+  {{"key": "d", "hold": 0.6}}          hold a key that long (0.05-3 s). Keys: a-z, 0-9, space, shift, ctrl, tab, up, down, left, right
+  {{"keys": ["d", "space"], "hold": 0.5}}   hold two keys together (jump while running, sprint forward...)
+  {{"key": "w", "hold": 2, "look": [dx, dy]}}   hold a key AND turn the camera at the same time
+  {{"look": [dx, dy]}}                 turn the camera / move the mouse that many pixels (-600..600)
+  {{"mine": 1.5}}                      hold the left mouse button where the crosshair / pointer is (break, attack, shoot)
+  {{"use": 0}}                         right-click where the crosshair / pointer is (place, use, aim)
+  {{"click": [x, y], "button": "left", "hold": 0}}   click at x, y = fractions 0..1 across / down the game window
+  {{"wait": 0.5}}                      wait (up to 2 s)
+Move with the KEYBOARD (most games: WASD or the arrow keys walk, space or W / up jumps). Clicking is for menus,
+buttons and aiming - clicking the ground doesn't walk in most games. Hold movement keys long enough to see it
+happen (0.4-1.5 s). If the last moves changed nothing, the keys you used don't work here: try different ones.
+{hints}{lessons}Your last moves: {history}
+{feedback}"""
 # What a new player is told about a few games (by the game's window title)
 GAME_HINTS = {
     "minecraft": "Minecraft: W walks, space jumps, shift sneaks, ctrl sprints. To break a block (wood, dirt, stone), "
@@ -110,6 +115,17 @@ class GameLessons:
         self.save()
         return True
 
+    def notes(self, game: str) -> dict:
+        """What she worked out about this game: {"game", "objective", "plan", "keys_work", "keys_dead"}."""
+        return dict(self.games.get(game, {}).get("notes", {})) if game else {}
+
+    def set_notes(self, game: str, notes: dict) -> None:
+        if not game:
+            return
+        entry = self.games.setdefault(game, {"lessons": [], "tries": 0})
+        entry["notes"] = {k: v for k, v in notes.items() if v not in ("", None, [])}
+        self.save()
+
     def played(self, game: str, why: str) -> None:
         if not game:
             return
@@ -151,7 +167,8 @@ def parse_plan(text: str) -> dict | None:
         return None
     moves = plan.get("do") if isinstance(plan.get("do"), list) else []
     return {"say": str(plan.get("say") or "")[:160], "do": moves[:MAX_ACTIONS], "done": bool(plan.get("done")),
-            "lesson": str(plan.get("lesson") or "")[:160]}
+            "lesson": str(plan.get("lesson") or "")[:160], "game": str(plan.get("game") or "")[:80],
+            "objective": str(plan.get("objective") or "")[:160], "plan": str(plan.get("plan") or "")[:200]}
 
 
 def checked(move, window: Rect) -> tuple | None:
@@ -169,6 +186,12 @@ def checked(move, window: Rect) -> tuple | None:
                 dx, dy = (int(max(-MAX_LOOK, min(MAX_LOOK, float(v)))) for v in move["look"])
                 return ("key", key, hold, dx, dy)                   # walk and turn at once
             return ("key", key, hold)
+        if "keys" in move and isinstance(move["keys"], (list, tuple)):
+            keys = tuple(k for k in (clean_key(str(x)) for x in move["keys"][:2]) if k)
+            if not keys:
+                return None
+            hold = max(0.05, min(MAX_HOLD, float(move.get("hold", 0.3))))
+            return ("keys", keys, hold) if len(keys) > 1 else ("key", keys[0], hold)
         if "mine" in move or "attack" in move:
             return ("press", "left", max(0.1, min(MAX_HOLD, float(move.get("mine", move.get("attack")) or 1.0))))
         if "use" in move:
@@ -194,6 +217,8 @@ def describe(move: tuple) -> str:
         return f"held {move[1]} {move[2]:.1f}s" + (f" turning {move[3]:+d},{move[4]:+d}" if len(move) > 3 else "")
     if kind == "press":
         return ("mined" if move[1] == "left" else "used") + f" {move[2]:.1f}s"
+    if kind == "keys":
+        return f"held {'+'.join(move[1])} {move[2]:.1f}s"
     if kind == "look":
         return f"looked {move[1]:+d},{move[2]:+d}"
     if kind == "click":
@@ -223,6 +248,7 @@ class GameAgent:
         self.lessons = lessons or GameLessons(None)
         self.game = ""
         self._last_jpeg = ""
+        self.notes: dict = {}
 
     @staticmethod
     def _jpeg(image) -> str:
@@ -294,13 +320,88 @@ class GameAgent:
         if not getattr(reply, "error", False) and self.lessons.add(self.game, reply.text or ""):
             log.info("game: learned for %s: %s", self.game, (reply.text or "")[:120])
 
-    def _prompt(self, history: str) -> str:
+    def _prompt(self, history: str, feedback: str = "") -> str:
         learned = self.lessons.lessons(self.game)
         intro = LESSONS_INTRO.format(items="\n".join(f"- {x}" for x in learned)) if learned else ""
-        return PROMPT.format(goal=self.goal, history=history, lessons=intro, hints=hints_for(self.game))
+        n = self.notes
+        notes = ""
+        if n.get("game") or n.get("objective"):
+            notes += f"What you worked out so far: it's {n.get('game') or 'this game'}"
+            notes += f"; to win: {n['objective']}" if n.get("objective") else ""
+            notes += f"; your plan: {n['plan']}" if n.get("plan") else ""
+            notes += ". Change any of it if the screen says otherwise.\n"
+        if n.get("keys_work") or n.get("keys_dead"):
+            notes += "When you tried the keys: " + (f"{', '.join(n.get('keys_work', []))} made things move" if
+                                                    n.get("keys_work") else "no key made anything move")
+            notes += (f"; {', '.join(n['keys_dead'])} did nothing" if n.get("keys_dead") else "") + ".\n"
+        return PROMPT.format(goal=self.goal, history=history, lessons=intro, hints=hints_for(self.game),
+                             notes=notes, feedback=feedback)
+
+    # -- seeing what her moves did ---------------------------------------------------------------------------------
+    @staticmethod
+    def _thumb(image):
+        """A tiny grey copy of a picture, to compare two moments (None if it isn't a picture she can read)."""
+        try:
+            from PySide6.QtCore import Qt
+            from PySide6.QtGui import QImage
+            if not isinstance(image, QImage) or image.isNull():
+                return None
+            import numpy as np
+            small = image.scaled(96, 54, Qt.AspectRatioMode.IgnoreAspectRatio,
+                                 Qt.TransformationMode.SmoothTransformation).convertToFormat(QImage.Format.Format_Grayscale8)
+            a = np.frombuffer(small.constBits(), np.uint8).reshape(small.height(), small.bytesPerLine())[:, :96]
+            return a.astype(np.int16)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _changed(a, b) -> float | None:
+        """How much of the picture changed between two thumbs (0..1), or None."""
+        if a is None or b is None or a.shape != b.shape:
+            return None
+        import numpy as np
+        return float(np.mean(np.abs(a - b) > 18))
+
+    PROBE_KEYS = ("d", "a", "right", "left", "space", "w", "up")
+    MOVED = 0.012              # this much of the picture changing after a key = the key does something
+
+    def _probe(self, hwnd: int, hands, window) -> None:
+        """New game: press each usual movement key a moment and see if anything moves - so the AI knows which
+        keys this game listens to (and if none do, the game probably needs a click first, to take the keys)."""
+        if self.notes.get("keys_work") or not hasattr(hands, "hold"):
+            return
+        if self._thumb(self.grab(window)) is None:
+            return                                          # no picture to compare: skip it
+        for attempt in range(2):
+            work, dead = [], []
+            for key in self.PROBE_KEYS:
+                if self.stop_event.is_set() or hands.escape_pressed() or self.foreground() != hwnd:
+                    return
+                before = self._thumb(self.grab(window))
+                hands.hold(key, 0.35)
+                self.sleep(0.12)
+                change = self._changed(before, self._thumb(self.grab(window)))
+                (work if change is not None and change >= self.MOVED else dead).append(key)
+            log.info("game: keys that move things: %s; nothing: %s", work or "none", dead or "none")
+            if work or attempt or getattr(hands, "pointer_hidden", lambda: False)():
+                break
+            self.cursor(window.x + window.w // 2, window.y + window.h // 2)   # none worked: click into the game
+            self.sleep(0.2)
+            hands.click(window.x + window.w // 2, window.y + window.h // 2, "left", 0.0)
+            self.sleep(0.3)
+        self.notes["keys_work"], self.notes["keys_dead"] = work, dead
+        self.lessons.set_notes(self.game, self.notes)
 
     def _play(self, hwnd: int, hands) -> str:
         started, last_said = self.clock(), -1e9
+        self.notes = self.lessons.notes(self.game)
+        first = self.window_rect(hwnd)
+        if first is not None:
+            try:
+                self._probe(hwnd, hands, first)
+            except Exception:
+                log.info("game: couldn't try the keys", exc_info=True)
+        change = None                                       # how much her last moves changed the picture
         for _step in range(MAX_STEPS):
             if self.stop_event.is_set():
                 return "stopped"
@@ -321,8 +422,13 @@ class GameAgent:
             if not jpeg:
                 return "no picture"
             self._last_jpeg = jpeg
+            now_thumb = self._thumb(image)
+            feedback = "" if change is None else (
+                "After your last moves the picture barely changed: those moves did nothing here. Do something "
+                "different (other keys, hold longer, or click into the game first)." if change < self.MOVED else
+                "After your last moves the picture changed - check if it was what you wanted.")
             history = "; ".join(self.moves[-8:]) or "none yet"
-            reply = self.brain.look(self._prompt(history), jpeg)
+            reply = self.brain.look(self._prompt(history, feedback), jpeg)
             if getattr(reply, "missing", False):
                 return "no ai"
             if getattr(reply, "error", False):
@@ -334,6 +440,11 @@ class GameAgent:
                 continue
             if plan["lesson"] and self.lessons.add(self.game, plan["lesson"]):
                 log.info("game: learned for %s: %s", self.game, plan["lesson"])
+            if any(plan[k] for k in ("game", "objective", "plan")):   # what she's worked out: kept for next look
+                for k in ("game", "objective", "plan"):
+                    if plan[k]:
+                        self.notes[k] = plan[k]
+                self.lessons.set_notes(self.game, self.notes)
             if plan["say"] and self.clock() - last_said > SAY_GAP:
                 last_said = self.clock()
                 self.say(plan["say"])
@@ -348,13 +459,20 @@ class GameAgent:
                 self._do(hands, move)
                 self.moves.append(describe(move))
                 log.info("game: did %s", describe(move))
+            change = self._changed(now_thumb, self._thumb(self.grab(window))) if plan["do"] and now_thumb is not None \
+                else None                                   # before her moves vs after them
             if plan["done"]:
                 return "done"
         return "steps"
 
     def _do(self, hands, move: tuple) -> None:
         kind = move[0]
-        if kind == "key":
+        if kind == "keys":
+            if hasattr(hands, "hold_many"):
+                hands.hold_many(move[1], move[2])
+            else:
+                hands.hold(move[1][0], move[2])
+        elif kind == "key":
             if len(move) > 3:
                 hands.hold(move[1], move[2], look=(move[3], move[4]))
             else:

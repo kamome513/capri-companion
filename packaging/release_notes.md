@@ -1,6 +1,13 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.6.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.7.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
+
+**2.3.7: she actually plays now, and updates install straight away.**
+- **She works the game out.** On her first look she figures out what game it is, who she's playing, how you win and what to do next - and keeps that plan, updating it as she goes, every look after.
+- **She finds out which keys do something.** In a new game she tries the usual keys (WASD, arrows, space) and watches what moves. If nothing does - a browser game that needs a click first - she clicks into the game and tries again. What she learns is kept for next time.
+- **She notices when her moves did nothing** and tries something else, instead of clicking the same spot over and over.
+- **Two keys at once** (run and jump), up to six moves per look, and she's told to move with the keyboard - clicking only for menus and aiming.
+- **Updates install straight away.** She checks 20 seconds after starting (it was 90) and, once the update has downloaded, installs it as soon as she's not busy - never in the middle of a game or a sentence. Before, it only installed the next time you started her.
 
 **2.3.6: scrolling in Settings no longer crashes Capri.** The 2.3.2 fix that stopped scrolling from changing settings also caught the page's own scroll bar, which then passed the scroll to itself over and over until Capri crashed. Fixed.
 

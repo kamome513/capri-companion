@@ -846,7 +846,11 @@ def main(argv: list[str] | None = None) -> int:
 
     assistant.replied.connect(companion.feed.add_reply)        # her lines in the call cards
     menu = CompanionMenu(companion, art.icon, assistant, open_settings, open_chat)
-    updates = UpdateManager(settings, controller, assistant, menu.tray)    # new versions from GitHub
+    def idle_for_update() -> bool:            # never mid-sentence, mid-game or while she plays for you
+        agent = services.game_agent
+        return not (assistant._busy or in_game() or (agent is not None and agent.running)
+                    or controller.state not in (State.IDLE,))
+    updates = UpdateManager(settings, controller, assistant, menu.tray, idle=idle_for_update)   # new versions
     services.updates = updates
     menu.add_updates(updates)
     from .commands.parser import Intent as _Intent, Kind as _Kind

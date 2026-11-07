@@ -575,3 +575,121 @@ def test_scrolling_the_real_settings_window_doesnt_crash():
                 _wheel(w)
                 _wheel(w, down=False)
     win.close()
+
+
+# -- 2.3.7: she works out the game: which keys do something, and whether her moves did anything -------------------------
+class _FakeGame:
+    """A little 2D game: a white block that D / A move - but only once the game's been clicked (like a browser game
+    that needs focus to take the keys)."""
+    def __init__(self, needs_click=True):
+        self.x, self.focused, self.pressed = 100, not needs_click, []
+
+    def picture(self, rect=None):
+        from PySide6.QtGui import QColor, QImage, QPainter
+        img = QImage(320, 180, QImage.Format.Format_RGB32)
+        img.fill(QColor(20, 40, 60))
+        p = QPainter(img)
+        p.fillRect(self.x, 100, 40, 40, QColor(255, 255, 255))
+        p.end()
+        return img
+
+    def hands(self):
+        game = self
+
+        class Hands:
+            def hold(self, key, seconds, look=(0, 0)):
+                game.pressed.append(key)
+                if game.focused and key in ("d", "a"):
+                    game.x = max(0, min(280, game.x + (60 if key == "d" else -60)))
+            def hold_many(self, keys, seconds):
+                game.pressed.append("+".join(keys))
+                for k in keys:
+                    self.hold(k, seconds)
+            def click(self, x, y, button="left", hold=0.0):
+                game.focused = True
+            def press(self, button, hold):
+                pass
+            def look(self, dx, dy):
+                pass
+            def escape_pressed(self):
+                return False
+        return Hands()
+
+
+def _game_agent(game, brain, tmp_path):
+    from capri.integrations import game_agent as ga
+    done = []
+    a = ga.GameAgent(brain, game.hands, game.picture, lambda: 7, lambda h: ga.Rect(0, 0, 320, 180), lambda s: None,
+                     done.append, sleep=lambda s: None, jpeg=lambda img: "QUJD", title=lambda h: "Bopl Battle",
+                     lessons=ga.GameLessons(tmp_path / "lessons.json"))
+    return a, done
+
+
+def test_she_finds_which_keys_move_things_and_clicks_into_the_game_first(tmp_path):
+    import json
+    from capri.ai.claude import AIReply
+    from test_game_agent import Brain
+    game = _FakeGame(needs_click=True)
+    brain = Brain(AIReply(json.dumps({"game": "Bopl Battle", "objective": "knock the orange player out",
+                                      "plan": "run right and jump at them", "say": "On it.",
+                                      "do": [{"keys": ["d", "space"], "hold": 0.5}], "done": False})),
+                  AIReply(json.dumps({"say": "", "do": [{"key": "w", "hold": 0.5}], "done": False})),
+                  AIReply(json.dumps({"say": "", "do": [], "done": True})))
+    a, done = _game_agent(game, brain, tmp_path)
+    a.start("win", background=False)
+    assert game.focused                                             # no key worked at first: she clicked in
+    assert a.notes["keys_work"] == ["d", "a"] and "w" in a.notes["keys_dead"]
+    assert "d, a made things move" in brain.prompts[0]
+    assert "d+space" in game.pressed                                # two keys at once
+    assert "knock the orange player out" in brain.prompts[1]       # what she worked out, remembered
+    assert "the picture changed" in brain.prompts[1]                # her run right moved things...
+    assert "barely changed" in brain.prompts[2]                     # ...holding W did nothing: she's told
+    assert done == ["done"]
+    from capri.integrations import game_agent as ga
+    again = ga.GameLessons(tmp_path / "lessons.json").notes("bopl battle")
+    assert again["objective"] == "knock the orange player out" and again["keys_work"] == ["d", "a"]
+
+
+def test_next_time_she_already_knows_the_game(tmp_path):
+    import json
+    from capri.ai.claude import AIReply
+    from test_game_agent import Brain
+    first = _FakeGame(needs_click=False)
+    a, _ = _game_agent(first, Brain(AIReply(json.dumps({"objective": "win the round", "do": [], "done": True}))),
+                       tmp_path)
+    a.start("win", background=False)
+    probes = len(first.pressed)
+    game = _FakeGame(needs_click=False)
+    brain = Brain(AIReply(json.dumps({"do": [], "done": True})))
+    b, _ = _game_agent(game, brain, tmp_path)
+    b.start("win", background=False)
+    assert probes >= 7 and game.pressed == []                       # keys already known: no testing again
+    assert "win the round" in brain.prompts[0]
+
+
+# -- 2.3.7: an update installs as soon as it's downloaded (when she isn't busy) ----------------------------------------
+def test_a_downloaded_update_installs_right_away_when_she_is_idle():
+    import time as _t
+    from pathlib import Path
+    from capri import updater
+    from test_v136 import _manager
+    new = updater.Update("9.9.9", updater.DOWNLOADS + "v/Capri.exe", "Capri.exe", 5)
+    downloaded = []
+    busy = [True]
+    m, calls = _manager(check=lambda: new, download=lambda u: downloaded.append(u) or Path("Capri.exe"),
+                        ready=lambda: ("9.9.9", Path("Capri.exe")) if downloaded else None, idle=lambda: not busy[0])
+    m.INSTALL_DELAY_MS = 10
+    m.check_now(quiet=True)
+    assert downloaded == [new] and calls["installed"] == []           # busy (in a game): not yet
+    busy[0] = False
+    m.install_when_idle()
+    assert "Updating myself to Capri 9.9.9" in m.status
+    for _ in range(50):
+        app.processEvents()
+        _t.sleep(0.01)
+    assert calls["installed"] == [Path("Capri.exe")] and calls["quit"] == 1
+
+
+def test_she_checks_for_updates_soon_after_starting():
+    from capri.ui import updates
+    assert updates.FIRST_CHECK_MS <= 30_000

@@ -20,7 +20,8 @@ from ..states import State
 
 log = logging.getLogger("capri")
 
-FIRST_CHECK_MS = 90_000          # once she's settled in
+FIRST_CHECK_MS = 20_000          # soon after she starts (it used to be 90 s: a quick restart missed it)
+IDLE_RETRY_MS = 60_000           # busy (talking, in a game): try installing again in a minute
 
 
 class UpdateManager(QObject):
@@ -32,11 +33,13 @@ class UpdateManager(QObject):
                  ready: Callable = updater.ready, install: Callable = updater.install,
                  frozen: Callable[[], bool] = updater.frozen, open_page: Callable[[str], None] | None = None,
                  quit_app: Callable[[], None] | None = None, confirm: Callable[[str], bool] | None = None,
-                 tries: Callable = updater.tries) -> None:
+                 tries: Callable = updater.tries, idle: Callable[[], bool] = lambda: True) -> None:
         super().__init__()
         self.settings, self.controller, self.assistant, self.tray = settings, controller, assistant, tray
         self._check, self._download, self._ready, self._install = check, download, ready, install
         self._tries = tries
+        self._idle = idle
+        self._installing = False
         self._frozen = frozen
         self._open_page = open_page or _open_url
         self._quit = quit_app or QApplication.quit
@@ -79,7 +82,11 @@ class UpdateManager(QObject):
             return
         ready = self._ready() if self._frozen() else None
         if ready is not None:                        # already downloaded and checked
-            return self._stuck(ready[0]) if self.stuck() else self._offer(ready[0])
+            if self.stuck():
+                return self._stuck(ready[0])
+            if getattr(self.settings, "auto_update", True) and self.install_when_idle():
+                return
+            return self._offer(ready[0])
         self.busy = True
         if not quiet:
             self._say("Checking GitHub for a newer me...")
@@ -117,7 +124,41 @@ class UpdateManager(QObject):
             log.warning("update download failed: %s", result)
             self._say(f"Couldn't download the update ({friendly(result)[:70]}). I'll try again later.", error=True)
             return
+        if getattr(self.settings, "auto_update", True) and self.install_when_idle():
+            return                                   # (2.3.7) right away, not only the next time she starts
         self._offer(self.found.version if self.found else "")
+
+    def install_when_idle(self) -> bool:
+        """Install the downloaded update now - as soon as she isn't busy (talking, you're in a game, she's
+        playing for you); checked again every minute until then. False if there's nothing to install."""
+        if self._installing:
+            return True
+        ready = self._ready() if self._frozen() else None
+        if ready is None:
+            return False
+        try:
+            idle = bool(self._idle())
+        except Exception:
+            idle = True
+        if not idle:
+            log.info("update: Capri %s is ready - waiting until I'm not busy", ready[0])
+            QTimer.singleShot(IDLE_RETRY_MS, self.install_when_idle)
+            return True
+        version, installer = ready
+        self._installing = True
+        self._say(f"Updating myself to Capri {version}. Back in a few seconds!")
+        log.info("update: installing Capri %s now", version)
+
+        def go() -> None:
+            if not self._install(installer):
+                self._installing = False
+                self._say("Couldn't start the update. I'll try again when I next start.", error=True)
+                return
+            self._quit()
+        QTimer.singleShot(self.INSTALL_DELAY_MS, go)  # so you see (and hear) why she's going
+        return True
+
+    INSTALL_DELAY_MS = 2500
 
     def stuck(self) -> bool:
         """The waiting update already didn't take twice at start-up (so she won't keep trying by herself)."""
