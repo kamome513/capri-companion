@@ -47,6 +47,15 @@ class CompanionMenu(QObject):
         self.a_hide = menu.addAction("Hide Capri", self._toggle_hidden)
         self.a_quiet = menu.addAction("Quiet mode", self._toggle_quiet)
         self.a_quiet.setCheckable(True)
+        fun = self._sub(menu, "Fun")                        # (2.4) chaos, hologram, clones, doodles
+        self.a_chaos = self._check("Chaos mode", lambda on: self._say(f"chaos mode {'on' if on else 'off'}"), fun)
+        self.a_holo = self._check("Hologram mode", lambda on: self._say(f"hologram {'on' if on else 'off'}"), fun)
+        fun.addAction("Make 10 clones", lambda: self._say("make 10 clones"))
+        fun.addAction("Clear clones", lambda: self._say("clear the clones"))
+        fun.addAction("Draw a heart", lambda: self._say("draw a heart"))
+        fun.addAction("Draw a cat", lambda: self._say("draw a cat"))
+        fun.addAction("Clear the drawing", lambda: self._say("clear the drawing"))
+        fun.addAction("Dance (animation mods)", lambda: self._say("do a dance"))
         self.a_quiet.setToolTip("She doesn't comment by herself (game hype, screen comments, warnings) - she still "
                                 "answers you. Ctrl+Alt+P")
         if open_chat is not None:
@@ -87,7 +96,8 @@ class CompanionMenu(QObject):
         self.a_lounge = self._check("Lie on the panel", companion.set_lounge, capri)
         self.a_perch = self._check("Sit on windows", companion.set_perch_windows, capri)
         self.a_deck = self._check("Music deck (she stands on it while music plays)", self._set_music_deck, capri)
-        self.a_compact = self._check("Compact mode", companion.set_compact, capri)
+        self.a_compact = QAction("Compact mode", self.menu)      # (2.4.2) gone from the menu: always compact now
+        self.a_compact.setCheckable(True)
         hair = self._sub(capri, "Hair")
         hair_group = QActionGroup(hair)
         from .hair import HAIR_STYLES
@@ -282,6 +292,8 @@ class CompanionMenu(QObject):
         try:
             self.a_hide.setText("Show Capri" if c.hidden else "Hide Capri")
             self.a_quiet.setChecked(bool(getattr(s, "quiet_mode", False)))
+            self.a_chaos.setChecked(bool(getattr(s, "chaos_mode", False)))
+            self.a_holo.setChecked(bool(getattr(s, "hologram", False)))
             from ..ai import tiers
             for value, action in getattr(self, "levels", {}).items():
                 action.setChecked(value == tiers.level(getattr(s, "intelligence", tiers.DEFAULT)))
@@ -295,7 +307,7 @@ class CompanionMenu(QObject):
                 action.setChecked(s.log_style == key)
             for key, action in self.hair_styles.items():
                 action.setChecked(s.hair_style == key)
-            self.a_log.setEnabled(s.show_panel and (not s.compact or s.log_style == "cards"))   # compact: no room
+            self.a_log.setEnabled(s.show_panel and s.log_style == "cards")   # (the compact box has no room for rows)
             self.a_compact.setChecked(s.compact)
             for pct, action in self.sizes.items():
                 action.setChecked(getattr(s, "size", 100) == pct)
@@ -351,6 +363,14 @@ class CompanionMenu(QObject):
         from ..logs import log_dir
         log_dir().mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_dir())))
+
+    def _say(self, command: str) -> None:
+        """A menu item that does what saying it would do."""
+        if self._syncing or self.assistant is None:
+            return
+        handle = getattr(self.assistant, "command_handler", None)
+        if callable(handle):
+            handle(command)
 
     def _set_level(self, value: str) -> None:
         """Right-click -> Intelligence -> Low / Medium / High."""

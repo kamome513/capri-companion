@@ -113,7 +113,7 @@ class AssistantTab(QWidget):
         self.personality.setCurrentIndex(max(0, self.personality.findData(s.personality)))
         self.personality.setToolTip("How she talks - her chat, her AI and her remarks. Or say “be sarcastic”.")
         self.personality.currentIndexChanged.connect(self._personality_picked)   # hear it right away
-        form.addRow("Personality", self.personality)
+        # (2.4.1) personalities are mods now (Settings -> Mods -> Personalities); the box stays hidden for her code
         self.voice = QComboBox()
         self.voice.addItem("Default", "")
         for name in (assistant.speaker.voices() if assistant.speaker else []):

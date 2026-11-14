@@ -192,4 +192,4 @@ def test_head_pats_and_pokes():
     Companion._clicked(c, QPoint(140, 150))                      # too soon after the last one
     c._last_pat = -1e9
     Companion._clicked(c, QPoint(10, 10))                         # not on her
-    assert got == ["head", "body"]
+    assert got == ["body"]                                        # (2.5: her head is patted by rubbing, not clicks)

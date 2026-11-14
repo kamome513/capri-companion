@@ -113,7 +113,9 @@ class WildHair:
 # A ragged pile of zigzag strands - like torn paper or lightning - blown up and out round her head,
 # a few hanging down beside her face, gaps of sky between them at the edges. Flat hot pink with white
 # speckles. Everything sways continuously (no stepped "boil"); talking makes the strands whip.
-STORM_RED = QColor(249, 8, 84)           # hot pink-red, sampled from her reference picture
+STORM_RED = QColor(249, 8, 84)           # hot pink-red, sampled from her reference picture (a skin mod can change it)
+STORM_RED_DEFAULT = QColor(STORM_RED)
+_COLOUR_GEN = 0                          # bumped when a skin changes her hair colour: textures redrawn
 STORM_DEEP = QColor(178, 6, 56)
 STORM_LIGHT = QColor(255, 132, 178)
 STORM_DARK = QColor(22, 4, 16)           # the odd black spike
@@ -148,7 +150,7 @@ class StormHair:
 
     def _texture(self, w: int, h: int, hw: float, n: int) -> QImage:
         """Flat pink with crisp white speckles, pre-rendered (3 twinkle variants), used as the fill brush."""
-        key = (w, h, round(hw))
+        key = (w, h, round(hw), _COLOUR_GEN)
         if key not in self._textures:
             variants = []
             for v in range(3):
@@ -248,6 +250,10 @@ class StormHair:
             patch.addPolygon(QPolygonF([QPointF(head.left() - hw * 0.06, head.top()), *jag,
                                         QPointF(head.right() + hw * 0.06, head.top())]))
             patch.closeSubpath()
+            drape = [(-0.10, 0.85), (0.22, 0.95), (0.18, 1.2), (0.24, 1.45), (0.14, 1.62), (0.17, 1.85),
+                     (0.06, 1.72), (-0.02, 1.95), (-0.06, 1.6), (-0.16, 1.7), (-0.12, 1.3), (-0.2, 1.1)]
+            patch.addPolygon(QPolygonF([QPointF(head.left() + u * hw, head.top() + v * hh) for u, v in drape]))
+            patch.closeSubpath()                                 # (2.4.1) the hair down the left of her face
             hair = hair.united(patch)
         tw, th = int(hw * 5), int(hh * 5)
         p.setBrushOrigin(QPointF(round(head.center().x() - tw / 2), round(head.top() - th * 0.55)))
@@ -486,3 +492,10 @@ def tint_hair(img: QImage, box: QRectF, seed: int = 3) -> QImage:
     a[y0:y1, x0:x1] = out.astype(np.uint8)
     result = QImage(a.tobytes(), w, h, w * 4, QImage.Format.Format_RGBA8888).copy()
     return result.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+
+
+def set_hair_colour(colour: QColor | None) -> None:
+    """A skin mod's hair colour (None = her own pink-red). Every hair redraws its texture."""
+    global STORM_RED, _COLOUR_GEN
+    STORM_RED = QColor(colour) if colour is not None else QColor(STORM_RED_DEFAULT)
+    _COLOUR_GEN += 1

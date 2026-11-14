@@ -490,13 +490,13 @@ def test_compact_mode_keeps_her_size_and_her_text_box_grows_with_her():
     from test_v111 import companion
     c = companion()
     tall = c.character.display_height
-    c.set_compact(True)
-    assert c.character.display_height == tall                  # compact: just a smaller text box
-    narrow = c.panel.panel_width
-    c.set_compact(False)
     normal = c.panel.panel_width
+    c.set_compact(True)
+    assert c.character.display_height == tall                  # her size never changes with it
+    c.set_compact(False)
+    assert c.panel.panel_width == normal                       # (2.4.2) always the compact box
     c.set_size(200)
-    assert c.panel.panel_width > normal and narrow < normal      # bigger her, bigger box
+    assert c.panel.panel_width > normal                        # bigger her, bigger box
     c.set_size(60)
     assert c.panel.panel_width < normal
 

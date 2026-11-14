@@ -245,8 +245,15 @@ class RigFigure(OverlayWindow):
                     self.rig.paint(p, feet + QPointF(dx, 0), self.figure, pose, "right")
                     p.restore()
                 p.setOpacity(arrive)
-            self.rig.paint(p, feet, self.figure, pose, "right")
+            self._paint_her(p, feet, self.figure, pose)
         p.end()
+
+    def _paint_her(self, p: QPainter, feet: QPointF, height: float, pose: Pose) -> None:
+        """Her, with her cosmetic mods (ears, shades, halo...) on, like in her own window (2.4.2)."""
+        from .character_window import paint_cosmetics
+        paint_cosmetics(p, self.rig, feet, height, pose, "back")
+        self.rig.paint(p, feet, height, pose, "right")
+        paint_cosmetics(p, self.rig, feet, height, pose, "front")
 
     def _paint_flight(self, p: QPainter, pose: Pose) -> None:
         f = self._flight
@@ -263,7 +270,7 @@ class RigFigure(OverlayWindow):
             p.setOpacity(0.07 * (i + 1) * (1 - v))
             self.rig.paint(p, ghost, gh, pose, "right", hair=False)
         p.setOpacity(1.0 if v < 0.85 else max(0.0, (1 - v) / 0.15))
-        self.rig.paint(p, feet, height, pose, "right")
+        self._paint_her(p, feet, height, pose)
         if v >= 1.0 and f["done"] is not None:
             done, f["done"] = f["done"], None
             QTimer.singleShot(0, done)
@@ -311,10 +318,13 @@ class GreetingShow(QObject):
         s = c.settings
         sprites = c.sprites
         if sprites is not None and "standing" in getattr(sprites, "body", {}):
-            if self._rig is None:
-                self._rig = Rig(sprites.frame("standing"), s.hair_style)
-            self._rig.set_hair_style(s.hair_style)
-            return RigFigure(self._rig, height)
+            rig = c.character.full_rig() if hasattr(c.character, "full_rig") else None
+            if rig is None:                               # (2.4.2) her own figure: her look and skin mods too
+                if self._rig is None:
+                    self._rig = Rig(sprites.frame("standing"), s.hair_style)
+                self._rig.set_hair_style(s.hair_style)
+                rig = self._rig
+            return RigFigure(rig, height)
         style = s.character_style if s.character_style != "portrait" else "body"   # a full-body hello
         big = CharacterWindow(c.art, height, True, c.sprites, style)
         big.set_click_through(True)

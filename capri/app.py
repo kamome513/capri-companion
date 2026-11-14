@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QLockFile, QObject, QRect, QStandardPaths, Qt, QTimer, Signal
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QGuiApplication, QImage
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
@@ -169,6 +169,19 @@ def restart_command() -> tuple[str, list[str], str]:
     return sys.executable, ["-m", "capri"], str(root)
 
 
+def _new_look_once(settings) -> None:
+    """2.4.1, once: she stands (not lying on her panel) in her new flat look - you can change both back in
+    Settings -> Character. Only for settings from before 2.4.1."""
+    from .updater import parse_version
+    last = settings.last_version
+    if last and parse_version(last) < (2, 4, 1):
+        settings.lounge = False
+        settings.character_style = "body"
+        if settings.body_style == "full":
+            settings.body_style = "flat"
+        settings.save()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="capri", description="Capri desktop companion")
     parser.add_argument("--preview", action="store_true",
@@ -224,6 +237,7 @@ def main(argv: list[str] | None = None) -> int:
             pass
     first_run = not Settings.path().exists()
     settings = Settings.load()
+    _new_look_once(settings)
     from . import languages
     languages.set_current(settings.language)          # before her ears, brain and voice are set up
     languages.keep_voice = settings.keep_voice
@@ -400,7 +414,7 @@ def main(argv: list[str] | None = None) -> int:
         visit_show.fh = companion.character.figure_height()
         return visit_show.rig()
     from .ui.fling import ThrowShow
-    throw_show = ThrowShow(companion, figure_rig, lambda text, emotion: assistant.remark(text, emotion=emotion),
+    throw_show = ThrowShow(companion, figure_rig, lambda text, emotion: None,     # (2.4.2) no "ow" when you move her
                            enabled=lambda: settings.throwable)
     companion.on_throw = throw_show.throw     # flick her and let go: she flies (and slams into the wall)
     app._throw_show = throw_show
@@ -412,11 +426,107 @@ def main(argv: list[str] | None = None) -> int:
     def patted(where: str) -> None:           # click her head: a pat; anywhere else: a poke
         if assistant._busy or controller.state in (State.LISTENING, State.PROCESSING):
             return
-        line = _random.choice(PATS[where])
+        from .mods.effects import EFFECTS
+        line = _random.choice(EFFECTS.mix("pat" if where == "head" else "poke", PATS[where]))
+        from .mods import sounds as mod_sounds
+        mod_sounds.play("pat", settings.speech_volume * 0.6)
         controller.log("Pat" if where == "head" else "Poke", line)
         controller.set_state(State.SUCCESS, line, emotion="happy" if where == "head" else "surprised")
         assistant.remark(line, emotion="happy" if where == "head" else "surprised")
     companion.patted.connect(patted)
+
+    # -- mods (2.4): skins, cosmetics, animations, personalities, reactions, sounds, behaviour ---------------------
+    from .mods import effects as mod_effects
+    from .mods import sounds as mod_sounds
+    from .mods.manager import ModManager
+    from .mods.store import Store
+    mods = ModManager()
+    mod_store = Store(lambda: settings.mod_index_url)
+    app._mods, app._mod_store = mods, mod_store
+
+    def mods_changed() -> None:
+        mod_effects.reload(mods)
+        changed = mod_effects.apply_behaviour(settings, mods)
+        apply_look_settings(changed)                 # look mods: her models / styles, right away (2.4.1)
+        if changed:
+            assistant.settings_changed.emit()
+        companion.character.update()
+        companion.sit_window.update()
+        companion.panel.mods_changed()               # (2.4.3) her chat box follows the skin - on and off
+    def apply_look_settings(changed: list[str]) -> None:
+        try:
+            if "body_style" in changed:
+                companion.set_body_look(settings.body_style)
+            if "character_style" in changed:
+                companion.set_style(settings.character_style)
+            if "hair_style" in changed:
+                companion.set_look(1.0, settings.idle_animation, settings.hair_style)
+            if "drone_look" in changed:
+                companion.set_drone_look(settings.drone_look)
+            if "perch_windows" in changed:
+                companion.set_perch_windows(settings.perch_windows)
+            if "lounge" in changed:
+                companion.set_lounge(settings.lounge)
+            if "chat_skin" in changed and app.__dict__.get("_chat_window") is not None:
+                app._chat_window.set_skin(settings.chat_skin)
+        except Exception:
+            log.exception("mods: couldn't switch her look")
+    mods.changed.append(mods_changed)
+    mods_changed()
+    _throw = companion.on_throw
+
+    def throw_with_sound(*a, **k):
+        mod_sounds.play("throw", settings.speech_volume * 0.6)
+        return _throw(*a, **k)
+    if _throw is not None:
+        companion.on_throw = throw_with_sound
+
+    last_state = [None]
+
+    def state_sound() -> None:                # a sound pack's sounds for her events
+        state = controller.state
+        if state is last_state[0]:
+            return
+        last_state[0] = state
+        event = {State.LISTENING: "wake", State.SUCCESS: "done", State.ERROR: "error"}.get(state)
+        if event:
+            mod_sounds.play(event, settings.speech_volume * 0.6)
+    controller.changed.connect(state_sound)
+
+    class _ModBridge(QObject):
+        downloaded = Signal(object)           # [(listing, bytes)] - installed back on the UI thread
+    mod_bridge = _ModBridge()
+    app._mod_bridge = mod_bridge
+
+    def install_updates(found) -> None:
+        names = []
+        for listing, data in found:
+            try:
+                mods.install_bytes(data, source="store", enable=False)
+                names.append(f"{listing.name} {listing.version}")
+            except Exception as exc:
+                log.warning("mods: couldn't update %s: %s", listing.id, exc)
+        if names:
+            controller.log("Mods", ("updated " + ", ".join(names))[:60])
+    mod_bridge.downloaded.connect(install_updates)
+
+    def update_mods() -> None:                # newer versions of your store mods, once a start (if you want)
+        if not settings.mods_auto_update:
+            return
+        have = {m.id: m.manifest.version for m in mods.installed() if m.source == "store"}
+
+        def work() -> None:
+            from .mods.store import updates
+            found = []
+            try:
+                for listing in updates(mod_store.listings(), have):
+                    found.append((listing, mod_store.download(listing)))
+            except Exception as exc:
+                log.info("mods: update check failed: %s", exc)
+            if found:
+                mod_bridge.downloaded.emit(found)
+        threading.Thread(target=work, daemon=True, name="capri-mod-updates").start()
+    QTimer.singleShot(45_000, update_mods)
     companion.character.set_body_look(settings.body_style)       # full colour / neon
     companion.character.glitch_every = settings.glitches          # random glitches (off unless you turn them on)
     companion.character.real_glitch.rescheduled()
@@ -465,6 +575,8 @@ def main(argv: list[str] | None = None) -> int:
     def show_point(x: int, y: int) -> None:
         r = to_logical((x, y, x + 1, y + 1))
         her_cursor.glide(r.x(), r.y())
+        from .mods import sounds as _sfx
+        _sfx.play("click", settings.speech_volume * 0.5)
     point_bridge.point.connect(show_point)
 
     def click(target, how):                    # her cursor glides to it, then she clicks
@@ -476,6 +588,103 @@ def main(argv: list[str] | None = None) -> int:
             pass
         return click_on_screen(target, how)
     services.point_at = lambda x, y: point_bridge.point.emit(int(x), int(y))
+
+    # -- desktop fun (2.4): drawing on screen, circling / pointing at things, clones, chaos mode ------------------
+    from PySide6.QtCore import QPointF, QRectF
+    from .desktop_life import ChaosMode
+    from .ui.canvas import ScreenCanvas
+    from .ui.clones import Clones
+    canvas = ScreenCanvas(cursor=her_cursor.follow)
+    app._canvas = canvas
+
+    def picture_of_her():
+        ch = companion.character
+        if not ch.isVisible():
+            return None
+        dpr = ch.devicePixelRatioF()
+        img = QImage(round(ch.width() * dpr), round(ch.height() * dpr), QImage.Format.Format_ARGB32_Premultiplied)
+        img.setDevicePixelRatio(dpr)
+        img.fill(0)
+        ch.render(img)
+        return img
+    clones = Clones(picture_of_her)
+    app._clones = clones
+
+    class DeskFun:
+        def doodle(self, name: str, box=None) -> bool:
+            if box is None:                            # beside her, on her screen
+                c = companion.character.geometry()
+                area = companion._screen_for(c).availableGeometry()
+                x = max(area.left() + 10, c.left() - 230)
+                box = QRectF(x, max(area.top() + 10, c.top() + 20), 200, 200)
+            return canvas.doodle(name, box)
+
+        def clear(self) -> None:
+            canvas.clear()
+
+        def mark(self, kind: str, rect, label: str) -> None:
+            r = QRectF(to_logical(rect))
+            if kind == "circle":
+                canvas.circle(r, label)
+            elif kind == "highlight":
+                canvas.highlight(r, label)
+            else:
+                canvas.point(QPointF(r.center()), label)
+
+        def clones(self, n: int, life: float | None = None) -> int:
+            return clones.make(n, life)
+
+        def clear_clones(self) -> int:
+            return clones.clear()
+
+        def chaos(self, on: bool) -> None:
+            chaos.set_on(on)
+    desk_fun = DeskFun()
+    services.desk = desk_fun
+
+    import random as _chaos_rng
+
+    def chaos_fling() -> None:                   # she flings herself across the screen and slams into the wall
+        if companion.on_throw is not None:
+            side = _chaos_rng.choice((-1, 1))
+            companion.on_throw(QPointF(side * _chaos_rng.uniform(2600, 4200), -_chaos_rng.uniform(900, 1800)))
+
+    def chaos_cursor() -> None:                  # her little pink cursor zipping all over the screen
+        area = QGuiApplication.primaryScreen().availableGeometry()
+        hops = [(_chaos_rng.randint(area.left() + 40, area.right() - 40),
+                 _chaos_rng.randint(area.top() + 40, area.bottom() - 40)) for _ in range(6)]
+        for i, (x, y) in enumerate(hops):
+            QTimer.singleShot(i * 260, lambda x=x, y=y: her_cursor.glide(x, y))
+        QTimer.singleShot(len(hops) * 260 + 600, her_cursor.hide)
+
+    def chaos_hologram() -> None:                # a hologram flicker for a couple of seconds
+        if companion.character.hologram:
+            return
+        companion.set_hologram(True)
+        QTimer.singleShot(2200, lambda: companion.set_hologram(settings.hologram))
+
+    def chaos_dash() -> None:                    # a dash somewhere else along the bottom
+        area = QGuiApplication.primaryScreen().availableGeometry()
+        roam_show.walk(_chaos_rng.uniform(area.left() + 100, area.right() - 100))
+
+    chaos = ChaosMode({"fling": chaos_fling,
+                       "clones": lambda: clones.make(_chaos_rng.randint(8, 14), _chaos_rng.uniform(5.0, 9.0)),
+                       "lightning": lambda: zapper.zap_at(None, lambda: None, small=True),
+                       "cursor": chaos_cursor, "hologram": chaos_hologram, "dash": chaos_dash,
+                       "dance": lambda: companion.character.play_mod_animation() or chaos_dash()},
+                      allowed=lambda: (controller.state is State.IDLE and not assistant._busy and not companion.hidden
+                                       and not companion.drone))
+    app._chaos = chaos
+    chaos.set_on(settings.chaos_mode)
+    if settings.hologram:
+        companion.set_hologram(True)
+
+    def desk_settings() -> None:               # Settings -> Extras: chaos / hologram switched there
+        if chaos.on != settings.chaos_mode:
+            chaos.set_on(settings.chaos_mode)
+        if companion.character.hologram != settings.hologram:
+            companion.set_hologram(settings.hologram)
+    assistant.settings_changed.connect(desk_settings)
 
     def open_url(url: str) -> None:
         from PySide6.QtCore import QUrl
@@ -555,6 +764,36 @@ def main(argv: list[str] | None = None) -> int:
             return False
 
     services.in_game = in_game                # Discord mute / deafen mid-game: never tab you out
+
+    # -- she reacts when your apps and games open and close (2.4) ---------------------------------------------
+    from .desktop_life import AppReactions
+
+    def running_keys() -> set[str]:
+        procs = system.processes()
+        keys = {(p.name or "").lower() for p in procs}
+        exes = [os.path.normcase(p.exe or "") for p in procs if getattr(p, "exe", "")]
+        for g in catalog.games:
+            if g.install_dir:
+                folder = os.path.normcase(str(g.install_dir)) + os.sep
+                if any(e.startswith(folder) for e in exes):
+                    keys.add("game:" + g.name.lower())
+        return keys
+
+    def app_names() -> dict:
+        out = {}
+        for entry in catalog.apps:
+            for proc in entry.processes:
+                out[proc.lower()] = (entry.name, False)
+        for g in catalog.games:
+            if g.install_dir:
+                out["game:" + g.name.lower()] = (g.name, True)
+        return out
+    app_events: list = []                     # automations listen here: (kind, app)
+    app._app_reactions = AppReactions(
+        running_keys, app_names, lambda text: own_remark(text, "happy"),
+        allowed=lambda: settings.react_to_apps and not settings.quiet_mode and controller.state is State.IDLE
+        and not assistant._busy and not in_game(),
+        event=lambda kind, name: [fn(kind, name) for fn in list(app_events)])
     from .away import NapWatch, PcWarnings, idle_seconds_source
 
     def may_nap() -> bool:
@@ -710,6 +949,8 @@ def main(argv: list[str] | None = None) -> int:
         rgba = np.ascontiguousarray(np.dstack([rgb, np.full((h, w), 255, np.uint8)]))
         return QImage(rgba.tobytes(), w, h, 4 * w, QImage.Format.Format_RGBA8888).copy()
 
+    shot_area: list = []                      # where the last screenshot is on screen (logical px) - for marks
+
     def screen_picture():
         """The screen your window is on (not always the main one: a game on your second monitor too)."""
         from PySide6.QtGui import QCursor, QGuiApplication, QImage
@@ -722,8 +963,11 @@ def main(argv: list[str] | None = None) -> int:
             if rect is None:
                 sc = clipmod.primary_screen()
                 rect = (sc.x, sc.y, sc.x + sc.width, sc.y + sc.height)
+            shot_area[:] = [to_logical(rect)]
             return rgb_image(grab(rect))
         screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        if screen is not None:
+            shot_area[:] = [screen.geometry()]
         return screen.grabWindow(0).toImage() if screen is not None else QImage()
 
     def window_picture():
@@ -753,6 +997,22 @@ def main(argv: list[str] | None = None) -> int:
                         read_text=ocr.read if sys.platform == "win32" else tesseract_text)
     watch.start()
     services.screen_watch = watch
+
+    # Screen intelligence (2.4): explain this / what's wrong / read this chart / what changed - with marks on screen
+    from .integrations.screen_intel import ScreenIntel
+    from .integrations.screen_watch import is_private
+
+    def intel_area():
+        from PySide6.QtCore import QRectF
+        if not shot_area:
+            screen_picture()
+        return QRectF(shot_area[0]) if shot_area else QRectF(0, 0, 1920, 1080)
+
+    def annotate(marks: list) -> None:
+        for rect, label in marks:
+            canvas.circle(rect, label)
+    services.intel = ScreenIntel(watch, screen_picture, intel_area, annotate,
+                                 private=lambda: is_private(front_title() or ""))
 
     # She plays your game ("play this for me"): looks (vision AI) -> moves (keys / camera / clicks), Esc stops her
     from .integrations import game_agent as gamemod
@@ -813,6 +1073,18 @@ def main(argv: list[str] | None = None) -> int:
         services.open_folder = lambda label, path: visits.open_folder(label, path) if settings.teleport \
             else system.open_item(path)
     router = CommandRouter(assistant, companion, catalog, system, services)
+    services.mods = mods
+
+    # Automations (2.4): when X happens, do Y - through her normal commands (same rules, same questions first)
+    from .automation import AutomationEngine
+    from .away import idle_seconds_source
+    automations = AutomationEngine(settings, router.handle,
+                                   lambda text: assistant.show_result(State.SPEAKING, text, emotion="happy"),
+                                   idle_seconds=idle_seconds_source(),
+                                   log_action=lambda what, detail: controller.log(what, detail[:50]))
+    app._automations = automations
+    services.automations = automations
+    app_events.append(automations.app_event)
     QTimer.singleShot(9000, router.watch_reminders)   # reminders you set before (and any missed while she was closed)
     for window in (companion.character, companion.sit_window, companion.panel, companion.drone_window):
         if hasattr(window, "file_dropped"):
@@ -827,7 +1099,10 @@ def main(argv: list[str] | None = None) -> int:
 
     windows = {}
 
-    def open_settings() -> None:
+    from .ui.mods_tab import ModsTab
+    from .ui.automation_tab import AutomationTab
+
+    def open_settings(tab: str = "") -> None:
         if "settings" not in windows:
             windows["settings"] = SettingsWindow(router, settings, art.icon, apply_voice,
                                                  [(LookTab(companion), "Character"),
@@ -839,9 +1114,19 @@ def main(argv: list[str] | None = None) -> int:
                                                          restart=services.restart), "PC && chat"),
                                                   (ExtrasTab(settings, lambda: (assistant.settings_changed.emit(),
                                                                                 companion._apply_visibility()),
-                                                             services.clips_turn_on), "Extras")])
+                                                             services.clips_turn_on), "Extras"),
+                                                  (ModsTab(mods, mod_store, companion.character.play_mod_animation,
+                                                           mod_store.folder / "MODDING.md"), "Mods"),
+                                                  (AutomationTab(settings, automations,
+                                                                 lambda: [a.name for a in catalog.apps]
+                                                                 + [g.name for g in catalog.games]), "Automations")])
         win = windows["settings"]
         win.load_rows()
+        if tab:                                       # "open the mod store": straight to that tab
+            for i in range(win.tabs.count()):
+                if tab.lower() in win.tabs.tabText(i).lower():
+                    win.tabs.setCurrentIndex(i)
+                    break
         win.show()
         win.raise_()
         win.activateWindow()
@@ -850,6 +1135,7 @@ def main(argv: list[str] | None = None) -> int:
     def open_chat() -> None:
         if "chat" not in windows:
             windows["chat"] = ChatWindow(assistant, art.icon)
+            app._chat_window = windows["chat"]
         windows["chat"].open()
     services.open_chat = open_chat
 
@@ -987,6 +1273,12 @@ def main(argv: list[str] | None = None) -> int:
     apply_hearing()
     services.language_changed = apply_hearing
 
+    def ears_missing() -> bool:
+        from . import languages
+        return not languages.english() and service.refine is None
+    assistant.ears_missing = ears_missing           # your language, only her English ears: she offers to fetch them
+    assistant.offer_ears = lambda: router.offer_ears()
+
     # Saying hi when you sign in (Windows start-up, unlocking, waking from sleep).
     last_greeting = [-1e9]
 
@@ -996,6 +1288,7 @@ def main(argv: list[str] | None = None) -> int:
             return
         last_greeting[0] = time.monotonic()
         text, emotion = chat.greeting(datetime.now().hour, settings.slang)
+        app._mods and mod_sounds.play("greet", settings.speech_volume * 0.6)
         router.small_talk.last = "hello"
         controller.log("Hi", "welcome back")
         controller.set_state(State.SPEAKING, text, emotion)

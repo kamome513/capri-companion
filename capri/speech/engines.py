@@ -218,7 +218,7 @@ class KokoroEngine:
         k = self._model()
         name = voice[len(self.PREFIX):]
         lang_info = languages.get()
-        english = lang_info.code == "en"
+        english = lang_info.code == "en" or languages.speaks_english(text)   # an English line: her English sounds
         style = self._style(k, name)
         if english:
             lang = "en-gb" if name.startswith("bf_") else "en-us"
@@ -305,7 +305,7 @@ class EspeakEngine:
         from .. import languages
         exe = shutil.which("espeak-ng") or shutil.which("espeak")
         p = max(0, min(99, round(50 + pitch * 4)))
-        lang = languages.get()
+        lang = languages.get("en" if languages.speaks_english(text) else None)   # an English line: English sounds
         said = respell(text) if lang.code == "en" else text
         if not exe:
             lib = self._library()
@@ -643,7 +643,7 @@ class VoiceBox:
         if not self.voices():
             raise RuntimeError("no text-to-speech voices available")
         voice = voice if voice and any(voice in e.voices() for e in self.engines) else self.default_voice()
-        voice = self.for_language(voice)
+        voice = self.for_language(voice, text)
         engine = next(e for e in self.engines if voice in e.voices())
         try:
             audio = engine.synthesize(text, voice, speed, pitch)
@@ -658,12 +658,13 @@ class VoiceBox:
         self.last = (voice, "")
         return audio
 
-    def for_language(self, voice: str) -> str:
+    def for_language(self, voice: str, text: str = "") -> str:
         """Your voice if it speaks your language; else one that does: her neural voice (all 25 languages since
-        2.3.2), a Windows voice for that language, then espeak-ng. Online voices and beeps speak them all."""
+        2.3.2), a Windows voice for that language, then espeak-ng. Online voices and beeps speak them all.
+        A line that's in English anyway (no AI to translate it) keeps her English voice (2.4.1)."""
         from .. import languages
         code = languages.current()
-        if code == "en" or languages.keep_voice or \
+        if code == "en" or languages.keep_voice or (text and languages.speaks_english(text)) or \
                 voice.startswith((ElevenLabsEngine.PREFIX, FishAudioEngine.PREFIX, BeepEngine.PREFIX)):
             return voice
         if voice.startswith(KokoroEngine.PREFIX) and KokoroEngine.speaks(code) and \

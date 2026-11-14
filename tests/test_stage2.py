@@ -178,10 +178,10 @@ def test_panel_and_hide_toggles():
 
 
 def test_log_toggle_changes_panel_height():
-    c = make()
+    c = make()                                     # (2.4.2: the box is always compact - no log rows to hide)
     tall = c.panel.height()
     c.set_show_log(False)
-    assert c.panel.height() < tall
+    assert c.panel.height() <= tall
     assert_panel_on_capri(c)
 
 
@@ -210,12 +210,10 @@ def test_corrupt_settings_file_uses_defaults():
 
 def test_menu_reflects_settings():
     from capri.ui.tray import CompanionMenu
-    c = make(Settings(compact=True, show_log=True))
+    c = make(Settings(show_log=True))
     menu = CompanionMenu(c, ART.icon)
-    assert menu.a_compact.isChecked()
-    assert not menu.a_log.isEnabled()     # compact never shows the log
-    menu.a_compact.trigger()              # user clicks "Compact mode"
-    assert c.settings.compact is False and menu.a_log.isEnabled()
+    assert menu.a_compact not in menu.menu.actions()          # (2.4.2) no Compact mode: always the small box
+    assert not menu.a_log.isEnabled()     # the compact box never shows the log rows
     menu.a_hide.trigger()
     assert c.hidden and menu.a_hide.text() == "Show Capri"
 

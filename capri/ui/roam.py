@@ -31,7 +31,7 @@ from .rig import Pose, Rig
 if TYPE_CHECKING:
     from .companion import Companion
 
-WAIT = (45.0, 140.0)      # seconds between teleports
+WAIT = (150.0, 360.0)     # seconds between teleports (2.4.1: less often)
 DISTANCE = (0.15, 0.55)   # how far she goes, as a share of the screen's width
 BUSY = {State.LISTENING, State.PROCESSING, State.LAUNCHING, State.SPEAKING}   # she's needed: no roaming
 # the teleport's beats, in seconds

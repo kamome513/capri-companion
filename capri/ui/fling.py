@@ -41,18 +41,23 @@ DRAG = 0.6                # air drag per second (velocity *= 1 - DRAG*dt)
 SLAM_SPEED = 850.0        # hitting something faster than this is a slam
 MAX_SPEED = 6000.0
 SPIN = 0.55               # degrees of spin per px/s of sideways speed, per second
-HIT_STOP = 0.07           # the freeze at the moment of impact
-SLAM_TIME = 0.24          # squashed flat against the wall (after the freeze)
+HIT_STOP = 0.04           # the freeze at the moment of impact
+SLAM_TIME = 0.16          # squashed flat against the wall (after the freeze)
 BOUNCE = 0.42             # how much speed a slam gives back (she bounces off)
 FLOOR_BOUNCE = 0.38       # each floor bounce keeps this much
 REST_SPEED = 260.0        # slower than this on the floor: she stops bouncing
-TOPPLE_TIME = 0.3
-DAZED_TIME = 1.0
-GETUP_TIME = 0.6
-LAND_TIME = 0.32
+TOPPLE_TIME = 0.22
+DAZED_TIME = 0.45          # (2.5: less waiting after a throw)
+GETUP_TIME = 0.38
+LAND_TIME = 0.22
 WIDTH = 0.15              # her half-thickness, as a share of her height
 STEP = 1 / 240            # physics sub-step (no tunnelling through walls at high speed)
 RED, CYAN, GREEN, WHITE = fx.RED, fx.CYAN, fx.GREEN, fx.WHITE
+def _ouch() -> list[str]:
+    from ..mods.effects import EFFECTS
+    return EFFECTS.mix("ouch", OUCH)            # + a reaction pack's lines
+
+
 OUCH = ["Ow! Rude.", "Hey! I'm fragile hardware!", "Okay. Ow.", "Did you just throw me?!",
         "That's a firmware crack, choom.", "Seeing stars here...", "Again and I bite.", "Nice arm. Ow."]
 WHEE = ["Whoa!", "Hey!", "Wheee!", "Careful!"]
@@ -210,7 +215,11 @@ class FlingFX(OverlayWindow):
         b = self.body
         p.save()
         self._transform(p, centre, b.angle, b.squash)
-        self.rig.paint(p, QPointF(0, self.fh / 2), self.fh, self.pose, "right")
+        from .character_window import paint_cosmetics            # (2.4.2) her mods while she flies too
+        feet = QPointF(0, self.fh / 2)
+        paint_cosmetics(p, self.rig, feet, self.fh, self.pose, "back")
+        self.rig.paint(p, feet, self.fh, self.pose, "right")
+        paint_cosmetics(p, self.rig, feet, self.fh, self.pose, "front")
         p.restore()
 
     def _sprite(self, p: QPainter, img: QImage, centre: QPointF, angle: float, squash: tuple[float, float],
@@ -515,7 +524,7 @@ class ThrowShow(QObject):
         f.pose = Pose(squat=0.6, blink=0.9, energy=1.0, t=now * 2.2)
         self._shake(now, f.fh * (0.03 + 0.05 * strength))
         if not self._said:                                                  # one "ow" per throw, not per bounce
-            self.say(self._rng.choice(OUCH), "angry")
+            self.say(self._rng.choice(_ouch()), "angry")
             self._said = True
         self._set("slam")
 
@@ -570,7 +579,7 @@ class ThrowShow(QObject):
             self._squash_at = now
             f.stars = max(f.stars, 0.9 if self.slammed else 0.0)
             if not self._said and self.slammed:
-                self.say(self._rng.choice(OUCH), "angry")
+                self.say(self._rng.choice(_ouch()), "angry")
                 self._said = True
             self._set("dazed")
 

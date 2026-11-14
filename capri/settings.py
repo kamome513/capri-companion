@@ -111,6 +111,12 @@ class Settings:
     ai_enabled: bool = True            # a chatbot: chat (and anything that isn't a command) goes to an AI
     ai_provider: str = "auto"          # auto | openai (ChatGPT or any OpenAI-style AI) | claude | local (Ollama)
     intelligence: str = "medium"       # low | medium | high: which model on your AI (ai/tiers.py) - 2.3.8
+    mod_index_url: str = "https://raw.githubusercontent.com/kamome513/capri-companion/main/mods/index.json"
+    mods_auto_update: bool = True      # newer versions of store mods you have, installed by themselves
+    hologram: bool = False             # hologram mode: see-through, scanlined, click-through (2.4)
+    chaos_mode: bool = False           # random harmless desktop fun now and then (off until you turn it on)
+    react_to_apps: bool = True         # she reacts when your apps / games open and close (at most every 2 min)
+    automations: list = field(default_factory=list)   # [{name, trigger, value, actions, enabled, days}] (automation.py)
     openai_preset: str = "openai"      # which service (ai/openai_compat.py PRESETS): openai, groq, gemini...
     openai_url: str = ""               # "" = the preset's address
     openai_model: str = ""             # "" = the preset's suggestion (ChatGPT: gpt-5-nano, the cheapest)
@@ -128,7 +134,7 @@ class Settings:
     idle_acts: bool = True             # now and then: glitching, gaming, watching, on a call with D
     wild_hair: float = 1.0             # her hair storm: always at full (the slider is gone)
     hair_style: str = "storm"          # "storm" (traced from the show) | "classic" (her first spiky one)
-    body_style: str = "full"           # "full" (her solid colours) | "neon" (dark, glowing red / green edges)
+    body_style: str = "flat"           # "flat" (bold shards, 2.4.1) | "full" (her solid colours) | "neon" (dark edges)
     lounge: bool = False               # lie on top of the status panel
     perch_windows: bool = False        # sit on the window you're using; back onto the panel when it closes
     panel_static: bool = True          # TV static + glitches on the status panel
@@ -192,6 +198,9 @@ class Settings:
                 setattr(settings, f.name, [{k: (v if isinstance(v, (int, float)) and not isinstance(v, bool) else str(v))
                                             for k, v in p.items() if k in ("phrase", "app", "name", "x", "y")}
                                            for p in value if isinstance(p, dict) and p.get("phrase")])
+            elif f.name == "automations" and isinstance(value, list):
+                from .automation import Automation
+                setattr(settings, f.name, [a.to_dict() for a in (Automation.from_dict(d) for d in value) if a])
             elif isinstance(default, list) and isinstance(value, list):
                 setattr(settings, f.name, [[str(p[0]), str(p[1])] for p in value
                                            if isinstance(p, (list, tuple)) and len(p) == 2])

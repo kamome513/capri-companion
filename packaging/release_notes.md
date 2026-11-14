@@ -1,6 +1,19 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.3.8.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.5.0.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
+
+**2.5: mods, a new look, automations, chaos and more.** (Settings now has **Mods** and **Automations** tabs.)
+- **Her new look:** big bold shards with a purple edge. She stands by default.
+- **Mods:** a store built into Settings → Mods with 33 mods to switch on and off: skins, accessories (shard ears, cyber shades, a glitch halo), dances, all her personalities, her looks and models (lying down, sitting on windows, neon or full-colour body, classic hair, portrait, mask drone), the chat log styles, a sound pack and greetings. Mods work everywhere she appears - standing, lying down, greeting you, flying, dashing - and on her chat box. Make your own in **Make mods** (a template opens, and Validate checks it). Mods are only pictures, sounds and text: nothing in one is ever run as a program.
+- **Automations:** "when this happens, do these things" - when an app or game opens or closes, at a time of day, when Capri starts, when you're away or come back, or a phrase you say. Each step is something you could ask her yourself, and risky things still ask first. Six templates to start from.
+- **Screen smarts:** "explain this", "what's wrong here" (errors and how to fix them), "read this chart" - she circles what she's talking about. "Remember my screen", then "what changed".
+- **Desktop fun:** "draw a heart / cat / star", "circle the …", "make clones" (they spread across your screen), **chaos mode** (she flings herself around, clones, lightning, her cursor zipping about - never touching your stuff) and **hologram mode**. All in the tray's new **Fun** menu.
+- **She reacts** when your apps and games open and close (now and then - never in quiet mode or mid-game).
+- **Head pats:** rub your cursor back and forth over her head. Clicking her body still pokes her.
+- **AFK:** she floats while you're away.
+- **Talking panel:** reads like a chat log - "> you:" then "CAPRI:" - and it's always the small size now.
+- **Languages:** speaking another language without an AI, she answers in your language and remembers your name. She offers to download your language's ears if only the English ones are there, and English lines keep her English voice (no odd accent).
+- **Calmer:** far fewer glitches and fewer things done by herself, smaller idle moves, a full-arm wave with her palm to you, a quicker recovery after a throw, and she doesn't talk when you move her.
 
 **2.3.8: Intelligence - Low, Medium, High.** One setting for how smart she is: right-click her → **Intelligence**, Settings → Assistant → **Intelligence**, or say "set your intelligence to high" / "be smarter".
 - **Low:** quick and light (or the small AI on your PC). Fine for chat and commands.

@@ -154,7 +154,7 @@ def test_neon_keeps_her_shape_and_lights_her_edges():
 def test_body_look_is_a_setting():
     from capri.settings import Settings
     from capri.ui.neon import LOOKS
-    assert Settings().body_style == "full" and set(LOOKS) == {"neon", "full"}      # solid colours by default
+    assert Settings().body_style == "flat" and set(LOOKS) == {"neon", "full", "flat"}   # flat by default (2.4.1)
     assert Settings().glitches == 0                                                 # and no random glitches
 
 

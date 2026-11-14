@@ -117,6 +117,11 @@ class SmallTalk:
 
     def reply(self, topic: str, slang: bool) -> tuple[str, str]:
         """(text, emotion) for a small-talk topic."""
+        from .mods.effects import EFFECTS
+        pack = EFFECTS.lines.get(topic) if topic in ("hello", "bye") else None
+        if pack and self.rng.random() < 0.5:                       # a greetings pack's line, half the time
+            self.last = topic
+            return self.rng.choice(pack), "happy"
         if (self.last, topic) in FOLLOW_ON:
             emotion, plain, street = FOLLOW_ON[(self.last, topic)]
         elif topic == "good_morning":
@@ -151,5 +156,8 @@ def greeting(hour: int, slang: bool, rng: random.Random | None = None) -> tuple[
                    ("Hey, evening! How was your day?", "Evening, choom. How was your day?")]
     else:
         options = [("Hey, night owl. Welcome back.", "Hey, night owl. Night City never sleeps, huh choom?")]
+    from .mods.effects import EFFECTS
+    if EFFECTS.lines.get("greet") and rng.random() < 0.5:          # a greetings pack's line, half the time
+        return rng.choice(EFFECTS.lines["greet"]), "happy"
     plain, street = rng.choice(options)
     return (street if slang else plain), "happy"

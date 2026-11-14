@@ -77,7 +77,10 @@ class VisitFX(OverlayWindow):
         q = QPainter(img)
         q.scale(0.5, 0.5)
         anchor = QPointF(w / 2, h - 4)
+        from .character_window import paint_cosmetics            # (2.4.2) her mods on the dash too
+        paint_cosmetics(q, self.rig, anchor, self.fh, self.pose, "back")
         self.rig.paint(q, anchor, self.fh, self.pose, self.side)
+        paint_cosmetics(q, self.rig, anchor, self.fh, self.pose, "front")
         q.resetTransform()
         q.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
         q.fillRect(img.rect(), RED)
@@ -118,7 +121,10 @@ class VisitFX(OverlayWindow):
                 p.setBrush(g)
                 p.drawEllipse(pt - o, 90, 90)
         if self.feet is not None:
+            from .character_window import paint_cosmetics
+            paint_cosmetics(p, self.rig, self.feet - o, self.fh, self.pose, "back")
             self.rig.paint(p, self.feet - o, self.fh, self.pose, self.side)
+            paint_cosmetics(p, self.rig, self.feet - o, self.fh, self.pose, "front")
         if self.zap is not None:                                        # her bolt into the target
             t0, hand, target = self.zap
             k = (now - t0) / ZAP

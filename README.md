@@ -296,6 +296,21 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 | "check for updates" / "update yourself" | Looks for a newer Capri / installs a downloaded one (asks first) |
 | "restart yourself" / "restart Capri" | Closes and starts her again (a downloaded update installs on the way) |
 
+### Mods (2.5)
+
+Settings → **Mods**. **Store**: pick a category (skins, accessories, animations, personalities, looks & models,
+greetings, sound packs), press **Install** and she switches straight away; **Installed**: turn mods on and off, rate
+them, export them, uninstall. Two mods that clash (two skins, two body looks, two personalities) never stay on together -
+the new one wins, and turning a mod off gives you back what you had. **Make mods** opens a template in
+Documents\Capri Mods; **Validate** checks it and **Try it** installs it. You can also drop a `.capri-mod` file on her.
+Mods are pictures, sounds and text only - nothing in a mod is ever run.
+
+### Automations (2.5)
+
+Settings → **Automations**: when something happens (an app or game opens or closes, a time of day, Capri starts,
+you've been away, you come back, or a phrase you say), she does the steps you list - any command, something to say, or
+a wait. **Test run** tries one now. Steps go through her normal commands, so risky ones still ask you first.
+
 ### Right-click menu (or the tray icon by the clock)
 
 | Item | What it does |

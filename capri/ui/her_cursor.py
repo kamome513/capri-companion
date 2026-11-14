@@ -46,6 +46,14 @@ class HerCursor(OverlayWindow):
         self._pulse.start()
         self._hide.start(2500)
 
+    def follow(self, x: int, y: int) -> None:
+        """Jump straight to x, y (drawing: the pen's tip, every frame) - no glide, no ripple."""
+        self._anim.stop()
+        self.move(QPoint(x - 4, y - 4))
+        if not self.isVisible():
+            self.show()
+        self._hide.start(1500)
+
     def paintEvent(self, event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)

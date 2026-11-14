@@ -254,3 +254,110 @@ def intelligence_intent(t: str) -> str | None:
     if re.fullmatch(INTEL_ASK, t):
         return ""
     return None
+
+
+# -- mods: "do a dance" / "do the hip sway" (an animation mod), "open the mod store" -----------------------------
+MOD_DANCE = (r"(?:do |show me |bust out )?(?:a |your |some )?(?:dance|dance move|dance moves|move|moves|animation)"
+             r"(?: for me)?|(?:can you |go )?dance(?: for me)?|do (?:the |your )(?P<name>[a-z ]{3,30})")
+MOD_STORE = (r"(?:open|show|go to)(?: me)? (?:the |your |my )?(?:mod|mods)(?: store| shop| marketplace| settings| page)?"
+             r"|(?:mod|mods) (?:store|shop|marketplace)")
+
+
+def mod_intent(t: str) -> str | None:
+    """"store", "dance:<name>" ("dance:" = any), or None."""
+    if re.fullmatch(MOD_STORE, t):
+        return "store"
+    m = re.fullmatch(MOD_DANCE, t)
+    if m:
+        return "dance:" + (m.group("name") or "").strip()
+    return None
+
+
+# -- desktop interactions (2.4): drawing, circling / pointing at things, clones, chaos mode, hologram ------------------
+_NUM = {"a": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+        "ten": 10, "a few": 3, "some": 3, "a couple of": 2, "a bunch of": 6, "lots of": 8, "loads of": 8}
+_NUMS = "|".join(sorted(map(re.escape, _NUM), key=len, reverse=True))
+DOODLE = (r"(?:draw|doodle|sketch|paint)(?: me| us)? (?:a |an |some )?(?P<what>heart|star|smiley(?: face)?|smile|"
+          r"happy face|cat|kitty|lightning(?: bolt)?|bolt|circle)(?: on (?:my |the )?screen)?(?: for me)?")
+CLEAR_DRAWING = (r"(?:clear|erase|wipe|remove|delete|get rid of)(?: the| your| my| all(?: the)?)? (?:drawings?|doodles?|"
+                 r"circles?|scribbles?|marks?|annotations?|highlights?)(?: on (?:my |the )?screen)?|erase that|"
+                 r"clean (?:up )?(?:my |the )?screen")
+MARK = (r"(?P<verb>circle|point (?:at|to)|where s|wheres|where is|find)(?: the| my)? (?P<what>.{2,50}?)"
+        r"(?: (?:button|icon|tab|menu|link|box|field|bar))?(?: on (?:my |the )?screen)?")
+CLONES = (rf"(?:make|spawn|summon|create|clone yourself|copy yourself)(?: me)?(?: (?P<n>\d+|{_NUMS}))? "
+          rf"(?:clones?|copies|copy|more of you|of yourself)(?: of (?:you|yourself))?"
+          rf"|clone yourself(?: (?P<n2>\d+|{_NUMS}) times)?|shadow clone(?: jutsu)?")
+CLEAR_CLONES = (r"(?:clear|remove|delete|kill|get rid of|send away|pop|stop)(?: the| your| all(?: the)?| all your)? "
+                r"(?:clones?|copies)|no more clones")
+CHAOS = (r"(?:turn |switch |go )?(?P<on>on |off )?(?:the |your )?chaos(?: mode)?(?P<on2> on| off)?|go crazy|be chaotic"
+         r"|(?:stop|end|enough) (?:the )?chaos")
+HOLOGRAM = (r"(?:turn |switch |go )?(?P<on>on |off |into |in )?(?:the |your |a )?holo(?:gram)?(?: mode)?(?P<on2> on| off)?"
+            r"|(?:stop|end) (?:being a |the )?hologram|become a hologram")
+
+
+def desk_intent(t: str) -> tuple[str, str, str] | None:
+    """(kind, what, query) for the desktop interactions, or None.
+    kinds: doodle (what=shape), clear_drawing, mark (what=thing, query=circle|highlight|point), clones (query=N),
+    clear_clones, chaos (query=on|off), hologram (query=on|off)."""
+    m = re.fullmatch(DOODLE, t)
+    if m:
+        what = m.group("what")
+        what = {"smiley face": "smiley", "smile": "smiley", "happy face": "smiley", "kitty": "cat",
+                "lightning bolt": "lightning", "bolt": "lightning"}.get(what, what)
+        return "doodle", what, ""
+    if re.fullmatch(CLEAR_DRAWING, t):
+        return "clear_drawing", "", ""
+    if re.fullmatch(CLEAR_CLONES, t):
+        return "clear_clones", "", ""
+    m = re.fullmatch(CLONES, t)
+    if m:
+        n = m.group("n") or m.group("n2") or ("10" if "jutsu" in t or "shadow" in t else "8")
+        return "clones", "", str(int(n) if n.isdigit() else _NUM.get(n, 8))         # (2.4.2: no number = 8)
+    m = re.fullmatch(CHAOS, t)
+    if m and ("chaos" in t or "crazy" in t or "chaotic" in t):
+        flag = (m.group("on") or m.group("on2") or "").strip()
+        off = flag == "off" or t.startswith(("stop", "end", "enough"))
+        return "chaos", "", "off" if off else "on"
+    m = re.fullmatch(HOLOGRAM, t)
+    if m and "holo" in t:
+        flag = (m.group("on") or m.group("on2") or "").strip()
+        return "hologram", "", "off" if flag == "off" or t.startswith(("stop", "end")) else "on"
+    m = re.fullmatch(MARK, t)
+    if m:
+        verb, what = m.group("verb"), m.group("what").strip()
+        if what in ("it", "that", "this", "me", "you", "yourself") or len(what) < 2:
+            return None
+        if verb in ("find", "where s", "wheres", "where is") and \
+                not re.search(r"\b(?:button|icon|tab|menu|link|field|bar|box)\b", t):
+            return None                           # "find my homework" / "where is my file" are file searches
+        query = "circle" if verb == "circle" else "point"
+        return "mark", what, query
+    return None
+
+
+# -- screen intelligence (2.4): explain this, what's wrong, read this chart, what changed -----------------------------
+INTEL = [
+    ("chart", r"(?:read|explain|describe|look at|analy[sz]e)(?: this| the| my)? (?:chart|graph|table|diagram|plot|"
+              r"spreadsheet|data)(?: for me| on my screen)?|what (?:does|do) (?:this|the|these) (?:chart|graph|table|"
+              r"diagram|plot|numbers?)s? (?:show|say|mean)"),
+    ("error", r"what (?:s|is) wrong(?: here| with this| with (?:my |this )?(?:screen|app|program|code|pc|computer))"
+              r"|(?:find|explain|read)(?: me)? (?:the|this) (?:error|problem|warning)(?: on my screen)?"
+              r"|what (?:does|is) (?:this|the) (?:error|warning|message)(?: mean| about| saying)?"
+              r"|help me fix (?:this|that|the error|this error|it)|how do i fix (?:this|that|this error)"
+              r"|why (?:did|does|is) (?:it|this|this app|that) (?:crash|crashing|broken|not working|keep crashing)"),
+    ("explain", r"(?:explain|describe)(?: to me)? (?:this|this app|this screen|this window|this page|"
+                r"what s on (?:my |the )?screen|what i m looking at|what i am looking at)"
+                r"|what am i looking at|what (?:is|s) this (?:app|program|window|page|screen)"
+                r"|how does this (?:app|program|thing|page) work|what does this (?:app|program|button|page) do"),
+    ("remember", r"remember (?:my screen|the screen|what s on (?:my |the )?screen|how my screen looks)"
+                 r"|save a (?:snapshot|screen snapshot)(?: of (?:my|the) screen)?(?: for later)?"),
+    ("changes", r"what (?:s |has |)changed(?: on (?:my |the )?screen)?(?: since)?|what s different(?: now)?"
+                r"|did anything change(?: on (?:my |the )?screen)?|spot the difference"),
+]
+
+
+def intel_intent(t: str) -> str | None:
+    for task, pattern in INTEL:
+        if re.fullmatch(pattern, t):
+            return task
+    return None

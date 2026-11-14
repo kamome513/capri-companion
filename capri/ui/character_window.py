@@ -21,7 +21,7 @@ import math
 import random
 import time
 
-from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer
+from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPaintEvent, QPen, QRadialGradient
 
 from .. import emotions
@@ -43,13 +43,15 @@ MOUTH_OPEN, MOUTH_CLOSE = 0.5, 0.28   # hysteresis so the mouth doesn't flicker
 GLITCH_FRAMES = 2
 BODY_REF_HEIGHT = 230                 # pixel height of the sheet's idle frame (2x import)
 BODY_SCALE = 1.32                     # body style: her full-body figure's height vs the display height
+FACE_SPAN = 1.9                       # a face cosmetic (visor) at width 1: this many times the gap between her eyes
+LYING_EYES = ((0.167, 0.502), (0.241, 0.409))   # her eyes on the lying-down art (found from her blue irises)
 LYING_FACE = (0.16, 0.47)             # her eyes on the lying-down art (share of its width / height)
 BODY_SIDE, BODY_TOP = 0.34, 0.28      # room around her (x figure height) for the hair storm and props
 # body style: how each expression moves her full-body figure
 BODY_POSES = {
-    "idle": {}, "blink": {"blink": 1.0}, "look_around": {"lean": 0.035},
-    "listening": {"energy": 0.45, "lean": -0.03}, "thinking": {"energy": 0.2, "squat": 0.06},
-    "speaking": {"mouth": 1.0}, "happy": {"energy": 0.6, "reach": 0.35}, "confused": {"energy": 0.25, "lean": -0.06},
+    "idle": {}, "blink": {"blink": 1.0}, "look_around": {"lean": 0.018},              # (2.4.1: smaller idles)
+    "listening": {"energy": 0.45, "lean": -0.02}, "thinking": {"energy": 0.2, "squat": 0.04},
+    "speaking": {"mouth": 1.0}, "happy": {"energy": 0.6, "reach": 0.2}, "confused": {"energy": 0.25, "lean": -0.04},
 }
 IDLE_FPS = 30                         # idle tick rate (her hair sways at this) - repaints only when something changes
 TALK_FPS = 60                         # while she talks, or moves from one pose to another: smooth
@@ -62,6 +64,8 @@ STATE_FRAME = {State.LISTENING: "listening", State.PROCESSING: "thinking", State
 
 
 class CharacterWindow(OverlayWindow):
+    head_patted = Signal()                     # (2.5) your cursor rubbed her head - a real head pat
+
     def __init__(self, art: CharacterArt, height: int, always_on_top: bool = True,
                  sprites: SpriteArt | None = None, style: str = "classic") -> None:
         super().__init__(always_on_top)
@@ -86,6 +90,9 @@ class CharacterWindow(OverlayWindow):
         self._t0 = time.monotonic()
         self._blink_until = self._look_until = 0.0
         self.napping = False                    # you've been away a while: eyes shut, little z's (2.3.4)
+        self.mod_anim = None                    # (animation, started) - an animation mod's move playing (2.4)
+        self.hologram = False                   # hologram mode: cyan scanlines over her (2.4)
+        self._next_mod_anim = time.monotonic() + 50.0
         self._nap_since = 0.0
         self._next_blink = self._t0 + 3.0
         self._next_look = self._t0 + 14.0
@@ -171,7 +178,8 @@ class CharacterWindow(OverlayWindow):
             self.hair.paint(p, head, t if self.talking else int(t * 8) / 8, self.wild_hair, energy)
         tinted = face_key == "lying" and self.hair_style == "storm" and self.wild_hair > 0 and self.sprites is not None
         if tinted:                                # her own hair beside her face: the traced hair's colour
-            image = self._scaled("tint:lying", self._hair_tinted("lying", self.sprites.lying), size[0], size[1], cover=False)
+            image = self._scaled("tint:lying", self._hair_tinted("lying", self.lying_source()), size[0], size[1],
+                                 cover=False)
         p.drawImage(QPointF(x, y), image)
         face = self.sprites.face_layer.get(face_key) if self.sprites else None
         if tinted and face is not None:
@@ -279,6 +287,29 @@ class CharacterWindow(OverlayWindow):
                 self._update_timer()
             self.update()
 
+    IDLE_MOVE_SIZE = 0.5        # (2.4.1) moves she does by herself, while idle: half as big as when you ask
+
+    def play_mod_animation(self, name: str = "", size: float = 1.0) -> str:
+        """An animation mod's move now (by name, or a random one). Returns its name ("" if there's none / she can't)."""
+        from ..mods.effects import EFFECTS
+        anims = [a for a in EFFECTS.animations if not name or name.lower() in a["name"].lower()]
+        if not anims or self.mode != "body":
+            return ""
+        anim = self._rng.choice(anims)
+        self.mod_anim = (anim, time.monotonic(), size)
+        self._update_timer()
+        return anim["name"]
+
+    def _mod_anim_tick(self, now: float) -> None:
+        """Now and then, while she's idle, one of the animation mods' moves by herself."""
+        from ..mods.effects import EFFECTS
+        if self.mod_anim is not None:
+            return
+        if not EFFECTS.animations or not self._acts_allowed() or self.acts.act or now < self._next_mod_anim:
+            return
+        self._next_mod_anim = now + self._rng.uniform(240.0, 480.0)     # (2.4.1: now and then, not all the time)
+        self.play_mod_animation(size=self.IDLE_MOVE_SIZE)
+
     def play_act(self, name: str) -> bool:
         """Start an idle activity now (the menu / tests). False if she can't right now."""
         if not self._acts_allowed():
@@ -373,7 +404,8 @@ class CharacterWindow(OverlayWindow):
         return time.monotonic() < self._blink_until
 
     def _update_timer(self) -> None:
-        fast = self.talking or (self.mode == "body" and (self._moving or self._blinking())) or self._special()
+        fast = self.talking or (self.mode == "body" and (self._moving or self._blinking())) or self._special() \
+            or self.mod_anim is not None
         fps = TALK_FPS if fast else LOOK_FPS if self.mode == "look" else ACT_FPS if self.acts.act else IDLE_FPS
         self._timer.setInterval(int(1000 / fps))
         if self._animating():
@@ -413,8 +445,43 @@ class CharacterWindow(OverlayWindow):
         self._hover_on = False
         super().leaveEvent(event)
 
+    PAT_STROKES = 2            # (2.5) a head pat: your cursor going back and forth over her head...
+    PAT_SECONDS = 0.8          # ...for this long, without leaving it
+    PAT_TRAVEL = 8.0           # px a stroke has to move before it turns back
+    PAT_COOLDOWN = 2.5
+
+    def head_area(self) -> QRectF:
+        """Where her head (and hair) is in this window - where your cursor pats her."""
+        c = QRectF(self.content_rect())
+        if self.mode == "lying":
+            return QRectF(c.left() - 10, max(0.0, c.top() - 30), c.width() * 0.42, c.height() * 0.62 + 30)
+        top = float(self.visual_top())
+        return QRectF(c.left() - 20, top, c.width() + 40, c.top() + c.height() * 0.3 - top)
+
+    def _rub_step(self, pos: QPointF, buttons) -> None:
+        """Your cursor rubbing her head: count the strokes; enough of them, long enough = a head pat."""
+        now = time.monotonic()
+        rub = self.__dict__.setdefault("_rub", {"since": 0.0, "last": 0.0, "x": 0.0, "dir": 0, "from": 0.0,
+                                               "strokes": 0, "cool": 0.0})
+        if buttons != Qt.MouseButton.NoButton or not self.head_area().contains(pos) or now - rub["last"] > 0.4:
+            rub.update(since=now, x=pos.x(), dir=0, strokes=0, **{"from": pos.x()})
+            rub["last"] = now if self.head_area().contains(pos) and buttons == Qt.MouseButton.NoButton else 0.0
+            return
+        rub["last"] = now
+        dx = pos.x() - rub["x"]
+        rub["x"] = pos.x()
+        d = (dx > 0) - (dx < 0)
+        if d and d != rub["dir"]:
+            if rub["dir"] and abs(pos.x() - rub["from"]) >= self.PAT_TRAVEL:
+                rub["strokes"] += 1
+            rub["dir"], rub["from"] = d, pos.x()
+        if rub["strokes"] >= self.PAT_STROKES and now - rub["since"] >= self.PAT_SECONDS and now >= rub["cool"]:
+            rub.update(cool=now + self.PAT_COOLDOWN, strokes=0, since=now)
+            self.head_patted.emit()
+
     def mouseMoveEvent(self, event) -> None:
         self._hover_x = event.position().x()
+        self._rub_step(event.position(), event.buttons())
         if not self._hover_on and QRectF(self.content_rect()).adjusted(-20, -40, 20, 0).contains(event.position()):
             self._hover_on = True
             self._update_timer()
@@ -478,19 +545,23 @@ class CharacterWindow(OverlayWindow):
                 self._next_look = now + self._rng.uniform(12.0, 26.0)
         if self.acts.update(now, self._acts_allowed()):
             self._update_timer()
+        self._mod_anim_tick(now)
         if self._special():                                  # a glitch / swinging / your mouse on her: full speed
             if self._timer.interval() != int(1000 / TALK_FPS):
                 self._update_timer()
             self.update()
             return
-        if self.talking or (self.mode == "body" and (self._moving or self._blinking())):
+        if self.talking or self.mod_anim is not None or (self.mode == "body" and (self._moving or self._blinking())):
             self.update()
-            if not self.talking and not self._moving and not self._blinking():
+            if not self.talking and not self._moving and not self._blinking() and self.mod_anim is None:
                 self._update_timer()
             return
         if self.mode == "body" and self._timer.interval() != int(1000 / (ACT_FPS if self.acts.act else IDLE_FPS)):
             self._update_timer()                             # settled: back to the light idle rate
         # At rest, only repaint when something visible changed: pose, breathing bob, hair boil step.
+        if self.napping and self.mode in ("body", "lying"):    # floating: every frame, it's a smooth glide
+            self.update()
+            return
         key = (self.pose_name(), round(self._bob() * 8), self._hair_step(), self.acts.frame_key(now),
                int(self._t() * LOOK_FPS) if self.mode == "look" else 0)      # looks move all the time
         if key != self._frame_key:
@@ -571,6 +642,8 @@ class CharacterWindow(OverlayWindow):
                 draw(p)
             if self.napping and not self.talking:
                 self._paint_zzz(p)
+            if self.hologram:
+                self._paint_hologram(p)
         except Exception:
             # Never leave her invisible (and the panel floating over nothing): log it once, draw her plainly.
             if not self._paint_failed:
@@ -584,6 +657,17 @@ class CharacterWindow(OverlayWindow):
             w, h = image.width() * scale, image.height() * scale
             p.drawImage(QRectF(target.center().x() - w / 2, target.bottom() - h, w, h), image)
         p.end()
+
+    def _paint_hologram(self, p: QPainter) -> None:
+        """Hologram mode: a cyan tint and drifting scanlines, only where she is."""
+        p.save()
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceAtop)
+        p.fillRect(self.rect(), QColor(0, 226, 255, 80))
+        off = int(time.monotonic() * 30) % 4
+        line = QColor(0, 0, 0, 70)
+        for y in range(off, self.height(), 4):
+            p.fillRect(0, y, self.width(), 1, line)
+        p.restore()
 
     def set_napping(self, on: bool) -> None:
         """You've been away (no mouse or keyboard) a while: she naps. Any input and she's awake again."""
@@ -720,9 +804,14 @@ class CharacterWindow(OverlayWindow):
         uses it too, so she looks the same sitting on a window."""
         if self.sprites is None:
             return None
+        from ..mods.effects import EFFECTS, recolor
+        if getattr(self, "_mods_gen", None) != EFFECTS.generation:      # a skin mod changed: cut her out again
+            self._mods_gen = EFFECTS.generation
+            self._rig_full = self._rig_small = self._rig_key = None
         if self._rig_full is None:
             from .neon import body_image
-            self._rig_full = Rig(body_image(self.sprites.frame("standing"), self.body_look),
+            frame = recolor(body_image(self.sprites.frame("standing"), self.body_look), EFFECTS.palette)
+            self._rig_full = Rig(frame,
                                  self.hair_style if self.hair_style in HAIR_STYLES else "storm")
         return self._rig_full
 
@@ -748,6 +837,20 @@ class CharacterWindow(OverlayWindow):
             moves["mouth"] = min(1.0, 0.25 + self.level) if self.level > 0.08 else 0.0
         elif self.acts.act:
             moves["mouth"] = self.acts.mouth(now)                  # her turn on the call with D
+        mod_eyes = ""
+        if self.mod_anim is not None:                              # an animation mod's move
+            from ..mods.effects import animation_moves
+            got = animation_moves(self.mod_anim[0], now - self.mod_anim[1])
+            if got is None:
+                self.mod_anim = None
+            else:
+                extra, mod_eyes = got
+                size = self.mod_anim[2] if len(self.mod_anim) > 2 else 1.0
+                for k, v in extra.items():
+                    if k in ("blink", "mouth"):
+                        continue
+                    moves[k] = moves.get(k, 0.0) + v * size
+                self._mod_face = (extra.get("blink", 0.0), extra.get("mouth", 0.0))
         if self.sway.held:                                         # dangling from your cursor
             held = self.sway.pose_moves(now)
             held.pop("lean", None)
@@ -769,18 +872,22 @@ class CharacterWindow(OverlayWindow):
         blink = 0.0
         if now < self._blink_until:                                # closes and opens, not on / off
             blink = math.sin(math.pi * min(1.0, 1 - (self._blink_until - now) / BLINK_SECONDS))
-        if self.napping and not self.talking:                      # asleep: eyes shut, head nodding a little
+        if self.napping and not self.talking:                      # asleep, floating: eyes shut, arms still
             blink = min(1.0, (now - self._nap_since) / 0.8)
             smooth = dict(smooth)
-            smooth["lean"] = smooth.get("lean", 0.0) + 0.03 * math.sin(now * 0.9)
-            smooth["squat"] = max(smooth.get("squat", 0.0), 0.12)
-            smooth["energy"] = 0.0
+            phase = 2 * math.pi * now / self.HOVER_PERIOD
+            smooth["lean"] = smooth.get("lean", 0.0) + 0.02 * math.sin(phase * 0.5)
+            smooth["squat"] = max(smooth.get("squat", 0.0), 0.1 + 0.04 * math.sin(phase))   # knees up, legs loose
+            smooth["energy"] = 0.15 + 0.1 * math.sin(phase)            # her hair floats a little too
         eyes = ""
         since = now - self._state_at
         if self.emotion in ("happy", "playful") and self.state in (State.SUCCESS, State.SPEAKING) and not self.talking:
             eyes = "happy"                                          # pleased with herself
         if self.emotion in ("playful", "smirk") and self.state is State.SUCCESS and 0.15 < since < 0.6:
             eyes = "wink"
+        if self.mod_anim is not None:
+            eyes = mod_eyes or eyes
+            blink = max(blink, getattr(self, "_mod_face", (0.0, 0.0))[0])
         return Pose(t=self._t(), wild=min(1.5, self.wild_hair / 0.7), blink=blink, eyes=eyes, **smooth)
 
     def _ease_towards(self, target: dict[str, float], now: float) -> dict[str, float]:
@@ -808,11 +915,53 @@ class CharacterWindow(OverlayWindow):
         feet = QPointF(self.width() / 2 + jolt.x(),
                        self.height() - 2 + self._bounce() + self._bob() + jolt.y() - lift)    # hovering up
         pose = self.figure_pose()
-        self.figure_rig().paint(p, feet, self._figure_h, pose, "left" if pose.reach else "right")
+        rig = self.figure_rig()
+        self._paint_cosmetics(p, rig, feet, pose, "back")         # mod cosmetics behind her (ears, wings...)
+        rig.paint(p, feet, self._figure_h, pose, "left" if pose.reach else "right")
+        self._paint_cosmetics(p, rig, feet, pose, "front")        # ...and in front (visors, hats...)
+
+    def _paint_cosmetics(self, p: QPainter, rig, feet: QPointF, pose, layer: str) -> None:
+        paint_cosmetics(p, rig, feet, self._figure_h, pose, layer)
+
+    HOVER_PERIOD = 3.4           # seconds: one slow rise and fall while she floats (AFK)
+
+    def hover_lift(self, now: float | None = None) -> float:
+        """While you're away she floats (2.4.1): how high she is above her spot right now, in pixels - eases up
+        when she dozes off, then rises and falls slowly."""
+        if not self.napping:
+            return 0.0
+        now = time.monotonic() if now is None else now
+        x = min(1.0, (now - self._nap_since) / 1.6)
+        ramp = x * x * (3 - 2 * x)
+        h = self._figure_h if self.mode == "body" else self.height() * 0.6
+        return ramp * h * (0.035 + 0.014 * math.sin(2 * math.pi * now / self.HOVER_PERIOD))
+
+    def _paint_hover_shadow(self, p: QPainter, feet: QPointF, width: float, lift: float) -> None:
+        """A soft glow under her while she floats - smaller and fainter the higher she is."""
+        if lift <= 0.5:
+            return
+        k = max(0.35, 1.0 - lift / max(1.0, width))
+        g = QRadialGradient(feet, width * 0.5 * k)
+        c = QColor(255, 30, 100)                              # her pink
+        c.setAlpha(int(90 * k))
+        g.setColorAt(0, c)
+        c2 = QColor(c)
+        c2.setAlpha(0)
+        g.setColorAt(1, c2)
+        p.save()
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(g)
+        p.drawEllipse(feet, width * 0.5 * k, width * 0.09 * k)
+        p.restore()
 
     def _paint_body(self, p: QPainter) -> None:
         now = time.monotonic()
         jolt = self.acts.offset(now)
+        lift = self.hover_lift(now)
+        if lift:
+            c = self.content_rect()
+            self._paint_hover_shadow(p, QPointF(c.center().x(), c.bottom() - 2), c.width() * 0.8, lift)
+            jolt = jolt + QPointF(0.0, -lift)
         snapshot = None
         if self.acts.act == "glitch":                      # the glitch needs a picture of her to tear up
             dpr = self.devicePixelRatioF()
@@ -870,14 +1019,29 @@ class CharacterWindow(OverlayWindow):
         p.setPen(QPen(accent, 1.6))
         p.drawPath(path)
 
-    def _paint_lying_figure(self, p: QPainter, jolt: QPointF) -> tuple[QRectF, QRectF | None]:
-        src = self.sprites.lying
-        if self.body_look == "neon":                        # lying on the panel in the same look
-            if getattr(self, "_lying_neon", None) is None:
+    def lying_source(self) -> QImage:
+        """Her lying-down picture in her body look, with a skin mod's colours (2.4.1: mods work lying down too)."""
+        from ..mods.effects import EFFECTS, recolor
+        key = (self.body_look, EFFECTS.generation)
+        if getattr(self, "_lying_key", None) != key or getattr(self, "_lying_neon", None) is None:
+            from .rig import _to_array, _to_image
+            src = self.sprites.lying
+            hb = self.sprites.head_box.get("lying")
+            face = (hb.x(), hb.y(), hb.right(), hb.bottom()) if hb is not None else None
+            if self.body_look == "neon":                    # lying on the panel in the same look
                 from .neon import neon_array
-                from .rig import _to_array, _to_image
-                self._lying_neon = _to_image(neon_array(_to_array(src)))
-            src = self._lying_neon
+                src = _to_image(neon_array(_to_array(src), face))
+            elif self.body_look == "flat":
+                from .neon import flat_array
+                src = _to_image(flat_array(_to_array(src), face))
+            src = recolor(src, EFFECTS.palette)             # (after the look, so the look keeps a skin's colours)
+            self._lying_neon, self._lying_key = src, key
+            self.__dict__.get("_tint_cache", {}).clear()
+            self._cache.clear()
+        return self._lying_neon
+
+    def _paint_lying_figure(self, p: QPainter, jolt: QPointF) -> tuple[QRectF, QRectF | None]:
+        src = self.lying_source()
         sw, sh = round(src.width() * self._scale), round(src.height() * self._scale)
         image = self._scaled("lying:" + self.body_look, src, sw, sh, cover=False)
         x = float(self._margin[0]) + jolt.x()
@@ -888,14 +1052,46 @@ class CharacterWindow(OverlayWindow):
         if self.state is State.ERROR:
             image = self._tinted(image, theme.ALERT)
         self._paint_hair_and_sprite(p, image, x, y, head, "lying", (sw, sh))
+        if head is not None:
+            self._paint_lying_cosmetics(p, QPointF(x + sw * (LYING_FACE[0] + 0.045), y + sh * (LYING_FACE[1] - 0.075)),
+                                        head.width(), QRectF(x, y, sw, sh))
         if self._glitch:
             self._draw_glitch(p, image, x, y)
         p.restore()
         return QRectF(x, y, sw, sh), head
 
+    LYING_HEAD = 0.6            # her face's size lying down vs the lying picture's head box
+
+    def _paint_lying_cosmetics(self, p: QPainter, eyes: QPointF, head_w: float, body: QRectF) -> None:
+        """Cosmetic mods on her head while she lies down: the same places as standing, around her eyes."""
+        from ..mods.effects import EFFECTS
+        hw = hh = head_w * self.LYING_HEAD
+        x0, y0 = eyes.x() - hw / 2, eyes.y() - hh / 2
+        for c in sorted(EFFECTS.cosmetics, key=lambda c: c.layer != "back"):
+            img = c.image()
+            if img is None or img.isNull():
+                continue
+            if c.slot == "face":                           # on her eyes - lying, her head is tilted
+                (lx, ly), (rx, ry) = [(body.x() + u * body.width(), body.y() + v * body.height()) for u, v in LYING_EYES]
+                span = math.hypot(rx - lx, ry - ly)
+                w = span * FACE_SPAN * c.width
+                h = w * img.height() / max(1, img.width())
+                p.save()
+                p.translate((lx + rx) / 2 + span * (c.x - 0.5), (ly + ry) / 2 + span * (c.y - 0.5))
+                p.rotate(math.degrees(math.atan2(ry - ly, rx - lx)))
+                p.drawImage(QRectF(-w / 2, -h / 2, w, h), img)
+                p.restore()
+                continue
+            w = hw * c.width
+            h = w * img.height() / max(1, img.width())
+            p.drawImage(QRectF(x0 + hw * c.x - w / 2, y0 + hh * c.y - h / 2, w, h), img)
+
     def _paint_lying(self, p: QPainter) -> None:
         now = time.monotonic()
         jolt = self.acts.offset(now)
+        lift = self.hover_lift(now) * 0.6
+        if lift:
+            jolt = jolt + QPointF(0.0, -lift)
         snapshot = None
         if self.acts.act == "glitch":
             dpr = self.devicePixelRatioF()
@@ -944,3 +1140,34 @@ def card_path(r: QRectF) -> QPainterPath:
     path.lineTo(r.left(), r.top() + CHAMFER)
     path.closeSubpath()
     return path
+
+
+def paint_cosmetics(p: QPainter, rig, feet: QPointF, height: float, pose, layer: str) -> None:
+    """Cosmetic mods on her head, moving with her (mods/effects.py Cosmetic) - her window and her greeting."""
+    from ..mods.effects import EFFECTS
+    items = [c for c in EFFECTS.cosmetics if c.layer == layer]
+    if not items:
+        return
+    t = rig.head_transform(feet, height, pose)
+    hx, hy, hw, hh = rig.head.x(), rig.head.y(), rig.head.width(), rig.head.height()
+    for c in items:
+        img = c.image()
+        if img is None or img.isNull():
+            continue
+        p.save()
+        p.setTransform(t, True)
+        if c.slot == "face":                               # on her eyes: centred, tilted with them
+            from .rig import EYES
+            (l, _r1), (r, _r2) = EYES
+            lx, ly, rx, ry = l[0] * rig.w, l[1] * rig.h, r[0] * rig.w, r[1] * rig.h
+            span = math.hypot(rx - lx, ry - ly)
+            w = span * FACE_SPAN * c.width
+            h = w * img.height() / max(1, img.width())     # its own shape - never stretched
+            p.translate((lx + rx) / 2 + span * (c.x - 0.5), (ly + ry) / 2 + span * (c.y - 0.5))
+            p.rotate(math.degrees(math.atan2(ry - ly, rx - lx)))
+            p.drawImage(QRectF(-w / 2, -h / 2, w, h), img)
+        else:
+            w = hw * c.width
+            h = w * img.height() / max(1, img.width())
+            p.drawImage(QRectF(hx + hw * c.x - w / 2, hy + hh * c.y - h / 2, w, h), img)
+        p.restore()

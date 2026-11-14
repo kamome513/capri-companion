@@ -61,6 +61,8 @@ class Assistant(QObject):
             if hasattr(speaker, "began"):
                 speaker.began.connect(self._on_began)
         self.command_handler: Callable[[str], None] | None = None
+        self.ears_missing: Callable[[], bool] | None = None    # another language, but only her English ears
+        self.offer_ears: Callable[[], None] = lambda: None
         # Picks the best of the recogniser's guesses (the router: the first that's a real command).
         self.choose: Callable[[list[str]], str] | None = None
         self._alternatives: list[str] = []
@@ -236,6 +238,9 @@ class Assistant(QObject):
         self._follow_up = False
         self.controller.log("Heard", f'"{text}"')
         self.last_heard = text                  # Settings -> Wake word -> "Fix this"
+        if self.ears_missing is not None and self.ears_missing():
+            self.controller.log("Language", "only English ears here - not guessing")
+            return self.offer_ears()            # your language, but only her English ears (2.4.1)
         if self.command_handler is not None:
             self.controller.set_state(State.PROCESSING, "Processing command...")
             self.command_handler(text)

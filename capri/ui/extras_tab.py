@@ -162,6 +162,17 @@ class ExtrasTab(QWidget):
         self.quiet = QCheckBox("Quiet mode: she doesn't comment by herself, only answers you (Ctrl+Alt+P)")
         self.quiet.setChecked(s.quiet_mode)
         form.addRow(self.quiet)
+        self.react_apps = QCheckBox("React when I open or close my apps and games (a line now and then)")
+        self.react_apps.setChecked(s.react_to_apps)
+        form.addRow(self.react_apps)
+        self.chaos = QCheckBox("Chaos mode: random harmless fun now and then - clones, doodles on the screen, "
+                               "dances (never touches your windows or files)")
+        self.chaos.setChecked(s.chaos_mode)
+        form.addRow(self.chaos)
+        self.hologram = QCheckBox("Hologram mode: she's see-through and your clicks go through her "
+                                  "(say \u201chologram off\u201d to bring her back)")
+        self.hologram.setChecked(s.hologram)
+        form.addRow(self.hologram)
         root.addWidget(her)
 
         mic = QGroupBox("Her voice in your mic  (Discord, Roblox, games)")
@@ -214,6 +225,9 @@ class ExtrasTab(QWidget):
         s.nap_minutes = (s.nap_minutes or 10) if self.nap.isChecked() else 0
         s.pc_warnings = self.pc_warnings.isChecked()
         s.quiet_mode = self.quiet.isChecked()
+        s.react_to_apps = self.react_apps.isChecked()
+        s.chaos_mode = self.chaos.isChecked()
+        s.hologram = self.hologram.isChecked()
         s.game_play = self.game_play.isChecked()
         s.music_deck = self.music_deck.isChecked()
         s.music_dance = self.music_dance.isChecked()

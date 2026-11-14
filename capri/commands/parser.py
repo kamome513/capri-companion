@@ -92,6 +92,9 @@ class Kind(Enum):
     REMINDER = "reminder"         # "remind me tomorrow at 9 to call mum": targets = ("<day>|<time>", what)
     RPS = "rps"                   # rock paper scissors: query = start | rock | paper | scissors
     INTELLIGENCE = "intelligence" # "set your intelligence to high" / "be smarter": query = low | medium | high | ""
+    MOD = "mod"                   # "do a dance" / "do the hip sway" (animation mods), "open the mod store" (2.4)
+    DESK = "desk"                 # drawing / circling / clones / chaos / hologram: targets = (kind, what), query
+    INTEL = "intel"               # explain / error / chart / remember / changes (screen intelligence): targets=(said,)
     UNKNOWN = "unknown"
 
 
@@ -1039,6 +1042,15 @@ def parse(text: str) -> Intent:
     smart = more.intelligence_intent(t)
     if smart is not None:
         return Intent(Kind.INTELLIGENCE, query=smart)
+    modded = more.mod_intent(t)
+    if modded is not None:
+        return Intent(Kind.MOD, query=modded)
+    desk = more.desk_intent(t)
+    if desk is not None:
+        return Intent(Kind.DESK, (desk[0], desk[1]), query=desk[2])
+    intel = more.intel_intent(t)
+    if intel is not None:
+        return Intent(Kind.INTEL, ((text or "").strip()[:200],), query=intel)
     for pattern, kind in SIMPLE:
         if re.fullmatch(pattern, t):
             return Intent(kind)

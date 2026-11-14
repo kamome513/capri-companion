@@ -18,6 +18,10 @@ GLOW = 6         # transparent margin for the neon glow
 TAIL = 9         # height of the speech-bubble tail
 STEP = 4         # height of the step in the top edge next to the badge
 TAIL_HALF = 8    # half the width of the tail's base
+SAID_STATES = (State.SPEAKING, State.SUCCESS, State.ERROR)
+SAID_PREFIX = "CAPRI: "   # (2.4.1) her words in a chat log: "> you: ..." then a red bar and "CAPRI: ..."
+BAR_ROOM = 9              # the red bar to the left of what she says
+SAID_TEXT = QColor(196, 236, 255)
 ANSWER_LINES = 14  # what she says (SPEAKING) is shown whole - the box grows for it (14 lines is a long paragraph)
 BARS = 4         # voice bars in the badge while she talks
 
@@ -203,7 +207,9 @@ class StatusPanel(OverlayWindow):
             self._anim.stop()
             self._pulse = 1.0
 
-        self._title_lines = self._wrap_title(c.message, m.width - self._text_x() - m.pad)
+        self._said = c.state in SAID_STATES and bool(c.message.strip())        # her words: "CAPRI: ..." (2.4.1)
+        self._title_lines = self._wrap_title((SAID_PREFIX if self._said else "") + c.message,
+                                             m.width - self._text_x() - m.pad - (BAR_ROOM if self._said else 0))
         title_h = QFontMetricsF(m.f_title).height()
         self._you = self.heard() if self.chat_bits else ""
         you_h = QFontMetricsF(m.f_log).height() + 2 if self._you else 0.0
@@ -215,8 +221,8 @@ class StatusPanel(OverlayWindow):
         self.setFixedSize(m.width + GLOW * 2, round(body_h + GLOW * 2 + TAIL))
         self._body = QRectF(GLOW, GLOW + (TAIL if self.tail_up else 0), m.width, body_h)
         if c.state is not self._last_state:
-            if self._last_state is not None:
-                self.static.burst()          # status changed: glitch!
+            if self._last_state is not None and c.state is State.ERROR:
+                self.static.burst()          # (2.4.1) only when something went wrong - not on every change
             self._last_state = c.state
             self._update_static_timer()
         self.update()
@@ -277,12 +283,35 @@ class StatusPanel(OverlayWindow):
         return path
 
     def _icon(self) -> QImage:
+        """Her face in the corner - in a skin mod's colours too (2.4.2)."""
+        from ..mods.effects import EFFECTS, recolor
         dpr = self.devicePixelRatioF()
         size = self.m.icon
         cache = self._icon_cache
-        if cache is None or cache.devicePixelRatio() != dpr or cache.width() != round(size * dpr):
-            self._icon_cache = CharacterArt.scaled(self._icon_src, size, size, dpr, cover=True)
+        if cache is None or cache.devicePixelRatio() != dpr or cache.width() != round(size * dpr) \
+                or getattr(self, "_icon_gen", None) != EFFECTS.generation:
+            self._icon_gen = EFFECTS.generation
+            self._icon_cache = CharacterArt.scaled(recolor(self._icon_src, EFFECTS.palette), size, size, dpr,
+                                                   cover=True)
         return self._icon_cache
+
+    def mods_changed(self) -> None:
+        """A mod went on or off: redraw in the new colours now (her face, the frame, the glow)."""
+        self._icon_cache = None
+        self._overlay_key = None
+        self.update()
+
+    @staticmethod
+    def _icon_gen_key() -> int:
+        from ..mods.effects import EFFECTS
+        return EFFECTS.generation
+
+    @staticmethod
+    def mod_red() -> QColor:
+        """The panel's red: a skin mod's main colour when one's on (2.4.2), else her crimson."""
+        from ..mods.effects import EFFECTS
+        hair = EFFECTS.palette.get("hair") if EFFECTS.palette else None
+        return QColor(hair) if hair else QColor(theme.MSG_RED)
 
     def set_inverted(self, on: bool) -> None:
         """Search mode: the whole panel in inverted colours."""
@@ -325,7 +354,9 @@ class StatusPanel(OverlayWindow):
         path = self._outline(badge_w)
 
         # A cyberpunk message: dark glass with a crimson glow.
-        p.setPen(QPen(theme.MSG_GLOW, 6))
+        glow = self.mod_red()
+        glow.setAlpha(theme.MSG_GLOW.alpha())
+        p.setPen(QPen(glow, 6))                        # (2.4.3) the glow takes a skin's colour too
         bg = QLinearGradient(r.topLeft(), r.bottomRight())
         bg.setColorAt(0, theme.MSG_BG_TOP)
         bg.setColorAt(1, theme.MSG_BG_BOTTOM)
@@ -336,7 +367,8 @@ class StatusPanel(OverlayWindow):
         dpr = self.devicePixelRatioF()
         key = (self.width(), self.height(), dpr, c.state, c.message, c.channel, tuple(c.entries), self._pulse,
                self.level, self.reveal, self.talking, self.tail_x, self.tail_up, self.tail_visible,
-               self._icon_src.cacheKey(), m.width, self.show_log, self.chat_bits, getattr(self, "_you", ""))
+               self._icon_src.cacheKey(), m.width, self.show_log, self.chat_bits, getattr(self, "_you", ""),
+               getattr(self, "_said", False), self.mod_red().rgb(), self._icon_gen_key())
         if key != self._overlay_key:
             overlay = QImage(round(self.width() * dpr), round(self.height() * dpr),
                              QImage.Format.Format_ARGB32_Premultiplied)
@@ -352,6 +384,7 @@ class StatusPanel(OverlayWindow):
 
     def _paint_overlay(self, p: QPainter, c, m, style, accent, r: QRectF, path, badge_text: str,
                        fm_badge, badge_w: float) -> None:
+        red = self.mod_red()
         # faint fixed scanlines (no noise)
         p.save()
         p.setClipPath(path)
@@ -361,7 +394,7 @@ class StatusPanel(OverlayWindow):
             y += 3
         p.restore()
         # crimson frame, cyan underline, heavy left edge
-        p.setPen(QPen(theme.MSG_RED, 1.4))
+        p.setPen(QPen(red, 1.4))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawPath(path)
         p.setPen(QPen(theme.MSG_CYAN, 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
@@ -372,7 +405,7 @@ class StatusPanel(OverlayWindow):
             tx = self._tail_center()
             p.drawLine(QPointF(r.left() + 10, base_y), QPointF(max(r.left() + 10, tx - TAIL_HALF), base_y))
             p.drawLine(QPointF(min(r.right() - 24, tx + TAIL_HALF), base_y), QPointF(r.right() - 24, base_y))
-        p.setPen(QPen(theme.MSG_RED, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
+        p.setPen(QPen(red, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
         p.drawLine(QPointF(r.left() + 1.5, r.top() + STEP), QPointF(r.left() + 1.5, r.bottom()))
         # corner brackets
         p.setPen(QPen(theme.MSG_CYAN, 1.5))
@@ -386,7 +419,7 @@ class StatusPanel(OverlayWindow):
         top = r.top() + STEP + m.pad
         icon_rect = QRectF(r.left() + m.pad, top, m.icon, m.icon)
         p.drawImage(icon_rect.topLeft(), self._icon())
-        p.setPen(QPen(theme.MSG_RED, 1))
+        p.setPen(QPen(red, 1))
         p.drawRect(icon_rect)
 
         # Header: "CAPRI / SYSTEM".
@@ -396,7 +429,7 @@ class StatusPanel(OverlayWindow):
         name = "CAPRI"
         p.setPen(theme.TEXT_HEADER)
         p.drawText(QPointF(text_x, top + fm_head.ascent()), name)
-        p.setPen(theme.MSG_RED)
+        p.setPen(red)
         p.drawText(QPointF(text_x + fm_head.horizontalAdvance(name + " "), top + fm_head.ascent()),
                    f"// {'MESSAGE' if c.channel == 'SYSTEM' else c.channel}")
 
@@ -420,28 +453,41 @@ class StatusPanel(OverlayWindow):
                 p.fillRect(QRectF(bx + i * (bar_w + gap), badge.center().y() + (badge.height() - 5) / 2 - bh,
                                   bar_w, bh), theme.BADGE_TEXT)
 
-        # What you said, dim, above her answer.
+        # What you said, dim, above her answer - like a chat log: "> you: what time is it"
         y = top + self._header_h()
         if getattr(self, "_you", ""):
             p.setFont(m.f_log)
             fm_you = QFontMetricsF(m.f_log)
+            lead = "> you: "
             p.setPen(theme.MSG_CYAN)
-            p.drawText(QPointF(text_x, y + fm_you.ascent()), "YOU \u203a")
+            p.drawText(QPointF(text_x, y + fm_you.ascent()), lead)
             p.setPen(theme.TEXT_LOG)
-            width = r.right() - m.pad - text_x - fm_you.horizontalAdvance("YOU \u203a ")
-            p.drawText(QPointF(text_x + fm_you.horizontalAdvance("YOU \u203a "), y + fm_you.ascent()),
+            width = r.right() - m.pad - text_x - fm_you.horizontalAdvance(lead)
+            p.drawText(QPointF(text_x + fm_you.horizontalAdvance(lead), y + fm_you.ascent()),
                        fm_you.elidedText(self._you, Qt.TextElideMode.ElideRight, width))
             y += fm_you.height() + 2
 
-        # Title / status message.
+        # Title / status message. Her words: a red bar down the left, "CAPRI:" in red, the rest in pale cyan.
         p.setFont(m.f_title)
-        p.setPen(theme.TEXT_TITLE)
         fm_title = QFontMetricsF(m.f_title)
+        said = getattr(self, "_said", False)
+        x0 = text_x + (BAR_ROOM if said else 0)
+        if said:
+            p.fillRect(QRectF(text_x, y + 1, 3, fm_title.height() * len(self._title_lines) - 2), red)
         budget = round(sum(len(line) for line in self._title_lines) * self.reveal)
-        for line in self._title_lines:
+        for i, line in enumerate(self._title_lines):
             shown = line[:max(0, budget)]                 # typewriter while she speaks
             budget -= len(line)
-            p.drawText(QPointF(text_x, y + fm_title.ascent()), shown)
+            base = QPointF(x0, y + fm_title.ascent())
+            if said and i == 0 and shown.startswith(SAID_PREFIX[:len(shown)]):
+                name = shown[:len(SAID_PREFIX)]
+                p.setPen(red)
+                p.drawText(base, name)
+                p.setPen(SAID_TEXT)
+                p.drawText(QPointF(x0 + fm_title.horizontalAdvance(name), base.y()), shown[len(name):])
+            else:
+                p.setPen(SAID_TEXT if said else theme.TEXT_TITLE)
+                p.drawText(base, shown)
             y += fm_title.height()
 
         # Activity log: green verb column, grey detail column.
@@ -469,7 +515,7 @@ class StatusPanel(OverlayWindow):
             by = r.bottom() - m.pad - bh
             x = r.right() - m.pad
             p.setFont(m.f_badge)
-            for name, label, colour in (("talk", "\u25c9 TALK", theme.MSG_RED), ("type", "\u2328 TYPE", theme.MSG_CYAN)):
+            for name, label, colour in (("talk", "\u25c9 TALK", red), ("type", "\u2328 TYPE", theme.MSG_CYAN)):
                 bw = fm_b.horizontalAdvance(label) + 18
                 rect = QRectF(x - bw, by, bw, bh)
                 chip = QPainterPath()

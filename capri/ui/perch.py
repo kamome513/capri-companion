@@ -202,15 +202,16 @@ class SitWindow(OverlayWindow):
     def _layers(self, dpr: float) -> dict:
         """Each layer read from disk and scaled once (smoothly) to her size on this screen - sharp,
         and the full-size pictures aren't kept in memory."""
+        from ..mods.effects import EFFECTS, recolor
         w, h = round(self.art_w * self.s * dpr), round(self.height_px * dpr)
-        if self._scaled_key != (w, h):
+        if self._scaled_key != (w, h, EFFECTS.generation):
             def fit(name: str) -> QImage:
-                img = QImage(str(self.art / f"{name}.png"))
+                img = recolor(QImage(str(self.art / f"{name}.png")), EFFECTS.palette)   # a skin mod's colours
                 out = img.scaled(w, h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
                 out.setDevicePixelRatio(dpr)
                 return out
             self._scaled = {n: fit(n) for n in ("base", "black", "red")}
-            self._scaled_key = (w, h)
+            self._scaled_key = (w, h, EFFECTS.generation)
         return self._scaled
 
     def pose(self, t: float) -> tuple[float, float, float]:

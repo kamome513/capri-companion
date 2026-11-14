@@ -278,6 +278,9 @@ def to_english(text: str, code: str | None = None) -> str:
     """The everyday command at the start of what you said, in English words - the rest as you said it.
     "Öffne Discord" -> "open discord"; "wie spät ist es" -> "what time is it". Not a known command: as it was."""
     code = code or _current
+    name = my_name(text, code)
+    if name:                                                          # "меня зовут Дилан" -> "my name is dilan"
+        return f"my name is {latin(name.lower())}"
     t = re.sub(r"\s+", " ", (text or "").strip().lower().strip(".!?¿¡"))
     phrases = sorted(((w, meaning) for words, meaning in COMMANDS.get(code, ()) for w in words.split("|")),
                      key=lambda pair: -len(pair[0]))                  # "mets en pause" before "mets"
@@ -328,3 +331,91 @@ def reply_rule(code: str | None = None) -> str:
         return ""
     return (f"The user speaks {lang.name}. Always reply in {lang.name} ({lang.native}), whatever language "
             f"this prompt is in. Tool arguments (app names, songs, search words) stay as the user said them.")
+
+
+# -- 2.4.1: telling her your name, and her own two lines, in your language (no AI needed) --------------------------
+# "Меня зовут Дилан" -> "my name is dilan" (she keeps it on this PC, like in English).
+MY_NAME = {
+    "bg": "казвам се|името ми е", "hr": "zovem se|moje ime je", "cs": "jmenuji se|jmenuju se|mé jméno je",
+    "da": "jeg hedder|mit navn er", "nl": "ik heet|mijn naam is", "et": "minu nimi on|mu nimi on",
+    "fi": "nimeni on|minun nimeni on", "fr": "je m'appelle|je m appelle|mon nom est|mon prénom est",
+    "de": "ich heiße|ich heisse|mein name ist", "el": "με λένε|λέγομαι|το όνομά μου είναι",
+    "hu": "a nevem|engem hívnak|az én nevem", "it": "mi chiamo|il mio nome è", "lv": "mani sauc|mans vārds ir",
+    "lt": "mano vardas|mane vadina", "mt": "jien jisimni|ismi", "pl": "nazywam się|mam na imię|mam na imie",
+    "pt": "meu nome é|o meu nome é|me chamo|chamo-me", "ro": "mă numesc|ma numesc|numele meu este",
+    "ru": "меня зовут|моё имя|мое имя|я зовусь|menya zovut|menya zavut", "sk": "volám sa|moje meno je", "sl": "ime mi je|jaz sem",
+    "es": "me llamo|mi nombre es", "sv": "jag heter|mitt namn är", "uk": "мене звати|моє ім'я|моє імʼя",
+}
+# Her lines when there's no AI to talk with you in your language, and when you tell her your name.
+LOCAL = {
+    "bg": ("За да си говорим на български, ми трябва ИИ: Настройки, Асистент.", "Приятно ми е, {name}."),
+    "hr": ("Za razgovor na hrvatskom trebam AI: Postavke, Asistent.", "Drago mi je, {name}."),
+    "cs": ("Abych s tebou mluvila česky, potřebuju AI: Nastavení, Asistent.", "Těší mě, {name}."),
+    "da": ("For at snakke dansk med dig skal jeg have en AI: Indstillinger, Assistent.", "Hyggeligt at møde dig, {name}."),
+    "nl": ("Om Nederlands met je te praten heb ik een AI nodig: Instellingen, Assistent.", "Leuk je te ontmoeten, {name}."),
+    "et": ("Eesti keeles rääkimiseks vajan tehisaru: Seaded, Assistent.", "Meeldiv tutvuda, {name}."),
+    "fi": ("Puhuakseni kanssasi suomea tarvitsen tekoälyn: Asetukset, Avustaja.", "Hauska tavata, {name}."),
+    "fr": ("Pour parler français avec toi, il me faut une IA : Paramètres, Assistant.", "Enchantée, {name}."),
+    "de": ("Um mit dir Deutsch zu reden, brauche ich eine KI: Einstellungen, Assistent.", "Freut mich, {name}."),
+    "el": ("Για να μιλάμε ελληνικά χρειάζομαι τεχνητή νοημοσύνη: Ρυθμίσεις, Βοηθός.", "Χάρηκα, {name}."),
+    "hu": ("Ahhoz, hogy magyarul beszélgessünk, MI kell: Beállítások, Asszisztens.", "Örülök, {name}."),
+    "it": ("Per parlare italiano con te mi serve un'IA: Impostazioni, Assistente.", "Piacere, {name}."),
+    "lv": ("Lai runātu latviski, man vajag MI: Iestatījumi, Asistents.", "Prieks iepazīties, {name}."),
+    "lt": ("Kad kalbėčiau lietuviškai, man reikia DI: Nustatymai, Asistentas.", "Malonu susipažinti, {name}."),
+    "mt": ("Biex nitkellem bil-Malti, għandi bżonn AI: Settings, Assistent.", "Pjaċir, {name}."),
+    "pl": ("Żeby rozmawiać po polsku, potrzebuję AI: Ustawienia, Asystent.", "Miło mi, {name}."),
+    "pt": ("Para falar português contigo preciso de uma IA: Definições, Assistente.", "Prazer, {name}."),
+    "ro": ("Ca să vorbim în română, am nevoie de un AI: Setări, Asistent.", "Încântată, {name}."),
+    "ru": ("Чтобы говорить с тобой по-русски, мне нужен ИИ: Настройки, Ассистент.", "Приятно познакомиться, {name}."),
+    "sk": ("Aby som s tebou hovorila po slovensky, potrebujem AI: Nastavenia, Asistent.", "Teší ma, {name}."),
+    "sl": ("Za pogovor v slovenščini potrebujem UI: Nastavitve, Asistent.", "Me veseli, {name}."),
+    "es": ("Para hablar en español contigo necesito una IA: Ajustes, Asistente.", "Encantada, {name}."),
+    "sv": ("För att prata svenska med dig behöver jag en AI: Inställningar, Assistent.", "Trevligt att träffas, {name}."),
+    "uk": ("Щоб говорити з тобою українською, мені потрібен ШІ: Налаштування, Асистент.", "Приємно познайомитися, {name}."),
+}
+
+
+def my_name(text: str, code: str | None = None) -> str:
+    """'Меня зовут Дилан' -> 'Дилан' (your name as you said it; '' if that isn't what you said)."""
+    code = code or _current
+    t = re.sub(r"\s+", " ", (text or "").strip().strip(".!?¿¡,"))
+    for phrase in MY_NAME.get(code, "").split("|"):
+        if phrase and t.lower().startswith(phrase + " "):
+            name = t[len(phrase):].strip().split(" ")[0].strip(".,!?")
+            return name[:1].upper() + name[1:] if name else ""
+    return ""
+
+
+def local_line(key: str, code: str | None = None, **fields) -> str:
+    """Her own line in your language: 'need_ai' or 'nice_to_meet' ('' in English / if she hasn't got it)."""
+    pair = LOCAL.get(code or _current)
+    if pair is None:
+        return ""
+    return {"need_ai": pair[0], "nice_to_meet": pair[1]}.get(key, "").format(**fields)
+
+
+_NOT_LATIN = re.compile(r"[Ͱ-ϿЀ-ӿ]")
+_LATIN = re.compile(r"[a-zA-Z]")
+_ENGLISH_WORDS = {"the", "you", "i", "it", "is", "a", "to", "and", "that", "what", "this", "my", "your", "of",
+                  "for", "in", "on", "me", "do", "be", "are", "can", "it's", "i'm", "don't", "got", "okay", "ok",
+                  "cool", "nice", "yeah", "mhm", "sure", "done", "here", "there", "with", "just", "not", "no",
+                  "opened", "closed", "playing", "paused", "skipped", "launched", "starting", "turned", "volume",
+                  "up", "down", "off", "all", "now", "let's", "sorry", "couldn't", "can't", "didn't", "find",
+                  "found", "try", "again", "got", "it", "into", "next", "song", "muted", "unmuted", "set", "was"}
+
+
+def speaks_english(text: str, code: str | None = None) -> bool:
+    """Is this line English, even though you've picked another language? (Her built-in lines are English when
+    there's no AI to translate them.) Then she says it with her English voice, not your language's sounds -
+    reading English with Russian pronunciation is what made the odd 'vroo' sounds."""
+    code = code or _current
+    if code == "en":
+        return True
+    text = text or ""
+    if code in ("ru", "uk", "bg", "el"):                       # Cyrillic / Greek languages: easy to tell
+        return len(_LATIN.findall(text)) > 2 * len(_NOT_LATIN.findall(text))
+    words = re.findall(r"[a-z']+", text.lower())
+    if not words:
+        return False
+    hits = sum(w in _ENGLISH_WORDS for w in words)
+    return hits >= max(1, round(len(words) * 0.3))

@@ -35,11 +35,13 @@ class LookTab(QWidget):
             self.style_box.addItem(f"Look: {name} (animated picture)", "look:" + name)
         self.style_box.setCurrentIndex(max(0, self.style_box.findData(s.character_style)))
         self.style_box.currentIndexChanged.connect(lambda _i: companion.set_style(self.style_box.currentData()))
-        form.addRow("Style", self.style_box)
-        tip = QLabel("Add your own looks: drop pictures of her into the looks folder next to run.bat, then restart.")
-        tip.setObjectName("hint")
-        tip.setWordWrap(True)
-        form.addRow(tip)
+        # (2.4.1) her styles, hair, body, drone look, lying down and sitting on windows are mods now:
+        # Settings -> Mods -> Looks & models. The boxes stay (voice commands and tests use them), just not shown.
+        moved = QLabel("Her looks and models (body style, hair, lying down, sitting on windows, drone, portrait) "
+                       "are in Mods \u2192 Looks & models.")
+        moved.setObjectName("hint")
+        moved.setWordWrap(True)
+        form.addRow(moved)
 
         from .hair import HAIR_STYLES
         self.hair_box = QComboBox()
@@ -49,14 +51,12 @@ class LookTab(QWidget):
         self.hair_box.setToolTip("Like the show: the zigzag pile of torn pink strands. Classic spiky: her "
                                  "first hair, a wide spiky block. Or say \u201cchange your hair\u201d.")
         self.hair_box.currentIndexChanged.connect(lambda _i: self._look())       # takes effect right away
-        form.addRow("Hair", self.hair_box)
         from .neon import LOOKS
         self.body_box = QComboBox()
         for key, label in LOOKS.items():
             self.body_box.addItem(label, key)
         self.body_box.setCurrentIndex(max(0, self.body_box.findData(getattr(s, "body_style", "full"))))
         self.body_box.currentIndexChanged.connect(lambda _i: companion.set_body_look(self.body_box.currentData()))
-        form.addRow("Body", self.body_box)
         companion.settings_changed.connect(self._sync_hair)
 
         self.games_box = QComboBox()
@@ -73,7 +73,6 @@ class LookTab(QWidget):
         self.drone_box.addItem("Mask: her green visor - eyes, fin and grin", "mask")
         self.drone_box.setCurrentIndex(max(0, self.drone_box.findData(s.drone_look)))
         self.drone_box.currentIndexChanged.connect(lambda _i: companion.set_drone_look(self.drone_box.currentData()))
-        form.addRow("Drone look (games)", self.drone_box)
 
         self.idle = QCheckBox("Idle animation (breathing, blinking, looking around)")
         self.idle.setChecked(s.idle_animation)
@@ -84,7 +83,6 @@ class LookTab(QWidget):
         self.lounge.setChecked(s.lounge)
         self.lounge.setEnabled(have_sheet and companion.sprites.lying is not None)
         self.lounge.toggled.connect(companion.set_lounge)
-        form.addRow(self.lounge)
         # picking another design gets her up by itself: keep the tick in step (without re-triggering it)
         companion.settings_changed.connect(self._sync_lounge)
 
@@ -92,9 +90,8 @@ class LookTab(QWidget):
                                "panel when you close it")
         self.perch.setChecked(s.perch_windows)
         self.perch.toggled.connect(companion.set_perch_windows)
-        form.addRow(self.perch)
 
-        self.acts = QCheckBox("Idle activities (glitching, gaming, watching shows, calls with D)")
+        self.acts = QCheckBox("Idle activities now and then (gaming, watching shows, calls with D)")
         self.acts.setChecked(s.idle_acts)
         self.acts.setEnabled(have_sheet)
         self.acts.toggled.connect(companion.set_idle_acts)

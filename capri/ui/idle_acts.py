@@ -28,10 +28,11 @@ from . import theme
 from .contact import Puppet
 
 ACTS = ("glitch", "gaming", "watching", "call")
-WEIGHTS = (2, 3, 3, 3)
+WEIGHTS = (0, 3, 3, 3)           # (2.4.1) no glitching by herself - only when asked
 LENGTH = {"glitch": (3.0, 4.5), "gaming": (11.0, 16.0), "watching": (12.0, 18.0), "call": (12.0, 18.0)}
-FIRST = (40.0, 80.0)          # first one this long after she settles
-GAP = (35.0, 80.0)            # between activities
+FIRST = (120.0, 240.0)          # first one this long after she settles
+GAP = (240.0, 480.0)          # between activities (2.4.1: every 4-8 minutes, not every minute)
+PROP_SIZE = 0.8               # (2.4.1) her props and effects a little smaller
 FPS = 30                      # smooth while an activity plays (they run ~15 s every minute or two)
 RED = QColor(236, 16, 70)
 CYAN = QColor(0, 226, 255)
@@ -53,7 +54,7 @@ class Ctx:
 
     @property
     def s(self) -> float:
-        return self.head.height() / HEAD_REF
+        return self.head.height() / HEAD_REF * PROP_SIZE
 
     @property
     def face(self) -> QPointF:
@@ -152,7 +153,7 @@ class IdleActs:
         """A jolt during glitch bursts."""
         if self.act == "glitch" and self._bursting(now):
             r = random.Random(int(now * 40))
-            return QPointF(r.uniform(-4, 4), r.uniform(-1.5, 1.5))
+            return QPointF(r.uniform(-2.5, 2.5), r.uniform(-1.0, 1.0))      # (2.4.1: smaller)
         return QPointF()
 
     def talking(self, now: float) -> str | None:

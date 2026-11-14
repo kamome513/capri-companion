@@ -139,6 +139,10 @@ class Services:
     open_settings: Callable[[], None] | None = None   # "open your settings": her Settings window
     point_at: Callable[[int, int], None] | None = None  # her little pink cursor glides there (physical pixels)
     open_url: Callable[[str], None] | None = None        # a web page in your browser (the free-key page)
+    desk: Any = None                                      # her desktop fun: drawing, clones, chaos (app.DeskFun)
+    intel: Any = None                                     # integrations.screen_intel.ScreenIntel (2.4)
+    automations: Any = None                               # automation.AutomationEngine (2.4): phrase automations
+    mods: Any = None                                      # mods.manager.ModManager (2.4)
     updates: Any = None             # ui.updates.UpdateManager: "check for updates" / "update yourself"
     restart: Callable[[], None] | None = None   # "restart yourself": a fresh Capri (installs a waiting update)
     doctor: Any = None              # ai.doctor.AIDoctor: "set up your brain"
@@ -215,6 +219,9 @@ class CommandRouter(QObject):
     def handle(self, text: str) -> None:
         self._prev_heard, self._heard = getattr(self, "_heard", ""), text     # for "repeat what I said"
         self._said_count = getattr(self, "_said_count", 0) + 1
+        engine = self.services.automations
+        if engine is not None and engine.phrase(text):  # one of your "when I say..." automations (2.4)
+            return
         shortcut = self._shortcut_for(text)
         if shortcut is not None:                        # one of your own shortcuts ("gaming time")
             return self._run_shortcut(*shortcut)
@@ -520,7 +527,8 @@ class CommandRouter(QObject):
             Kind.QUIET: self._quiet, Kind.VOICE: self._voice, Kind.TIMER: self._timer,
             Kind.PERCH_ON: lambda i: self._perch(True), Kind.PERCH_OFF: lambda i: self._perch(False),
             Kind.QUIET_MODE: self._quiet_mode, Kind.REMINDER: self._reminder, Kind.RPS: self._rps,
-            Kind.INTELLIGENCE: self._intelligence,
+            Kind.INTELLIGENCE: self._intelligence, Kind.MOD: self._mod, Kind.DESK: self._desk,
+            Kind.INTEL: self._intel,
             Kind.HYPE_ON: lambda i: self._hype(True), Kind.HYPE_OFF: lambda i: self._hype(False),
         }.get(intent.kind)
         if handler is None:
@@ -902,9 +910,21 @@ class CommandRouter(QObject):
     def _say_chat(self, text: str, topic: str = "") -> None:
         """Her own chatbot's reply (no AI, or the AI's down) - she always answers. "What is X":
         she looks it up (Wikipedia's summary). A question she can't answer: she offers to search it."""
+        memory = getattr(self.chatbot, "memory", None)
+        name_before = memory.name if memory is not None else ""
         words, emotion = self.chatbot.reply(text or topic, self._persona(), self._slang(), topic=topic)
         s = self.services.settings
         follow_up = bool(s is None or s.conversation)
+        from .. import languages
+        if not languages.english():                    # her own chat only speaks English: say it in yours (2.4.1)
+            name = languages.my_name(self._heard or text)
+            if name and memory is not None and memory.name != name_before:
+                line = languages.local_line("nice_to_meet", name=name)
+            else:
+                line = languages.local_line("need_ai")
+            if line:
+                return self.assistant.show_result(State.SPEAKING, line, emotion="happy" if name else "neutral",
+                                                  translated=True, follow_up=follow_up)
         kind, subject = getattr(self.chatbot, "last_kind", ""), getattr(self.chatbot, "last_subject", "")
         if kind == "lookup" and subject:
             self.controller.set_state(State.PROCESSING, f"Looking up {subject}...")
@@ -2352,10 +2372,50 @@ class CommandRouter(QObject):
         if code == "en":
             return self.assistant.show_result(State.SUCCESS, "Back to English.", translated=True)
         line = f"Okay, {lang.name} from now on."
+        if not parakeet.ready(code) and parakeet.installed():
+            return self.offer_ears(line + " ")
         if not parakeet.ready(code):
             line += (f" To hear you in {lang.name} I need Parakeet: Settings, Wake word, Download Parakeet "
                      f"({parakeet.model_mb(code)} MB). Typing to me works now.")
         self.assistant.show_result(State.SUCCESS, line)
+
+    EARS_ASK_GAP = 600.0          # seconds: she offers to download your language's ears at most this often
+
+    def offer_ears(self, before: str = "") -> None:
+        """You spoke in another language, but only her English ears are here - they'd turn your words into
+        English ones. She offers to download Parakeet v3 (it hears 25 languages), asking first (2.4.1)."""
+        from .. import languages
+        from ..voice import parakeet
+        lang = languages.get()
+        if not parakeet.installed():
+            return self.assistant.show_result(State.ERROR, f"I can't hear {lang.name} on this PC yet - "
+                                              "type to me meanwhile.")
+        now = time.monotonic()
+        if getattr(self, "_ears_busy", False):
+            return self.assistant.show_result(State.PROCESSING, f"Still downloading my {lang.name} ears...")
+        if not before and now - getattr(self, "_ears_asked", -1e9) < self.EARS_ASK_GAP:
+            return self.assistant.show_result(State.ERROR, f"I can't hear {lang.name} until my ears are "
+                                              "downloaded: Settings, Wake word. Typing works.")
+        self._ears_asked = now
+        mb = parakeet.model_mb(lang.code)
+
+        def answer(yes: bool) -> None:
+            if not yes:
+                return self.assistant.show_result(State.SUCCESS, "Okay. Type to me in the meantime.")
+            self._ears_busy = True
+            self.controller.set_state(State.PROCESSING, f"Downloading my {lang.name} ears ({mb} MB)...")
+
+            def done(result) -> None:
+                self._ears_busy = False
+                if isinstance(result, Exception):
+                    return self.assistant.show_result(State.ERROR, f"The download failed: {str(result)[:80]}")
+                apply = getattr(self.services, "language_changed", None)
+                if apply is not None:
+                    apply()
+                self.assistant.show_result(State.SUCCESS, f"Done - I can hear you in {lang.name} now.")
+            self._background(lambda: parakeet.download(lambda d, t: None, language=lang.code), done)
+        self.assistant.confirm(f"{before}To hear you in {lang.name} I need to download my {lang.name} ears "
+                               f"({mb} MB, once). Download them now?", answer)
 
     def _eyes(self, doc) -> None:
         """Pull gemma3:4b into Ollama (asks first: about 3 GB), so she can look at your screen and play games."""
@@ -2948,6 +3008,14 @@ class CommandRouter(QObject):
         Her answer is only shown and said - never acted on - so nothing written in a file can make her do things."""
         from ..integrations.read_file import read
         name = path.replace("\\", "/").rsplit("/", 1)[-1]
+        if name.lower().endswith(".capri-mod") and self.services.mods is not None:   # a mod dropped on her: install
+            from ..mods.manifest import ModError
+            try:
+                mod = self.services.mods.install_file(path)
+                return self.assistant.show_result(State.SUCCESS, f"Installed the mod {mod.manifest.name}! It's on - "
+                                                                 f"Settings, Mods to turn it off.", emotion="happy")
+            except ModError as exc:
+                return self.assistant.show_result(State.ERROR, f"That mod didn't install: {exc}.")
         self.controller.set_state(State.PROCESSING, f"Reading {name[:30]}...")
         brain = self.services.brain if self._ai_available() else None
 
@@ -3009,6 +3077,104 @@ class CommandRouter(QObject):
             if callable(open_url):
                 open_url(tiers.FREE_KEY_URL)
         self.assistant.show_result(State.SUCCESS, said, emotion="happy")
+
+    def _mod(self, intent: Intent) -> None:
+        """'Do a dance' / 'do the hip sway' (an animation mod) / 'open the mod store'."""
+        if intent.query == "store":
+            opener = self.services.open_settings
+            if opener is None:
+                return self._result(State.ERROR, "unknown")
+            opener("Mods")
+            return self.assistant.show_result(State.SUCCESS, "Here's my mod store. Pick something cute.",
+                                              emotion="happy", speak=True)
+        name = intent.query.partition(":")[2]
+        c = self.companion
+        played = c.character.play_mod_animation(name) if c is not None and hasattr(c, "character") else ""
+        if played:
+            return self.assistant.show_result(State.SUCCESS, f"{played}!", emotion="playful")
+        if name:                                          # "do the ..." that isn't one of her moves: chat
+            return self.dispatch(Intent(Kind.UNKNOWN, query=f"do the {name}"))
+        self.assistant.show_result(State.SUCCESS, "I need an animation pack for that - Settings, Mods, Store. "
+                                                  "Try Dance Floor.", emotion="playful")
+
+    def _intel(self, intent: Intent) -> None:
+        """'Explain this' / 'what's wrong here' / 'read this chart' / 'remember my screen' / 'what changed'."""
+        intel = self.services.intel
+        if intel is None:
+            return self.assistant.show_result(State.ERROR, "I can't look at your screen here.")
+        task = intent.query
+        if task == "remember":
+            ok = intel.remember()
+            return self.assistant.show_result(State.SUCCESS if ok else State.ERROR,
+                                              "Got it - I'll remember how your screen looks. Ask me \u201cwhat "
+                                              "changed\u201d later." if ok else "I couldn't take a picture just now.")
+        if task == "changes":
+            said, _n = intel.changes()
+            return self.assistant.show_result(State.SUCCESS, said)
+        self.controller.set_state(State.PROCESSING, {"error": "Looking for the problem...",
+                                                     "chart": "Reading it..."}.get(task, "Looking..."))
+        intel.look(task, intent.targets[0] if intent.targets else "",
+                   lambda text, emotion: self.assistant.show_result(
+                       State.SUCCESS if emotion != "confused" else State.ERROR, text, emotion=emotion, translated=True))
+
+    DOODLE_SAID = {"heart": "Here, a heart. Don't make it weird.", "star": "One star. Five-star service though.",
+                   "smiley": "Smile! There. Now you have to.", "cat": "A cat. Obviously a cat. Very good cat.",
+                   "lightning": "Zap. My signature move.", "circle": "A perfect circle. Basically."}
+
+    def _desk(self, intent: Intent) -> None:
+        """Drawing on your screen, circling / pointing at things, clones, chaos mode, hologram mode (2.4)."""
+        kind, what = intent.targets[0], intent.targets[1]
+        desk, q = self.services.desk, intent.query
+        s = self.services.settings
+        if kind == "hologram":
+            c = self.companion
+            if c is None or not hasattr(c, "set_hologram"):
+                return self._result(State.ERROR, "unknown")
+            c.set_hologram(q == "on")
+            return self.assistant.show_result(State.SUCCESS, "Hologram mode. Your clicks go right through me now - "
+                                              "say \u201chologram off\u201d to bring me back." if q == "on"
+                                              else "Solid again.", emotion="playful")
+        if desk is None:
+            return self.assistant.show_result(State.ERROR, "I can't do that here.")
+        if kind == "doodle":
+            if not desk.doodle(what):
+                return self._result(State.ERROR, "unknown")
+            return self.assistant.show_result(State.SUCCESS, self.DOODLE_SAID.get(what, "Ta-da!"), emotion="playful")
+        if kind == "clear_drawing":
+            desk.clear()
+            return self.assistant.show_result(State.SUCCESS, "Wiped clean.", speak=False)
+        if kind == "clones":
+            made = desk.clones(int(q or 8))
+            return self.assistant.show_result(
+                State.SUCCESS if made else State.ERROR,
+                (f"Clone{'s' if made > 1 else ''} deployed. Click one to pop it." if made else
+                 "I've got all the clones I can handle right now."), emotion="playful")
+        if kind == "clear_clones":
+            gone = desk.clear_clones()
+            return self.assistant.show_result(State.SUCCESS, "Back to just me." if gone else "There aren't any clones.")
+        if kind == "chaos":
+            on = q == "on"
+            if s is not None:
+                s.chaos_mode = on
+                s.save()
+            desk.chaos(on)
+            return self.assistant.show_result(State.SUCCESS, "Chaos mode! Don't worry, I won't touch anything "
+                                              "important." if on else "Chaos mode off. Boring, but fine.",
+                                              emotion="playful" if on else "neutral")
+        if kind == "mark":
+            finder = self.services.screen
+            if finder is None:
+                return self.assistant.show_result(State.ERROR, "I can only find things on screen on Windows.")
+            self.controller.set_state(State.PROCESSING, f'Looking for "{what}"...')
+
+            def found(target) -> None:
+                if isinstance(target, Exception) or target is None:
+                    return self._result(State.ERROR, "click_not_found", label=what)
+                desk.mark(q, target.rect, target.name or what)
+                self.controller.log("Showed", f"{q}: {(target.name or what)[:40]}")
+                self.assistant.show_result(State.SUCCESS, f"There - {target.name[:40] or what}.", emotion="happy")
+            return self._background(lambda: finder.find(what), found)
+        self._result(State.ERROR, "unknown")
 
     RPS_WAIT = 45.0                # seconds she waits for your hand after "rock paper scissors"
 

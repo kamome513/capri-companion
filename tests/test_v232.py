@@ -167,7 +167,8 @@ def test_her_own_voice_reads_each_language_with_its_own_pronunciation():
     try:
         for code in [c for c in languages.LANGUAGES if c != "en"]:
             languages.set_current(code)
-            engine.synthesize("Hallo", "neural: Capri", 0.5)
+            said = {"ru": "Привет", "uk": "Привіт", "bg": "Здравей", "el": "Γεια σου"}.get(code, "Hallo")
+            engine.synthesize(said, "neural: Capri", 0.5)     # (2.4.1: an English line keeps English sounds)
             _text, style, lang = fake.calls[-1]
             info = languages.get(code)
             native = info.kokoro[0] if info.kokoro else "ef_dora"

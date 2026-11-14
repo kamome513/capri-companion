@@ -272,7 +272,7 @@ class ChatWindow(QWidget):
         for skin in SKINS.values():
             self.skin_box.addItem("SKIN: " + skin.label.upper(), skin.key)
         self.skin_box.currentIndexChanged.connect(lambda _i: self.set_skin(self.skin_box.currentData()))
-        top.addWidget(self.skin_box)
+        self.skin_box.hide()                               # (2.4.1) skins are mods now: Settings -> Mods
         root.addLayout(top)
         self.log = CallLog()                               # the call look, always (skins recolour it)
         root.addWidget(self.log, 1)

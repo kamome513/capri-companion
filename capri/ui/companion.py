@@ -74,7 +74,7 @@ class Companion(QObject):
 
         top = settings.always_on_top
         self.panel = StatusPanel(controller, art.icon, top)
-        self.panel.set_compact(settings.compact, box_scale(settings.size))
+        self.panel.set_compact(True, box_scale(settings.size))      # (2.4.2) always the compact text box
         self.panel.set_show_log(settings.show_log and settings.log_style != "cards")
         self.panel.set_static(settings.panel_static)
         self.character = CharacterWindow(art, her_height(settings.compact, settings.size), top, sprites,
@@ -97,6 +97,7 @@ class Companion(QObject):
             window.context_menu_requested.connect(self.context_menu_requested)
             window.set_click_through(settings.click_through)
         self.character.clicked.connect(self._clicked)
+        self.character.head_patted.connect(self._head_rubbed)      # (2.5) pats: rub her head with your cursor
         self._last_pat = -1e9
         for window in (self.character, self.panel):
             window.drag_started.connect(self._drag_start)
@@ -301,8 +302,17 @@ class Companion(QObject):
         body = self.content_geometry()
         if not body.contains(at):
             return
+        if at.y() < body.top() + body.height() * 0.33:
+            return                                          # (2.5) her head: pats are rubs now, not clicks
         self._last_pat = time.monotonic()
-        self.patted.emit("head" if at.y() < body.top() + body.height() * 0.33 else "body")
+        self.patted.emit("body")
+
+    def _head_rubbed(self) -> None:
+        """Your cursor rubbed her head (back and forth, a moment): a head pat (2.5)."""
+        if self.hidden or self.drone or not getattr(self.settings, "head_pats", True) or self.character.sway.held:
+            return
+        self._last_pat = time.monotonic()
+        self.patted.emit("head")
 
     def _drag_start(self) -> None:
         self._drag_origin = self.character.pos()
@@ -346,7 +356,7 @@ class Companion(QObject):
             self.leave_perch()
         ch = self.character
         anchor = self.content_geometry().bottomRight()   # keep her feet where they are
-        self.panel.set_compact(compact, box_scale(self.settings.size))
+        self.panel.set_compact(True, box_scale(self.settings.size))    # (2.4.2: no compact mode - always this size)
         ch.lying_width = self._lying_width()
         ch.set_display_height(her_height(compact, self.settings.size))
         self._move_character(anchor - ch.content_rect().bottomRight(), self.screen)
@@ -512,6 +522,24 @@ class Companion(QObject):
         self.settings.click_through = on
         for window in (self.character, self.panel, self.drone_window, self.sit_window):
             window.set_click_through(on)
+        self._save()
+
+    def set_hologram(self, on: bool) -> None:
+        """Hologram mode (2.4): she's see-through, cyan-scanlined and click-through - your clicks go to whatever's
+        behind her. Off again: right-click the tray icon -> Hologram mode, say "hologram off", or Ctrl+Alt+Shift+C."""
+        self.settings.hologram = on
+        if on and not getattr(self, "_holo_click_before", None):
+            self._holo_click_before = (self.settings.click_through,)
+        for window in (self.character, self.drone_window, self.sit_window):
+            window.setWindowOpacity(0.62 if on else 1.0)
+        self.character.hologram = on
+        self.character.update()
+        if on:
+            self.set_click_through(True)
+        else:
+            before = getattr(self, "_holo_click_before", None)
+            self._holo_click_before = None
+            self.set_click_through(before[0] if before else False)
         self._save()
 
     def reset_position(self) -> None:

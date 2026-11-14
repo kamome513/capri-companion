@@ -8,7 +8,7 @@
 
 #define AppName "Capri"
 #ifndef AppVersion
-  #define AppVersion "2.3.8"
+  #define AppVersion "2.5.0"
 #endif
 
 [Setup]

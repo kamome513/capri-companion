@@ -169,7 +169,8 @@ POKE_DEGREES = 12
 SWEEP_DEGREES = 28
 UPPER_ARM_WAVE = 72          # a wave: the upper arm out to the side...
 FOREARM_WAVE = 100           # ...the forearm straight up from the elbow...
-WAG_DEGREES = 22             # ...and the hand swinging side to side
+WAG_DEGREES = 30             # ...and the hand swinging side to side
+SHOULDER_WAG = 14            # (2.4.1) the whole arm moves with each swing, not just the elbow
 LEG_LIFT = 0.2               # walking: the raised leg is this much shorter (her knee comes up)
 LEG_SWAY = 6                 # ...and both legs tilt a little with the step
 ARM_SWING = 9                # her arms swing with her steps
@@ -349,6 +350,10 @@ class Rig:
         out._hair_cache = None
         return out
 
+    def head_transform(self, feet: QPointF, height: float, pose: Pose) -> QTransform:
+        """Figure coordinates of her head -> where they are on screen this frame (she leans, it follows)."""
+        return self._upper(pose) * self._base(feet, height)
+
     def body_box(self) -> QRectF:
         return QRectF(0, 0, self.w, self.h)
 
@@ -368,7 +373,7 @@ class Rig:
         world = 0.0
         if arm == side:                                        # swings out toward the icon / up in a wave
             world -= lead * (REACH_DEGREES * pose.reach + POKE_DEGREES * pose.poke)
-            world -= lead * pose.wave * UPPER_ARM_WAVE         # the upper arm lifts out to the side
+            world -= lead * pose.wave * (UPPER_ARM_WAVE + SHOULDER_WAG * pose.wag)   # the upper arm lifts out
         else:                                                  # the other arm tucks in a little
             world += out * -6 * pose.reach
         world += lead * SWEEP_DEGREES * pose.sweep             # both trail behind the dash
@@ -577,6 +582,14 @@ class Rig:
                 p.translate(ex, ey)
                 bend = min(1.0, pose.wave * 1.6)            # the forearm comes up a little ahead of the arm
                 p.rotate(-lead * bend * (FOREARM_WAVE + WAG_DEGREES * pose.wag))
+                # (2.4.1) her wrist turns as the hand comes up, so it's her palm you see, not the back of it:
+                # the forearm flipped across its own length, through edge-on halfway
+                tx, ty = HAND_TIP[arm][0] * self.w, HAND_TIP[arm][1] * self.h
+                axis = math.degrees(math.atan2(ty - ey, tx - ex))
+                turn = math.cos(math.pi * min(1.0, max(0.0, (pose.wave - 0.35) / 0.55)))   # once it's up
+                p.rotate(axis)
+                p.scale(1.0, turn if abs(turn) > 0.08 else math.copysign(0.08, turn))
+                p.rotate(-axis)
                 p.translate(-ex, -ey)
                 p.drawImage(QPointF(0, 0), self.forearms[arm])
             else:
