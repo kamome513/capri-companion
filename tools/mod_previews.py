@@ -84,8 +84,9 @@ def _rig(palette: dict | None = None, look: str = "flat", hair: str = "storm"):
     from capri.mods.effects import recolor
     from capri.ui.neon import body_image
     from capri.ui.rig import Rig
-    frame = recolor(body_image(sprites().frame("standing"), look), palette or {})
-    return Rig(frame, hair)
+    plain = body_image(sprites().frame("standing"), look)
+    frame = recolor(plain, palette or {})
+    return Rig(frame, hair, masks_from=plain if frame is not plain else None)
 
 
 def _her(p: QPainter, rig, height: float, feet: QPointF, pose=None, cosmetics: list | None = None,
@@ -142,11 +143,52 @@ def _label(p: QPainter, text: str, accent: str) -> None:
 
 
 # -- one per kind --------------------------------------------------------------------------------------------------
-def skin(path: Path, palette: dict) -> None:
-    img, p = _card(palette.get("hair", "#ff2a6d"))
-    _full(p, _rig(palette), hair_colour=palette.get("hair"))
-    _finish(p, palette.get("hair", "#ff2a6d"))
+def skin(path: Path, palette: dict, style: dict | None = None) -> None:
+    accent = palette.get("hair", "#ff2a6d")
+    img, p = _card(accent)
+    if style:
+        styled(p, _rig(palette), SIZE * 0.6, QPointF(SIZE * 0.5, SIZE - 14), palette, style)
+    else:
+        _full(p, _rig(palette), hair_colour=palette.get("hair"))
+    _finish(p, accent)
     img.save(str(path))
+
+
+def styled(p: QPainter, rig, height: float, feet: QPointF, palette: dict, style: dict, t: float = 4.2,
+           size: float = SIZE) -> None:
+    """Her in a style, with its effects as they'd be a few seconds in (one of its moments happening)."""
+    from capri.ui import hair as hair_mod
+    from capri.ui.rig import Pose
+    from capri.ui.style_fx import StyleFX, ctx_for_rig
+    fx = StyleFX(style)
+    fx.palette = dict(palette)
+    fx.switched_at = -1e9
+    if fx._events:
+        ev = fx._events[0]
+        length = fx.LENGTH.get(ev["kind"], 1.5)
+        fx._active = [(ev, t - length * 0.45, length, 0.37)]
+    pose = Pose(t=t)
+    two, sparkle = style.get("hair2"), style.get("sparkle")
+    hair_mod.set_hair_colour(QColor(palette["hair"]) if palette.get("hair") else None,
+                             QColor(two) if two else None, QColor(sparkle) if sparkle else None)
+    try:
+        c = ctx_for_rig(rig, feet, height, pose, QRectF(0, 0, size, size), t)
+        p.save()
+        p.setClipPath(_chamfer(QRectF(2, 2, size - 4, size - 4), 22))
+        fx.paint_back(p, c)
+        img = QImage(int(size), int(size), QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(0)
+        q = QPainter(img)
+        q.setRenderHint(QPainter.RenderHint.Antialiasing)
+        q.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        rig.paint(q, feet, height, pose, "right")
+        q.end()
+        fx.figure(img, c)
+        fx.draw_figure(p, img, c)
+        fx.paint_front(p, c)
+        p.restore()
+    finally:
+        hair_mod.set_hair_colour(None)
 
 
 def cosmetic(path: Path, folder: Path, items: list[dict]) -> None:

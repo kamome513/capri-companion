@@ -296,6 +296,13 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 | "check for updates" / "update yourself" | Looks for a newer Capri / installs a downloaded one (asks first) |
 | "restart yourself" / "restart Capri" | Closes and starts her again (a downloaded update installs on the way) |
 
+### Styles (2.6)
+
+Settings → **Styles**: 31 looks for Capri, each with its own colours and live effects around her (hair effects, glow,
+glowing eyes, materials, particles, special moments, trails). Pick one, press **Apply**; **Default Capri** takes it
+off. The switches underneath turn each kind of effect on or off, and **Quality: Light** uses about half the CPU.
+Styles are skin mods, so you can make your own too (see the modding guide).
+
 ### Mods (2.5)
 
 Settings → **Mods**. **Store**: pick a category (skins, accessories, animations, personalities, looks & models,

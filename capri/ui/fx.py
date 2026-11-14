@@ -54,17 +54,20 @@ def spring(t: float, wobble: float = 2.2) -> float:
 
 
 # -- her as a sprite -------------------------------------------------------------------------------------------
+FEET_AT = 1.45      # her feet this far down a render() image (x her height): room above her for all her hair (2.5.1)
+
+
 def render(rig: Rig, height: float, pose: Pose, scale: float = 1.0, tint: QColor | None = None,
            hair: bool = True) -> QImage:
     """Her drawn into her own image (feet at the bottom middle), optionally as a flat-coloured silhouette."""
-    w, h = int(height * 1.5 * scale) + 4, int(height * 1.25 * scale) + 4
+    w, h = int(height * 1.5 * scale) + 4, int(height * (FEET_AT + 0.13) * scale) + 4
     img = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
     img.fill(0)
     p = QPainter(img)
     p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.scale(scale, scale)
-    rig.paint(p, QPointF(w / scale / 2, height * 1.12), height, pose, "right", hair=hair)
+    rig.paint(p, QPointF(w / scale / 2, height * FEET_AT), height, pose, "right", hair=hair)
     p.end()
     if tint is not None:
         q = QPainter(img)
@@ -77,7 +80,7 @@ def render(rig: Rig, height: float, pose: Pose, scale: float = 1.0, tint: QColor
 def anchor(height: float, scale: float = 1.0) -> QPointF:
     """Where her middle is in a render() image."""
     w = int(height * 1.5 * scale) + 4
-    return QPointF(w / 2, (height * 1.12 - height / 2) * scale)
+    return QPointF(w / 2, (height * FEET_AT - height / 2) * scale)
 
 
 def blurred(img: QImage, amount: int = 10) -> QImage:

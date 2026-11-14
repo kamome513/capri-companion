@@ -181,7 +181,11 @@ class VisitShow(QObject):
         if sprites is None or "standing" not in getattr(sprites, "body", {}):
             return None
         look = getattr(self.companion.settings, "body_style", "full")
-        if self._rig_full is None or getattr(self, "_look", None) != look:
+        mine = self.companion.character.full_rig() if hasattr(self.companion.character, "full_rig") else None
+        if mine is not None:                       # (2.5.1) her own figure: her look AND her skin's colours
+            if mine is not self._rig_full:
+                self._rig_full, self._look, self._rig_key = mine, look, None
+        elif self._rig_full is None or getattr(self, "_look", None) != look:
             from .neon import body_image
             self._rig_full, self._look, self._rig_key = Rig(body_image(sprites.frame("standing"), look)), look, None
         style = getattr(self.companion.settings, "hair_style", "storm")

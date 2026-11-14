@@ -145,6 +145,10 @@ def check(data: dict, files: dict[str, int] | None = None) -> Manifest:
         for part, colour in palette.items():
             _need(part in ("hair", "accent", "outline", "body", "eyes"), f"unknown palette part \"{part}\"")
             _need(isinstance(colour, str) and bool(COLOR.match(colour)), f"\"{part}\" must be a colour like #ff2266")
+        if data.get("style") is not None:                # (2.6) a style: effects round her - plain data, checked
+            from ..ui.style_fx import validate
+            problem = validate(data["style"])
+            _need(not problem, f"style: {problem}")
     elif kind == "cosmetic":
         items = data.get("items")
         _need(isinstance(items, list) and 0 < len(items) <= 6, "a cosmetic needs 1-6 \"items\"")

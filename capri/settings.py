@@ -113,6 +113,14 @@ class Settings:
     intelligence: str = "medium"       # low | medium | high: which model on your AI (ai/tiers.py) - 2.3.8
     mod_index_url: str = "https://raw.githubusercontent.com/kamome513/capri-companion/main/mods/index.json"
     mods_auto_update: bool = True      # newer versions of store mods you have, installed by themselves
+    style_effects: bool = True         # (2.6) a style's effects round her (Settings -> Styles), each kind switchable:
+    style_particles: bool = True
+    style_aura: bool = True            # aura, outline glow, glowing eyes
+    style_hair: bool = True            # hair extensions and glowing edge
+    style_materials: bool = True       # what she's made of: gloss, ice, veins, Kintsugi gold...
+    style_events: bool = True          # the now-and-then moments: flashes, halos, blooms, glitches...
+    style_motion: bool = True          # trails when she moves
+    style_quality: str = "full"        # full (30 fps) | light (half the particles, 15 fps)
     hologram: bool = False             # hologram mode: see-through, scanlined, click-through (2.4)
     chaos_mode: bool = False           # random harmless desktop fun now and then (off until you turn it on)
     react_to_apps: bool = True         # she reacts when your apps / games open and close (at most every 2 min)

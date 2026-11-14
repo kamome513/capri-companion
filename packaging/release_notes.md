@@ -1,6 +1,12 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.5.0.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.6.0.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
+
+**2.6: Styles.** Settings has a new **Styles** tab with 31 whole new looks for Capri - each with its own colours, materials, light and little effects around her: Stormborn, Absolute Zero, Bioluminescence, Solaris, Eclipse, Thornveil, Corrupted.exe, Monochrome, Dead Signal, Oilspill, Prototype 00, Redline, Velvet Noir, Cloud Nine, Abyssal, Analog, Wildflower, Lunaris, Radioactive, Paper Doll, Glacier Rose, Clockwork, Phantom, Wildfire, Dreamcore, Cathedral, Static, Mantis, White & Black Kintsugi, Sakura and Frutiger Aero.
+- Each has hair effects (lightning, ice crystals, flames, thorns, petals, gears, glass...), a glow and outline, glowing eyes, what she's made of (ice, gloss, glowing veins, gold Kintsugi repairs, scanlines, film grain...), particles inside her and around her, the odd special moment (an eclipse halo, a jellyfish drifting past, a flower blooming, a lightning flash...) and a trail when you drag her.
+- Pick one, see its preview and colours, press **Apply**; **Default Capri** takes it off. Switch each kind of effect on or off, and pick Full or Light quality (Light uses less CPU).
+- Effects stay round her and never cover your other windows. They work standing and lying down.
+- Fixes: thrown or dashing, her body now keeps a skin's colours (not just her hair); the teleport now covers all of her hair; a skin's colours reach all of her hair by her face; lying down, her hair has no holes or gaps.
 
 **2.5: mods, a new look, automations, chaos and more.** (Settings now has **Mods** and **Automations** tabs.)
 - **Her new look:** big bold shards with a purple edge. She stands by default.

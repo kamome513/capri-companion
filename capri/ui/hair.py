@@ -119,6 +119,13 @@ _COLOUR_GEN = 0                          # bumped when a skin changes her hair c
 STORM_DEEP = QColor(178, 6, 56)
 STORM_LIGHT = QColor(255, 132, 178)
 STORM_DARK = QColor(22, 4, 16)           # the odd black spike
+STORM_DARK_DEFAULT = QColor(STORM_DARK)
+
+
+def _deep(c: QColor) -> QColor:
+    """A very dark shade of a colour (the crown / spike in a skin's colours)."""
+    h, s, v, _a = c.getHsvF()
+    return QColor.fromHsvF(max(0.0, h), min(1.0, s * 0.8 + 0.1), 0.09)
 STORM_EDGE = QColor(110, 91, 191)        # (the blue-purple of her outline - the leg blades use it)
 STORM_GLOW = QColor(255, 30, 100)
 SPARKLE = QColor(255, 255, 255)
@@ -157,10 +164,16 @@ class StormHair:
                 img = QImage(max(1, w), max(1, h), QImage.Format.Format_ARGB32_Premultiplied)
                 img.fill(STORM_RED)
                 q = QPainter(img)
+                if HAIR_TO is not None:                     # a style: the hair shades into its second colour
+                    from PySide6.QtGui import QLinearGradient
+                    g = QLinearGradient(0, h * 0.3, 0, h * 0.62)
+                    g.setColorAt(0, STORM_RED)
+                    g.setColorAt(1, HAIR_TO)
+                    q.fillRect(0, 0, w, h, g)
                 dot = max(1.0, round(hw * 0.012))
                 for sx, sy, phase, speed in self.sparkles:
                     a = 0.5 + 0.5 * math.sin(v * 2.1 * speed + phase)
-                    c = QColor(SPARKLE)
+                    c = QColor(SPARKLE_COLOUR if SPARKLE_COLOUR is not None else SPARKLE)
                     c.setAlpha(int(110 + 145 * a))
                     q.fillRect(QRectF(round(sx * w), round(sy * h), dot, dot), c)
                 q.end()
@@ -240,9 +253,17 @@ class StormHair:
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(STORM_DARK)
-        for poly in self._place(self._spike, head, t, intensity, energy):     # the black spike, behind
-            p.drawPolygon(poly)
+        if not self.flow_in:                                     # (lying: no dark spike peeking through)
+            for poly in self._place(self._spike, head, t, intensity, energy):     # the black spike, behind
+                p.drawPolygon(poly)
         hair = self.shape(head, t, intensity, energy)
+        if self.flow_in:                                         # (2.6) lying: one solid mass, no holes in it
+            solid = QPainterPath()
+            solid.setFillRule(Qt.FillRule.WindingFill)
+            for poly in self._place(self.points, head, t, intensity, energy):
+                solid.addPolygon(poly)
+                solid.closeSubpath()
+            hair = solid.simplified()
         if self.flow_in:                                         # lying: her own hair is still drawn - cover it
             patch = QPainterPath()
             jag = [QPointF(head.left() - hw * 0.06 + hw * 1.12 * i / 8, head.top() + hh * (1.3 if i % 2 else 1.1))
@@ -254,6 +275,13 @@ class StormHair:
                      (0.06, 1.72), (-0.02, 1.95), (-0.06, 1.6), (-0.16, 1.7), (-0.12, 1.3), (-0.2, 1.1)]
             patch.addPolygon(QPolygonF([QPointF(head.left() + u * hw, head.top() + v * hh) for u, v in drape]))
             patch.closeSubpath()                                 # (2.4.1) the hair down the left of her face
+            hang = [(-0.55, 0.78), (0.0, 0.82), (-0.06, 1.25), (-0.12, 1.08), (-0.2, 1.55), (-0.26, 1.12),
+                    (-0.34, 1.38), (-0.4, 1.02), (-0.5, 1.18), (-0.56, 0.92)]
+            patch.addPolygon(QPolygonF([QPointF(head.left() + u * hw, head.top() + v * hh) for u, v in hang]))
+            patch.closeSubpath()                                 # (2.6) strands hanging down further out on her left
+            fill = [(-0.5, 0.55), (0.12, 0.5), (0.22, 1.0), (-0.08, 0.98), (-0.3, 1.06), (-0.53, 0.9)]
+            patch.addPolygon(QPolygonF([QPointF(head.left() + u * hw, head.top() + v * hh) for u, v in fill]))
+            patch.closeSubpath()                                 # (2.6) no holes between her hair and those strands
             hair = hair.united(patch)
         tw, th = int(hw * 5), int(hh * 5)
         p.setBrushOrigin(QPointF(round(head.center().x() - tw / 2), round(head.top() - th * 0.55)))
@@ -266,8 +294,8 @@ class StormHair:
         seam = QPen(STORM_DARK, max(2.0, hw * 0.07))
         seam.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         p.setPen(seam)
-        for poly in self._place(self._crown, head, t, intensity, energy):
-            p.drawPolygon(poly)
+        for poly in ([] if self.flow_in else self._place(self._crown, head, t, intensity, energy)):
+            p.drawPolygon(poly)                                  # (lying: no crown - it lands mid-hair)
         p.setPen(Qt.PenStyle.NoPen)
         p.restore()
 
@@ -469,7 +497,7 @@ def make_hair(style: str, seed: int = 21, flow_in: bool = False):
     return StormHair(seed=seed, flow_in=flow_in)
 
 
-def tint_hair(img: QImage, box: QRectF, seed: int = 3) -> QImage:
+def tint_hair(img: QImage, box: QRectF, seed: int = 3, mask_from: QImage | None = None) -> QImage:
     """Her own (sprite) hair inside `box` (0..1 of the picture) recoloured to match the traced hair:
     flat STORM_RED with white speckles - so strands the new outline doesn't cover still read as the same
     hair (lying down, her face picture keeps a few beside her face). Her green mask, eyes and the dark
@@ -482,20 +510,37 @@ def tint_hair(img: QImage, box: QRectF, seed: int = 3) -> QImage:
     x0, y0 = max(0, int(box.left() * w)), max(0, int(box.top() * h))
     x1, y1 = min(w, int(box.right() * w) + 1), min(h, int(box.bottom() * h) + 1)
     region = a[y0:y1, x0:x1].astype(int)
-    r, g, b, alpha = region[..., 0], region[..., 1], region[..., 2], region[..., 3]
+    probe = region
+    if mask_from is not None and mask_from.size() == img.size():       # (2.6) find her hair by her own red,
+        m = mask_from.convertToFormat(QImage.Format.Format_RGBA8888)     # before a skin recoloured it
+        mm = np.frombuffer(m.constBits(), np.uint8, m.bytesPerLine() * h).reshape(h, m.bytesPerLine())[:, : w * 4]
+        probe = mm.reshape(h, w, 4)[y0:y1, x0:x1].astype(int)
+    r, g, b, alpha = probe[..., 0], probe[..., 1], probe[..., 2], probe[..., 3]
     reddish = (alpha > 30) & (r > 70) & (r > 1.8 * g + 10) & (r > 1.15 * b)
     out = region.copy()
-    out[reddish, 0], out[reddish, 1], out[reddish, 2] = STORM_RED.red(), STORM_RED.green(), STORM_RED.blue()
+    near = HAIR_TO if HAIR_TO is not None else STORM_RED      # (2.6) a style's hair shades into its second colour
+    out[reddish, 0], out[reddish, 1], out[reddish, 2] = near.red(), near.green(), near.blue()     # by her face
     rng = np.random.default_rng(seed)
     speck = reddish & (rng.random(reddish.shape) < 0.018)
-    out[speck, 0:3] = 255
+    sp = SPARKLE_COLOUR if SPARKLE_COLOUR is not None else QColor(255, 255, 255)
+    out[speck, 0], out[speck, 1], out[speck, 2] = sp.red(), sp.green(), sp.blue()
     a[y0:y1, x0:x1] = out.astype(np.uint8)
     result = QImage(a.tobytes(), w, h, w * 4, QImage.Format.Format_RGBA8888).copy()
     return result.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
 
 
-def set_hair_colour(colour: QColor | None) -> None:
-    """A skin mod's hair colour (None = her own pink-red). Every hair redraws its texture."""
-    global STORM_RED, _COLOUR_GEN
+HAIR_TO: QColor | None = None            # (2.6) a style's second hair colour: the hair shades into it, top to bottom
+SPARKLE_COLOUR: QColor | None = None     # ...and its speckles' colour (white by default)
+
+
+def set_hair_colour(colour: QColor | None, colour2: QColor | None = None, sparkle: QColor | None = None) -> None:
+    """A skin mod's hair colour (None = her own pink-red), a second colour it shades into and the speckles'
+    colour (a style). Every hair redraws its texture."""
+    global STORM_RED, _COLOUR_GEN, HAIR_TO, SPARKLE_COLOUR, STORM_DARK
     STORM_RED = QColor(colour) if colour is not None else QColor(STORM_RED_DEFAULT)
+    # the dark crown over her eyes and the dark spike by her face: a deep shade of the new colours, not her maroon
+    base = QColor(colour2) if colour2 is not None else (QColor(colour) if colour is not None else None)
+    STORM_DARK = _deep(base) if base is not None else QColor(STORM_DARK_DEFAULT)
+    HAIR_TO = QColor(colour2) if colour2 is not None else None
+    SPARKLE_COLOUR = QColor(sparkle) if sparkle is not None else None
     _COLOUR_GEN += 1

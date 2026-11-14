@@ -48,6 +48,8 @@ class Effects:
     lines: dict = field(default_factory=dict)
     sounds: dict = field(default_factory=dict)
     personalities: list = field(default_factory=list)
+    style: dict = field(default_factory=dict)  # (2.6) the skin's "style": aura, particles, hair, materials, events...
+    style_id: str = ""
     generation: int = 0                      # bumped on every reload (windows redraw / re-cut her figure)
 
     def line(self, kind: str, rng: random.Random | None = None) -> str | None:
@@ -71,6 +73,8 @@ def reload(manager) -> Effects:
         m, data = mod.manifest, mod.manifest.data
         if m.type == "skin":
             e.palette = dict(data.get("palette", {}))
+            e.style = dict(data.get("style") or {})              # (2.6) a style: effects round her too
+            e.style_id = m.id
         elif m.type == "cosmetic":
             for item in data.get("items", []):
                 c = Cosmetic(mod.folder / item["image"], item.get("slot", "other"), float(item.get("x", 0.5)),
@@ -92,7 +96,7 @@ def reload(manager) -> Effects:
                 e.sounds[event] = mod.folder / path
     e.cosmetics = list(slots.values())
     _apply_personalities(e.personalities)
-    _apply_hair(e.palette)
+    _apply_hair(e.palette, e.style)
     EFFECTS.__dict__.update(e.__dict__)
     return EFFECTS
 
@@ -113,11 +117,13 @@ def _apply_personalities(items: list[dict]) -> None:
         _MOD_PERSONALITIES.add(key)
 
 
-def _apply_hair(palette: dict) -> None:
+def _apply_hair(palette: dict, style: dict | None = None) -> None:
     try:
         from PySide6.QtGui import QColor
         from ..ui import hair
-        hair.set_hair_colour(QColor(palette["hair"]) if palette.get("hair") else None)
+        two, sparkle = (style or {}).get("hair2"), (style or {}).get("sparkle")
+        hair.set_hair_colour(QColor(palette["hair"]) if palette.get("hair") else None,
+                             QColor(two) if two else None, QColor(sparkle) if sparkle else None)
     except Exception:
         log.info("mods: couldn't recolour her hair", exc_info=True)
 

@@ -92,6 +92,11 @@ class CharacterWindow(OverlayWindow):
         self.napping = False                    # you've been away a while: eyes shut, little z's (2.3.4)
         self.mod_anim = None                    # (animation, started) - an animation mod's move playing (2.4)
         self.hologram = False                   # hologram mode: cyan scanlines over her (2.4)
+        from .style_fx import StyleFX
+        self.style_fx = StyleFX()               # (2.6) a style's effects round her (a skin mod's "style")
+        self._style_gen = -1
+        self.style_settings = None              # her Settings (the Styles tab's switches), set by the app
+        self._last_pos = None
         self._next_mod_anim = time.monotonic() + 50.0
         self._nap_since = 0.0
         self._next_blink = self._t0 + 3.0
@@ -177,13 +182,28 @@ class CharacterWindow(OverlayWindow):
         if head is not None and self.hair_style not in HAIR_STYLES:          # (old "spikes": behind her)
             self.hair.paint(p, head, t if self.talking else int(t * 8) / 8, self.wild_hair, energy)
         tinted = face_key == "lying" and self.hair_style == "storm" and self.wild_hair > 0 and self.sprites is not None
-        if tinted:                                # her own hair beside her face: the traced hair's colour
-            image = self._scaled("tint:lying", self._hair_tinted("lying", self.lying_source()), size[0], size[1],
-                                 cover=False)
-        p.drawImage(QPointF(x, y), image)
         face = self.sprites.face_layer.get(face_key) if self.sprites else None
-        if tinted and face is not None:
-            face = self._hair_tinted("face:lying", face)
+        if face_key == "lying" and self.sprites is not None:
+            # (2.6) lying down: her own hair by her face tinted like the traced hair FIRST (it's found by its red),
+            # then everything in a skin's colours - made once per change, not every frame
+            from ..mods.effects import EFFECTS, recolor
+            self.lying_source()
+            cache = self.__dict__.setdefault("_face_rc", {})
+            key = (EFFECTS.generation, tinted, self.body_look)
+            if cache.get("key") != key:
+                cache.clear()
+                cache["key"] = key
+                cache["body"] = self._hair_tinted("lying", self._lying_neon, self._lying_plain) if tinted else None
+                if face is not None:
+                    colored = recolor(face, EFFECTS.palette)
+                    cache["face"] = self._hair_tinted("face:lying", colored, face) if tinted else colored
+                else:
+                    cache["face"] = None
+                self._cache.clear()
+            if tinted:
+                image = self._scaled("tint:lying", cache["body"], size[0], size[1], cover=False)
+            face = cache["face"]
+        p.drawImage(QPointF(x, y), image)
         if head is not None and self.hair_style in HAIR_STYLES and self.wild_hair > 0:
             hair = self.lying_hair if face_key == "lying" else self.hair     # lying down: no line where it meets her
             hair.paint_cached(p, head, t, self.wild_hair, energy,     # cached per boil step at rest
@@ -192,13 +212,13 @@ class CharacterWindow(OverlayWindow):
                 p.drawImage(QPointF(x, y), self._scaled("face:" + face_key + (":tint" if tinted else ""), face,
                                                         size[0], size[1], cover=False))
 
-    def _hair_tinted(self, key: str, src: QImage) -> QImage:
+    def _hair_tinted(self, key: str, src: QImage, mask_from: QImage | None = None) -> QImage:
         """A sprite with her own hair recoloured like the traced hair (see hair.tint_hair), made once."""
         cache = self.__dict__.setdefault("_tint_cache", {})
         if key not in cache:
             box = self.sprites.head_box.get("lying") if self.sprites else None
-            box = box.adjusted(-0.03, -0.02, 0.05, 0.12) if box is not None else QRectF(0, 0, 0.4, 0.5)
-            cache[key] = tint_hair(src, box)
+            box = box.adjusted(-0.06, -0.02, 0.0, 0.6) if box is not None else QRectF(0, 0, 0.4, 1.0)   # (2.6: the strands down by her face too)
+            cache[key] = tint_hair(src, box, mask_from=mask_from)
         return cache[key]
 
     def set_lying(self, on: bool, width: int) -> None:
@@ -390,6 +410,8 @@ class CharacterWindow(OverlayWindow):
             return False
         if self.napping:
             return True                                  # the z's drift up (an idle frame rate is plenty)
+        if self.style_now() is not None:
+            return True                                  # (2.6) her style's effects move all the time
         if self.mode == "classic":
             return False
         if self.mode == "look":
@@ -407,6 +429,9 @@ class CharacterWindow(OverlayWindow):
         fast = self.talking or (self.mode == "body" and (self._moving or self._blinking())) or self._special() \
             or self.mod_anim is not None
         fps = TALK_FPS if fast else LOOK_FPS if self.mode == "look" else ACT_FPS if self.acts.act else IDLE_FPS
+        if not fast and self.style_now() is not None:
+            s = self.style_settings
+            fps = self.STYLE_FPS.get(getattr(s, "style_quality", "full"), 30)
         self._timer.setInterval(int(1000 / fps))
         if self._animating():
             if not self._timer.isActive():
@@ -560,6 +585,14 @@ class CharacterWindow(OverlayWindow):
             self._update_timer()                             # settled: back to the light idle rate
         # At rest, only repaint when something visible changed: pose, breathing bob, hair boil step.
         if self.napping and self.mode in ("body", "lying"):    # floating: every frame, it's a smooth glide
+            self.update()
+            return
+        sfx = self.style_now()
+        if sfx is not None:                                    # (2.6) her style: effects every frame
+            sfx.tick(now, idle=self.state is State.IDLE and not self.talking)
+            if self._timer.interval() != int(1000 / self.STYLE_FPS.get(getattr(self.style_settings, "style_quality",
+                                                                                   "full"), 30)):
+                self._update_timer()
             self.update()
             return
         key = (self.pose_name(), round(self._bob() * 8), self._hair_step(), self.acts.frame_key(now),
@@ -810,9 +843,10 @@ class CharacterWindow(OverlayWindow):
             self._rig_full = self._rig_small = self._rig_key = None
         if self._rig_full is None:
             from .neon import body_image
-            frame = recolor(body_image(self.sprites.frame("standing"), self.body_look), EFFECTS.palette)
-            self._rig_full = Rig(frame,
-                                 self.hair_style if self.hair_style in HAIR_STYLES else "storm")
+            plain = body_image(self.sprites.frame("standing"), self.body_look)
+            frame = recolor(plain, EFFECTS.palette)
+            self._rig_full = Rig(frame, self.hair_style if self.hair_style in HAIR_STYLES else "storm",
+                                 masks_from=plain if frame is not plain else None)
         return self._rig_full
 
     def figure_rig(self) -> Rig:
@@ -916,9 +950,71 @@ class CharacterWindow(OverlayWindow):
                        self.height() - 2 + self._bounce() + self._bob() + jolt.y() - lift)    # hovering up
         pose = self.figure_pose()
         rig = self.figure_rig()
-        self._paint_cosmetics(p, rig, feet, pose, "back")         # mod cosmetics behind her (ears, wings...)
-        rig.paint(p, feet, self._figure_h, pose, "left" if pose.reach else "right")
-        self._paint_cosmetics(p, rig, feet, pose, "front")        # ...and in front (visors, hats...)
+        sfx = self.style_now()
+        if sfx is None:
+            self._paint_cosmetics(p, rig, feet, pose, "back")     # mod cosmetics behind her (ears, wings...)
+            rig.paint(p, feet, self._figure_h, pose, "left" if pose.reach else "right")
+            self._paint_cosmetics(p, rig, feet, pose, "front")    # ...and in front (visors, hats...)
+            return
+        from .style_fx import ctx_for_rig                        # (2.6) a style: effects round her and on her
+        c = ctx_for_rig(rig, feet, self._figure_h, pose, QRectF(self.rect()), time.monotonic())
+        c.moving = getattr(self, "_velocity", QPointF())
+        sfx.paint_back(p, c)
+        img = self._blank()
+        q = QPainter(img)
+        q.setRenderHint(QPainter.RenderHint.Antialiasing)
+        q.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        self._paint_cosmetics(q, rig, feet, pose, "back")
+        rig.paint(q, feet, self._figure_h, pose, "left" if pose.reach else "right")
+        self._paint_cosmetics(q, rig, feet, pose, "front")
+        q.end()
+        sfx.figure(img, c)
+        sfx.draw_figure(p, img, c)
+        sfx.paint_front(p, c, QPointF(self.pos()))
+
+    def _blank(self) -> QImage:
+        dpr = self.devicePixelRatioF()
+        img = QImage(max(1, round(self.width() * dpr)), max(1, round(self.height() * dpr)),
+                     QImage.Format.Format_ARGB32_Premultiplied)
+        img.setDevicePixelRatio(dpr)
+        img.fill(0)
+        return img
+
+    STYLE_FPS = {"full": 24, "light": 12}
+
+    def style_now(self):
+        """Her style's effects, when there's a style on and its effects are switched on (else None)."""
+        from ..mods.effects import EFFECTS
+        now = time.monotonic()
+        if self._style_gen != EFFECTS.generation:
+            self._style_gen = EFFECTS.generation
+            self.style_fx.set_style(EFFECTS.style, now, EFFECTS.palette)
+        s = self.style_settings
+        if not self.style_fx.active or (s is not None and not getattr(s, "style_effects", True)):
+            return None
+        if self.mode not in ("body", "lying") or self.hologram:
+            return None
+        t = self.style_fx.toggles
+        if s is not None:
+            t.particles, t.aura, t.hair = s.style_particles, s.style_aura, s.style_hair
+            t.materials, t.events, t.motion = s.style_materials, s.style_events, s.style_motion
+            t.light = s.style_quality == "light"
+        return self.style_fx
+
+    def moveEvent(self, event) -> None:
+        """Moving (dragged, walking): her style leaves a trail."""
+        super().moveEvent(event)
+        now = time.monotonic()
+        pos = QPointF(self.pos())
+        last = self._last_pos
+        self._last_pos = (pos, now)
+        if last is None or self.style_now() is None:
+            return
+        dt = max(1e-3, now - last[1])
+        v = (pos - last[0]) / dt
+        self._velocity = v
+        c = self.content_rect()
+        self.style_fx.moved(pos + QPointF(c.center().x(), c.bottom()), math.hypot(v.x(), v.y()), now)
 
     def _paint_cosmetics(self, p: QPainter, rig, feet: QPointF, pose, layer: str) -> None:
         paint_cosmetics(p, rig, feet, self._figure_h, pose, layer)
@@ -1034,6 +1130,7 @@ class CharacterWindow(OverlayWindow):
             elif self.body_look == "flat":
                 from .neon import flat_array
                 src = _to_image(flat_array(_to_array(src), face))
+            self._lying_plain = src                         # (before the skin: her hair is found by its red)
             src = recolor(src, EFFECTS.palette)             # (after the look, so the look keeps a skin's colours)
             self._lying_neon, self._lying_key = src, key
             self.__dict__.get("_tint_cache", {}).clear()
@@ -1105,6 +1202,23 @@ class CharacterWindow(OverlayWindow):
             body, head = self._paint_lying_figure(q, jolt)
             q.end()
             p.drawImage(QPointF(0, 0), snapshot)
+        elif self.style_now() is not None:                 # (2.6) her style lying down too
+            sfx = self.style_fx
+            img = self._blank()
+            q = QPainter(img)
+            q.setRenderHint(QPainter.RenderHint.Antialiasing)
+            q.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            body, head = self._paint_lying_figure(q, jolt)
+            q.end()
+            from .style_fx import Ctx as StyleCtx          # (not "Ctx": that name is the idle activities')
+            eyes = [QPointF(body.x() + u * body.width(), body.y() + v * body.height()) for u, v in LYING_EYES]
+            hb = head if head is not None else QRectF(body.x(), body.y(), body.width() * 0.3, body.height() * 0.4)
+            c = StyleCtx(QRectF(self.rect()), body, hb, eyes, QPointF(body.center().x(), body.bottom()), now,
+                    body.height() / 160.0, None, True, getattr(self, "_velocity", QPointF()), body.width() * 0.012)
+            sfx.paint_back(p, c)
+            sfx.figure(img, c)
+            sfx.draw_figure(p, img, c)
+            sfx.paint_front(p, c, QPointF(self.pos()))
         else:
             body, head = self._paint_lying_figure(p, jolt)
         if self.acts.act and head is not None:

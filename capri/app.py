@@ -77,6 +77,7 @@ from .ui.visit_actions import VisitActions
 from .ui.zap import ZapShow
 from .ui.lipsync import LipSync
 from .ui.look_tab import LookTab
+from .ui.styles_tab import StylesTab
 from .ui.pc_tab import PcTab
 from .ui.sprites import SpriteArt
 from .ui.settings_window import SettingsWindow
@@ -527,6 +528,7 @@ def main(argv: list[str] | None = None) -> int:
                 mod_bridge.downloaded.emit(found)
         threading.Thread(target=work, daemon=True, name="capri-mod-updates").start()
     QTimer.singleShot(45_000, update_mods)
+    companion.character.style_settings = settings                 # (2.6) Settings -> Styles: her effects' switches
     companion.character.set_body_look(settings.body_style)       # full colour / neon
     companion.character.glitch_every = settings.glitches          # random glitches (off unless you turn them on)
     companion.character.real_glitch.rescheduled()
@@ -1115,6 +1117,8 @@ def main(argv: list[str] | None = None) -> int:
                                                   (ExtrasTab(settings, lambda: (assistant.settings_changed.emit(),
                                                                                 companion._apply_visibility()),
                                                              services.clips_turn_on), "Extras"),
+                                                  (StylesTab(mods, mod_store, settings,
+                                                             lambda: companion.character.update()), "Styles"),
                                                   (ModsTab(mods, mod_store, companion.character.play_mod_animation,
                                                            mod_store.folder / "MODDING.md"), "Mods"),
                                                   (AutomationTab(settings, automations,

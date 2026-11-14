@@ -177,7 +177,9 @@ ARM_SWING = 9                # her arms swing with her steps
 
 
 class Rig:
-    def __init__(self, standing: QImage, hair_style: str = "storm") -> None:
+    def __init__(self, standing: QImage, hair_style: str = "storm", masks_from: QImage | None = None) -> None:
+        """masks_from: the same picture before a skin recoloured it (2.6) - which pixels by her face are her hair
+        is worked out from her own red there, so a skin's colours don't leave a patch of hair over her face."""
         a = _to_array(standing)
         h, w = a.shape[:2]
         self.w, self.h = w, h
@@ -243,7 +245,10 @@ class Rig:
         # her face, for the storm hair to boil around: the non-red pixels of her mask, eyes and jaw
         fx0, fy0, fx1, fy1 = (int(FACE_BOX[0] * w), int(FACE_BOX[1] * h), int(FACE_BOX[2] * w), int(FACE_BOX[3] * h))
         face = np.zeros_like(alpha)
-        box = a[fy0:fy1, fx0:fx1].astype(int)
+        plain = _to_array(masks_from) if masks_from is not None else a
+        if plain.shape[:2] != a.shape[:2]:
+            plain = a
+        box = plain[fy0:fy1, fx0:fx1].astype(int)
         hair_red = (box[..., 0] > 140) & (box[..., 1] < 90) & (box[..., 2] < 130)
         face[fy0:fy1, fx0:fx1] = alpha[fy0:fy1, fx0:fx1] & ~hair_red
         self.face = part(face)

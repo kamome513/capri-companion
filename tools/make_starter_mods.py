@@ -254,14 +254,28 @@ def _look_mods() -> list[dict]:
     return out
 
 
+def _style_mods() -> list[dict]:
+    """Her styles (2.6): appearance presets - a palette and live effects (tools/styles_data.py)."""
+    from styles_data import STYLES
+    out = []
+    for s in STYLES:
+        style = dict(s["style"], theme=s["theme"])
+        out.append({"id": s["id"], "name": s["name"], "type": "skin", "version": "1.0.0",
+                    "tags": ["style", s["theme"].lower()], "description": s["description"],
+                    "palette": s["palette"], "style": style})
+    return out
+
+
 MODS += _personality_mods() + _look_mods()
 SOUNDS = {"wake.wav": [660, 990], "done.wav": [880, 1320, 1760], "error.wav": [400, 300], "pat.wav": [1046, 1318],
           "throw.wav": [1600, 1200, 800, 500], "greet.wav": [523, 659, 784, 1046], "click.wav": [2000]}
 
 
 def main() -> None:
+    global MODS
     app = QGuiApplication.instance() or QGuiApplication([])  # noqa: F841 (QPainter needs it)
     sys.path.insert(0, str(Path(__file__).resolve().parent))
+    MODS = MODS + _style_mods()
     OUT.mkdir(parents=True, exist_ok=True)
     for old in OUT.glob("*.capri-mod"):
         old.unlink()
@@ -275,7 +289,7 @@ def main() -> None:
             kind = spec["type"]
             data.pop("_swatch", None)
             if kind == "skin":
-                mp.skin(pv, spec["palette"])
+                mp.skin(pv, spec["palette"], spec.get("style"))
             elif kind == "cosmetic":
                 pic = spec["items"][0]["image"]
                 {"ears.png": ears, "visor.png": visor, "halo.png": halo}[pic](d / pic)

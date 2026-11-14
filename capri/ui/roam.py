@@ -36,7 +36,7 @@ DISTANCE = (0.15, 0.55)   # how far she goes, as a share of the screen's width
 BUSY = {State.LISTENING, State.PROCESSING, State.LAUNCHING, State.SPEAKING}   # she's needed: no roaming
 # the teleport's beats, in seconds
 GATHER, ENGULF, VANISH, TRAVEL, APPEAR, SETTLE = 0.55, 0.2, 0.14, 0.12, 0.42, 0.34
-SHARDS = 16
+SHARDS = 30 
 RED, CYAN = fx.RED, fx.CYAN
 DARK = QColor(6, 3, 8)
 
@@ -96,9 +96,11 @@ class TeleportFX(OverlayWindow):
         self._rng = random.Random()
 
     # -- where ------------------------------------------------------------------------------------------------------
+    REACH = 1.32               # (2.5.1) her height with her hair on top, as a share of her body's height
+
     def around(self, feet: QPointF) -> QRectF:
-        r = self.fh * 0.85
-        return QRectF(feet.x() - r, feet.y() - self.fh * 1.45, 2 * r, self.fh * 1.55)
+        r = self.fh * 0.95
+        return QRectF(feet.x() - r, feet.y() - self.fh * 1.75, 2 * r, self.fh * 1.85)
 
     def refresh(self, now: float) -> None:
         area = self.around(self.here).united(self.around(self.there)) if self.TRAVEL_IN(self.t) else \
@@ -163,8 +165,8 @@ class TeleportFX(OverlayWindow):
     def _void(self, p: QPainter, feet: QPointF, power: float) -> None:
         if power <= 0.01:
             return
-        centre = feet - QPointF(0, self.fh * 0.5)
-        r = self.fh * (0.45 + 0.25 * power)
+        centre = feet - QPointF(0, self.fh * self.REACH * 0.5)                # (2.5.1) all of her, hair too
+        r = self.fh * (0.62 + 0.28 * power)
         g = QRadialGradient(centre, r)
         g.setColorAt(0, QColor(0, 0, 0, int(200 * power)))
         g.setColorAt(0.62, QColor(12, 0, 6, int(170 * power)))
@@ -174,7 +176,7 @@ class TeleportFX(OverlayWindow):
         p.setBrush(g)
         p.save()
         p.translate(centre)
-        p.scale(0.72, 1.0)
+        p.scale(0.82, 1.0)
         p.translate(-centre)
         p.drawEllipse(centre, r, r)
         p.restore()
@@ -187,7 +189,7 @@ class TeleportFX(OverlayWindow):
     def _shards(self, p: QPainter, feet: QPointF, power: float, close: float, t: float, front: bool) -> None:
         if power <= 0.01:
             return
-        rx = self.fh * (0.42 - 0.24 * close)
+        rx = self.fh * (0.56 - 0.3 * close)                                # wide enough for her hair
         for s in self.shards:
             a = s.angle + s.speed * t * (1 + 1.5 * close)
             depth = math.sin(a)
@@ -196,7 +198,7 @@ class TeleportFX(OverlayWindow):
             rise = min(1.0, power * 1.25 - s.height * 0.25)                 # they come up out of the floor
             if rise <= 0:
                 continue
-            y = feet.y() - self.fh * (s.height * 0.95 * rise)
+            y = feet.y() - self.fh * self.REACH * (s.height * 0.95 * rise)    # up past the top of her hair
             base = QPointF(feet.x() + math.cos(a) * rx, y + depth * self.fh * 0.05)
             direction = -math.pi / 2 + math.cos(a) * 0.9 + (0.25 if s.speed > 0 else -0.25)   # up, leaning out
             length = self.fh * s.length * rise * (0.75 + 0.25 * math.sin(t * 9 + s.angle))
@@ -229,7 +231,7 @@ class TeleportFX(OverlayWindow):
         if visible <= 0.01 or self.sprite is None:
             return
         img = self.sprite
-        top_left = QPointF(feet.x() - img.width() / 2, feet.y() - self.fh * 1.12)
+        top_left = QPointF(feet.x() - img.width() / 2, feet.y() - self.fh * fx.FEET_AT)
         squash = 0.0
         if settle >= 0:                                                   # a little bob as she lands
             squash = math.exp(-settle * 7) * math.sin(settle * 18) * 0.06
@@ -382,7 +384,7 @@ class RoamShow(QObject):
         f.effects.clear()
         f.dirty = fx.DirtyTracker()
         f.t = 0.0
-        f.setGeometry(QRect(area.left(), round(self._ground - fh * 1.6), area.width(), round(fh * 1.75)))
+        f.setGeometry(QRect(area.left(), round(self._ground - fh * 1.8), area.width(), round(fh * 1.95)))
         f.show()
         f.raise_()
         self._panel = c.panel.isVisible()
