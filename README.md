@@ -303,6 +303,7 @@ glowing eyes, materials, particles, special moments, trails). Pick one, press **
 off. The switches underneath turn each kind of effect on or off, and **Quality: Light** uses about half the CPU.
 Styles are skin mods, so you can make your own too (see the modding guide). Colour-only skins are listed under
 **Colours**. Her drone (the disk with the eye) wears whatever style or skin she has on, with a light touch of its effects.
+Styles keep their effects while she sits on a window, and her music bar takes the style's colours too.
 
 ### Mods (2.5)
 

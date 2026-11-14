@@ -36,7 +36,8 @@ PARTICLE_KINDS = ("spark", "snow", "crystal", "spore", "leaf", "pollen", "ember"
                   "bud", "static", "fragment", "orb")
 MOTIONS = ("rise", "fall", "drift", "orbit", "hover", "emit", "swirl", "ground")
 HAIR_KINDS = ("lightning", "crystal", "flame", "thorn", "leaf", "cloud", "petal", "gear", "glass", "insect",
-              "ornament", "sun", "shadow", "paper", "tendril", "static", "pixel", "fin", "rose", "frost")
+              "ornament", "sun", "shadow", "paper", "tendril", "static", "pixel", "fin", "rose", "frost",
+              "briar")
 MATERIALS = ("gloss", "ice", "veins", "cracks", "kintsugi", "stripes", "scan", "grain", "caustics", "rainbow", "crt",
              "paper", "porcelain", "segments", "joints", "ornament", "markings", "warm", "sheen", "shade", "facets")
 EVENTS = ("flash", "arc", "crackle", "ice_form", "frost", "lens_flare", "solar_flare", "eclipse", "thorn_vine",
@@ -422,6 +423,8 @@ class StyleFX:
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self.toggles.hair:
             self._hair_edge(p, c)
+            if (self.style.get("hair") or {}).get("kind") == "briar":
+                self._briar_roses(p, c)
         if self.toggles.aura:
             self._eye_glow(p, c)
         if self.toggles.particles:
@@ -443,6 +446,8 @@ class StyleFX:
         q.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceAtop)
         if self.toggles.particles:
             self._inner(q, c)
+        if self.toggles.hair and (self.style.get("hair") or {}).get("kind") == "briar":
+            self._briar_woven(q, c)
         if self.toggles.materials:
             for m in self.style.get("materials", [])[:6]:
                 spec = m if isinstance(m, dict) else {"kind": m}
@@ -587,6 +592,9 @@ class StyleFX:
         n = max(2, min(14, int(h.get("count", 7))))
         size = c.head.width() * float(h.get("size", 0.42))
         t = c.t
+        if kind == "briar":                               # thorny vines curling out of her hair (2.6.2)
+            self._briar_cached(p, c, "out", lambda q, cc: self._briar_out(q, cc, h, n, size))
+            return
         if kind == "sun":                                 # rays fanning out from behind her head, turning slowly
             centre = c.hair_centre
             for i in range(14):
@@ -721,6 +729,210 @@ class StyleFX:
                     s = r.uniform(2, ln * 0.18)
                     p.setBrush(c1 if r.random() < 0.6 else c2)
                     p.drawRect(QRectF(r.uniform(-ln * 0.3, ln * 0.3), -r.uniform(0, ln * 0.8), s, s))
+            p.restore()
+
+    # -- briar: thorny vines and roses through her hair (Thornveil, 2.6.2) ------------------------------------------
+    def _briar_box(self, c: Ctx) -> QRectF:
+        path = c.hair_path()
+        box = path.boundingRect() if path is not None and not path.isEmpty() else QRectF()
+        if box.isEmpty():
+            hd = c.head
+            box = QRectF(hd.left() - hd.width() * 0.6, hd.top() - hd.height() * 0.8, hd.width() * 2.2,
+                         hd.height() * 2.0)
+        return box
+
+    def _briar_vines(self, c: Ctx) -> list:
+        """Her vines in hair-box units (0..1): each a list of points, twisting through her hair. Fixed per style
+        (seeded), so they stay put in her hair rather than crawling about."""
+        if getattr(self, "_briar_cache", None) and self._briar_cache[0] == (self.seed, c.lying):
+            return self._briar_cache[1]
+        rng = random.Random(self.seed * 31 + 5)
+        vines = []
+        for i in range(7):
+            x = 0.12 + 0.76 * (i + rng.uniform(0.2, 0.8)) / 7
+            y = rng.uniform(0.02, 0.18)
+            drift = rng.choice((-1, 1)) * rng.uniform(0.04, 0.12)
+            pts = []
+            for k in range(14):
+                f = k / 13
+                curl = math.sin(f * math.pi * rng.uniform(2.2, 3.4) + i) * 0.07
+                pts.append((x + drift * f * 3 + curl, y + f * rng.uniform(0.55, 0.8)))
+            vines.append(pts)
+        for i in range(3):                               # and a few winding across
+            y = 0.2 + 0.18 * i + rng.uniform(-0.04, 0.04)
+            pts = [(0.05 + 0.9 * k / 13, y + math.sin(k * 0.9 + i * 2) * 0.05) for k in range(14)]
+            vines.append(pts)
+        self._briar_cache = ((self.seed, c.lying), vines)
+        return vines
+
+    @staticmethod
+    def _vine_path(pts, box: QRectF, sway: float) -> QPainterPath:
+        at = [QPointF(box.left() + x * box.width() + sway * math.sin(k * 0.7) * box.width() * 0.006,
+                      box.top() + y * box.height()) for k, (x, y) in enumerate(pts)]
+        path = QPainterPath(at[0])
+        for k in range(1, len(at) - 1):
+            mid = (at[k] + at[k + 1]) / 2
+            path.quadTo(at[k], mid)
+        path.lineTo(at[-1])
+        return path
+
+    def _briar_colours(self) -> tuple[QColor, QColor, QColor, QColor]:
+        h = self.style.get("hair") or {}
+        vine = colour(h.get("color", "#2a2224"), 240)
+        light = colour(h.get("color3", "#6b5a5e"), 200)
+        rose = colour(h.get("color2", "#c0102c"), 245)
+        return vine, light, rose, QColor(rose).darker(260)
+
+    def _thorns(self, p: QPainter, path: QPainterPath, size: float, col: QColor, every: float) -> None:
+        length = path.length()
+        if length < 4:
+            return
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(col)
+        n = max(2, min(14, int(length / every)))
+        for k in range(1, n):
+            f = k / n                                           # (by percent: near enough, and much quicker)
+            pt, ang = path.pointAtPercent(f), path.angleAtPercent(f)
+            side = 1 if k % 2 else -1
+            p.save()
+            p.translate(pt)
+            p.rotate(-ang)
+            p.drawPath(_poly([(-size * 0.45, 0), (size * 0.45, 0), (size * 0.15, side * size * 1.2)]))
+            p.restore()
+
+    def _briar_cached(self, p: QPainter, c: Ctx, which: str, draw) -> None:
+        """Her vines / roses drawn once per change of her hair (they sit still in it) and reused."""
+        device = p.device()
+        dpr = device.devicePixelRatioF() if device is not None else 1.0
+        key = (which, c.hair_key, round(c.win.width()), round(c.win.height()), dpr, self.seed, id(self.style))
+        cache = self.__dict__.setdefault("_briar_layers", {})
+        if c.hair_key == () or cache.get(which, (None,))[0] != key:
+            img = QImage(max(1, round(c.win.width() * dpr)), max(1, round(c.win.height() * dpr)),
+                         QImage.Format.Format_ARGB32_Premultiplied)
+            img.setDevicePixelRatio(dpr)
+            img.fill(0)
+            q = QPainter(img)
+            q.setRenderHint(QPainter.RenderHint.Antialiasing)
+            q.translate(-c.win.left(), -c.win.top())
+            draw(q, c)
+            q.end()
+            cache[which] = (key, img)
+        p.drawImage(QPointF(c.win.left(), c.win.top()), cache[which][1])
+
+    def _briar_woven(self, q: QPainter, c: Ctx) -> None:
+        self._briar_cached(q, c, "vines", self._briar_woven_draw)
+
+    def _briar_woven_draw(self, q: QPainter, c: Ctx) -> None:
+        """Dark thorny vines twisting through her hair - drawn onto her own picture, inside her hair only."""
+        path = c.hair_path()
+        if path is None or path.isEmpty():
+            return
+        box = self._briar_box(c)
+        vine, light, _rose, _dark = self._briar_colours()
+        w = max(1.3, box.width() * 0.016)
+        sway = 0.0
+        q.save()
+        q.setClipPath(path)
+        q.setBrush(Qt.BrushStyle.NoBrush)
+        for k, pts in enumerate(self._briar_vines(c)):
+            vp = self._vine_path(pts, box, sway)
+            shadow = QColor(0, 0, 0, 120)
+            q.setPen(QPen(shadow, w * 1.9, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            q.drawPath(vp)
+            q.setPen(QPen(vine, w * (1.0 if k < 7 else 0.75), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
+                          Qt.PenJoinStyle.RoundJoin))
+            q.drawPath(vp)
+            q.setPen(QPen(light, max(0.6, w * 0.3), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            q.drawPath(vp.translated(-w * 0.2, -w * 0.25))
+            q.setBrush(Qt.BrushStyle.NoBrush)
+            self._thorns(q, vp, w * 1.6, vine, max(6.0, w * 5))
+            q.setBrush(Qt.BrushStyle.NoBrush)
+        q.restore()
+
+    def _rose(self, p: QPainter, at: QPointF, r: float, turn: float, rose: QColor, dark: QColor) -> None:
+        """A rose seen from above: layers of curled petals round a tight dark bud."""
+        p.save()
+        p.translate(at)
+        p.rotate(turn)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(0, 0, 0, 110))
+        p.drawEllipse(QPointF(r * 0.12, r * 0.18), r * 1.05, r * 0.95)
+        for layer, (rr, count, shade) in enumerate(((1.0, 6, 150), (0.72, 5, 115), (0.45, 4, 100))):
+            for k in range(count):
+                a = math.radians(k * 360 / count + layer * 27)
+                petal = QColor(rose).darker(shade)
+                p.setBrush(petal)
+                p.setPen(QPen(QColor(dark), max(0.6, r * 0.07)))
+                p.drawEllipse(QPointF(math.cos(a) * rr * r * 0.45, math.sin(a) * rr * r * 0.45), rr * r * 0.55,
+                              rr * r * 0.42)
+        p.setBrush(dark)
+        p.setPen(QPen(QColor(rose).lighter(120), max(0.6, r * 0.08)))
+        spiral = QPainterPath(QPointF(0, 0))
+        for k in range(1, 14):
+            a, rr = k * 0.9, r * 0.03 * k
+            spiral.lineTo(QPointF(math.cos(a) * rr, math.sin(a) * rr))
+        p.drawEllipse(QPointF(0, 0), r * 0.32, r * 0.32)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPath(spiral)
+        hl = QColor(255, 210, 220, 70)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(hl)
+        p.drawEllipse(QPointF(-r * 0.35, -r * 0.4), r * 0.25, r * 0.16)
+        p.restore()
+
+    def _briar_roses(self, p: QPainter, c: Ctx) -> None:
+        self._briar_cached(p, c, "roses", self._briar_roses_draw)
+
+    def _briar_roses_draw(self, p: QPainter, c: Ctx) -> None:
+        """Red roses tucked into her hair, on her vines."""
+        path = c.hair_path()
+        if path is None or path.isEmpty():
+            return
+        box = self._briar_box(c)
+        _vine, _light, rose, dark = self._briar_colours()
+        vines = self._briar_vines(c)
+        rng = random.Random(self.seed * 13 + 1)
+        r = max(3.0, box.width() * 0.045)
+        sway = 0.0
+        face = QRectF(c.head.center().x() - c.head.width() * 0.3, c.head.center().y() - c.head.height() * 0.1,
+                      c.head.width() * 0.6, c.head.height() * 0.7)
+        placed = 0
+        spots = []
+        for k in range(len(vines) * 3):
+            vp = self._vine_path(vines[(k * 3) % len(vines)], box, sway)
+            pt = vp.pointAtPercent(rng.uniform(0.1, 0.92))
+            if face.contains(pt) or not path.contains(pt) or any((pt - q).manhattanLength() < r * 3.2 for q in spots):
+                continue
+            spots.append(pt)
+            size = r * rng.uniform(0.75, 1.2)
+            self._rose(p, pt, size, rng.uniform(0, 360), rose, dark)
+            placed += 1
+            if placed >= 6:
+                break
+
+    def _briar_out(self, p: QPainter, c: Ctx, h: dict, n: int, size: float) -> None:
+        """Vines curling out past the edge of her hair (behind her), thorned, a bud at the tip of some."""
+        vine, light, rose, dark = self._briar_colours()
+        w = max(1.2, c.head.width() * 0.035)
+        for i, (at, a) in enumerate(self._hair_spots(c, n, 0.92)):
+            ln = size * (1.0 + 0.5 * ((i * 37) % 7) / 7)
+            sway = math.sin(i * 1.9) * 0.12
+            curl = 1 if i % 2 else -1
+            path = QPainterPath(QPointF(0, 0))
+            path.cubicTo(QPointF(curl * ln * 0.35, -ln * 0.35), QPointF(-curl * ln * (0.3 + sway), -ln * 0.75),
+                         QPointF(curl * ln * 0.25, -ln))
+            path.quadTo(QPointF(curl * ln * 0.55, -ln * 1.1), QPointF(curl * ln * 0.45, -ln * 0.85))
+            p.save()
+            p.translate(at)
+            p.rotate(math.degrees(a) + 90)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(vine, w, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            p.drawPath(path)
+            p.setPen(QPen(light, max(0.5, w * 0.3)))
+            p.drawPath(path.translated(-w * 0.2, 0))
+            self._thorns(p, path, w * 1.5, vine, max(5.0, w * 4))
+            if i % 3 == 0:
+                self._rose(p, path.pointAtPercent(0.98), w * 2.2, i * 40, rose, dark)
             p.restore()
 
     def _hair_edge(self, p: QPainter, c: Ctx) -> None:
@@ -1613,6 +1825,34 @@ class StyleFX:
                           2.5, col2, 1 - k, 0)
 
 
+def ctx_for_transform(rig, to_win, pose, win: QRectF, body: QRectF, feet: QPointF, scale: float, t: float) -> Ctx:
+    """A Ctx for her figure drawn with `rig` under `to_win` (figure coordinates -> her window), with her upper
+    body posed by `pose` - e.g. sitting on a window (2.6.2)."""
+    from .rig import EYES
+    tr = rig._head(pose) * rig._upper(pose) * to_win
+    head = tr.mapRect(QRectF(rig.head))
+    eyes = [tr.map(QPointF(fx * rig.w, fy * rig.h)) for (fx, fy), _r in EYES]
+    eye_r = EYES[0][1] * rig.w * to_win.m11()
+    c = Ctx(win, body, head, eyes, feet, t, scale, None, False, QPointF(), eye_r)
+    if getattr(rig, "hair", None) is not None and hasattr(rig.hair, "shape") and pose.wild > 0:
+        intensity = round(pose.wild * (0.85 + 0.15 * pose.energy), 2)
+        energy = round(pose.energy, 1)
+        try:
+            step = rig.hair.step(pose.t, energy)[1]
+        except Exception:
+            step = int(pose.t * 15)
+        c.hair_key = (step, intensity, energy, round(to_win.dx()), round(to_win.dy()), round(scale, 3))
+        hair_tr = rig._hair(pose) * tr
+
+        def outline():
+            try:
+                return hair_tr.map(rig.hair.shape(rig.head, pose.t, intensity, energy))
+            except Exception:
+                return None
+        c.hair_fn = outline
+    return c
+
+
 def ctx_for_rig(rig, feet: QPointF, height: float, pose, win: QRectF, t: float, hair_path: bool = True) -> Ctx:
     """The Ctx for her full-body figure drawn with `rig` at `feet`, `height` px tall."""
     from .rig import EYES
@@ -1630,12 +1870,15 @@ def ctx_for_rig(rig, feet: QPointF, height: float, pose, win: QRectF, t: float, 
             step = rig.hair.step(pose.t, energy)[1]
         except Exception:
             step = int(pose.t * 15)
+        # (2.6.2: her idle moves a little all the time - rounded, so her hair's glow isn't remade every frame)
         c.hair_key = (step, intensity, energy, round(feet.x()), round(feet.y()), round(height),
-                      round(pose.lean, 3), round(pose.squat, 3))
+                      round(pose.lean * 60), round(pose.squat * 20), round(getattr(pose, "tilt", 0.0)),
+                      round(getattr(pose, "breath", 0.0)), round(getattr(pose, "hair_drag", 0.0) * 4))
+        hair_tr = rig.hair_transform(feet, height, pose) if hasattr(rig, "hair_transform") else tr
 
         def outline():
             try:
-                return tr.map(rig.hair.shape(rig.head, pose.t, intensity, energy))
+                return hair_tr.map(rig.hair.shape(rig.head, pose.t, intensity, energy))
             except Exception:
                 return None
         c.hair_fn = outline

@@ -106,21 +106,23 @@ def test_a_frozen_frame_holds_still():
 
 # -- dragging ---------------------------------------------------------------------------------------------------------
 def test_she_swings_behind_your_movement_and_settles():
+    from PySide6.QtCore import QPointF
+    from capri.ui.motion import DragMotion
     clock = Clock()
-    sway = gl.DragSway(clock=clock)
-    sway.grab()
+    sway = DragMotion(clock=clock)                               # (2.6.2: was DragSway)
+    sway.grab(QPointF(100, 40))
     for i in range(20):                                          # you drag her right, fast
         clock.t += 1 / 60
-        sway.moved(100 + i * 25)
+        sway.moved(QPointF(100 + i * 25, 300))
         sway.step(1 / 60)
-    assert sway.angle < -0.1                                     # she trails behind (leans left)
+    assert sway.angle < -3                                       # she trails behind (swings left, degrees)
     moves = sway.pose_moves(clock.t)
-    assert moves["energy"] == 1.0 and "stride" in moves and moves["sweep"] > 0.5
+    assert moves["energy"] > 0.5 and "dangle" in moves and moves["spread"] > 3
     sway.drop()
     for _ in range(240):                                         # let go: she swings back and settles
         clock.t += 1 / 60
         sway.step(1 / 60)
-    assert abs(sway.angle) < 0.01 and not sway.swinging
+    assert abs(sway.angle) < 0.05 and not sway.swinging
 
 
 def test_the_window_swings_and_glitches_while_held():

@@ -26,8 +26,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from PySide6.QtCore import QObject, QPoint, QPointF, QRect, QSize, Qt, QTimer
-from PySide6.QtGui import QColor, QImage, QPainter, QRadialGradient
+from PySide6.QtCore import QObject, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer
+from PySide6.QtGui import QColor, QImage, QPainter, QRadialGradient, QTransform
 
 from . import lightning
 from .overlay_window import OverlayWindow
@@ -116,6 +116,7 @@ class SitWindow(OverlayWindow):
         super().__init__(always_on_top)
         self.art = art
         self.figure = figure or (lambda: None)          # -> her CharacterWindow (her rig, hair, voice level)
+        self.style_of: Callable[[], object] = lambda: None   # (2.6.2) -> her style's effects (StyleFX) or None
         info = json.loads((art / "sit.json").read_text())
         self.art_w, self.art_h = info["size"]
         self.knees = {"black": QPointF(*info["black_knee"]), "red": QPointF(*info["red_knee"])}
@@ -131,6 +132,8 @@ class SitWindow(OverlayWindow):
         self._timer.setInterval(1000 // FPS)
         self._timer.timeout.connect(self.update)
         self.size_pct = size
+        self.pad = PAD
+        self._hair_mask = None
         self.set_compact(compact, size)
 
     # -- which figure: her rig, or the old picture --------------------------------------------------------
@@ -146,7 +149,8 @@ class SitWindow(OverlayWindow):
             self._geo = None
             self.height_px = round(SIT_HEIGHT[compact] * size / 100)
             self.s = self.height_px / self.art_h
-            self.setFixedSize(QSize(round(self.art_w * self.s) + PAD * 2, self.height_px + PAD * 2))
+            self.pad = PAD + (round(self.height_px * 0.12) if self._style() is not None else 0)   # (2.6.2) effects
+            self.setFixedSize(QSize(round(self.art_w * self.s) + self.pad * 2, self.height_px + self.pad * 2))
         else:
             fig_h = max(40, round(FIGURE_HEIGHT * size / 100))
             k = fig_h / rig.h
@@ -157,6 +161,9 @@ class SitWindow(OverlayWindow):
             right = max(rig.w + rig.sit_side() + reach, head.right() + pad)
             top = head.top() - hh * 1.8
             bottom = rig.sit_feet_y() + 6
+            if self._style() is not None:                   # (2.6.2) a style: a little room for its effects
+                room = rig.h * 0.1
+                left, right, top = left - room, right + room, top - room * 0.6
             origin = QPointF((-left) * k + 4, (-top) * k + 4)          # the figure's (0, 0) in the window
             self._geo = (rig, fig_h, k, origin)
             self.height_px = round((bottom - top) * k)
@@ -164,9 +171,19 @@ class SitWindow(OverlayWindow):
         self.update()
 
     def refresh(self) -> None:
-        """Her look, hair or size changed: lay her out again."""
+        """Her look, hair or size changed: lay her out again (still sitting on the same spot)."""
+        seat = self.pos() + self.seat_point()
         self._rig_small = self._rig_key = None
         self.set_compact(False, self.size_pct)
+        if self.isVisible():
+            self.move(seat - self.seat_point())
+
+    def _style(self):
+        """Her style's effects (2.6.2: she keeps them sitting on a window), or None."""
+        try:
+            return self.style_of()
+        except Exception:
+            return None
 
     def set_talking(self, on: bool) -> None:
         self.talking = on
@@ -177,7 +194,7 @@ class SitWindow(OverlayWindow):
             rig, _h, k, origin = self._geo
             knee = rig.sit_knee("right")
             return QPoint(round(origin.x() + knee.x() * k), round(origin.y() + rig.sit_edge_y() * k))
-        return QPoint(round(PAD + self.knees["black"].x() * self.s), round(PAD + self.seat * self.s))
+        return QPoint(round(self.pad + self.knees["black"].x() * self.s), round(self.pad + self.seat * self.s))
 
     def content_rect(self) -> QRect:
         if self._geo is not None:
@@ -185,7 +202,7 @@ class SitWindow(OverlayWindow):
             box = rig.sit_box()
             return QRect(round(origin.x() + box.x() * k), round(origin.y() + box.y() * k),
                          round(box.width() * k), round(box.height() * k))
-        return QRect(PAD, PAD, round(self.art_w * self.s), self.height_px)
+        return QRect(self.pad, self.pad, round(self.art_w * self.s), self.height_px)
 
     def showEvent(self, event) -> None:
         if (self._rig() is None) != (self._geo is None):
@@ -240,11 +257,38 @@ class SitWindow(OverlayWindow):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        sfx = self._style()
+        if sfx is None:
+            self._paint_picture(p, layers, black, red, breath)
+            p.end()
+            return
+        # (2.6.2) her style's effects while she sits: round her, on her and in her hair
+        now = time.monotonic()
+        sfx.tick(now, idle=not self.talking)
+        c = self._picture_ctx(now)
+        sfx.paint_back(p, c)
+        dpr = self.devicePixelRatioF()
+        img = QImage(max(1, round(self.width() * dpr)), max(1, round(self.height() * dpr)),
+                     QImage.Format.Format_ARGB32_Premultiplied)
+        img.setDevicePixelRatio(dpr)
+        img.fill(0)
+        q = QPainter(img)
+        q.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        q.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self._paint_picture(q, layers, black, red, breath)
+        q.end()
+        sfx.figure(img, c)
+        sfx.draw_figure(p, img, c)
+        sfx.paint_front(p, c, QPointF(self.pos()))
+        p.end()
+
+    def _paint_picture(self, p: QPainter, layers: dict, black: float, red: float, breath: float) -> None:
+        p.save()
         seat = QPointF(self.seat_point())
         p.translate(seat)                                   # she breathes, pivoting on her seat
         p.scale(1.0, 1.0 + breath)
         p.translate(-seat)
-        p.translate(PAD, PAD)
+        p.translate(self.pad, self.pad)
         p.drawImage(QPointF(0, 0), layers["base"])
         for name, angle in (("black", black), ("red", red)):  # the red leg crosses in front
             knee = self.knees[name] * self.s
@@ -254,7 +298,53 @@ class SitWindow(OverlayWindow):
             p.translate(-knee)
             p.drawImage(QPointF(0, 0), layers[name])
             p.restore()
-        p.end()
+        p.restore()
+
+    # where her head, eyes and hair are in the sitting picture (its own pixels)
+    HEAD_BOX = (255, 270, 375, 395)
+    EYE_AT = ((305, 326), (322, 320))
+    HAIR_BELOW = 425                                         # her hair is the red above this row...
+    BODY_BOX = (95, 345, 265, 460)                           # ...but not her red shoulder and arm here
+
+    def _picture_ctx(self, now: float):
+        from .style_fx import Ctx
+        k, pad = self.s, self.pad
+
+        def at(x: float, y: float) -> QPointF:
+            return QPointF(pad + x * k, pad + y * k)
+        x0, y0, x1, y1 = self.HEAD_BOX
+        head = QRectF(at(x0, y0), at(x1, y1))
+        body = QRectF(self.content_rect())
+        c = Ctx(QRectF(self.rect()), body, head, [at(*e) for e in self.EYE_AT], QPointF(body.center().x(),
+                body.bottom()), now, self.height_px / 300.0, None, False, QPointF(), 9 * k)
+        key = (round(k, 4), pad)
+        if self._hair_mask is None or self._hair_mask[0] != key:
+            self._hair_mask = (key, self._hair_path(k, pad))
+        c.hair = self._hair_mask[1]
+        c.hair_key = key
+        return c
+
+    def _hair_path(self, k: float, pad: int):
+        """Her hair's outline in the sitting picture: its red (before a skin recolours it), above her body."""
+        import numpy as np
+        from PySide6.QtGui import QPainterPath
+        img = QImage(str(self.art / "base.png")).convertToFormat(QImage.Format.Format_RGBA8888)
+        step = 3                                             # a coarse outline is plenty (and quick)
+        w, h = img.width(), img.height()
+        a = np.frombuffer(img.constBits(), np.uint8).reshape(h, img.bytesPerLine())[:, : w * 4].reshape(h, w, 4)
+        a = a[::step, ::step].astype(int)
+        red = (a[..., 3] > 120) & (a[..., 0] > 150) & (a[..., 1] < 100) & (a[..., 2] < 140)
+        red[self.HAIR_BELOW // step:] = False
+        bx0, by0, bx1, by1 = (v // step for v in self.BODY_BOX)
+        red[by0:by1, bx0:bx1] = False
+        path = QPainterPath()
+        path.setFillRule(Qt.FillRule.WindingFill)
+        for y in range(red.shape[0]):                        # each row's runs of hair, as thin rectangles
+            row = red[y]
+            edges = np.flatnonzero(np.diff(np.concatenate(([0], row.astype(np.int8), [0]))))
+            for x0, x1 in zip(edges[::2], edges[1::2]):
+                path.addRect(float(x0), float(y), float(x1 - x0), 1.0)
+        return QTransform().translate(pad, pad).scale(k * step, k * step).map(path.simplified())
 
     def _paint_rig(self) -> None:
         from .rig import Pose
@@ -273,9 +363,36 @@ class SitWindow(OverlayWindow):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.translate(origin)
-        p.scale(1 / dpr, 1 / dpr)
-        small.paint_sitting(p, QPointF(0, 0), small.h, pose, self.kicks(t))
+        sfx = self._style()
+        if sfx is None:
+            p.translate(origin)
+            p.scale(1 / dpr, 1 / dpr)
+            small.paint_sitting(p, QPointF(0, 0), small.h, pose, self.kicks(t))
+            p.end()
+            return
+        # (2.6.2) her style's effects while she sits: round her, on her, in her hair
+        from .style_fx import ctx_for_transform
+        now = time.monotonic()
+        sfx.tick(now, idle=not self.talking)
+        to_win = QTransform().translate(origin.x(), origin.y()).scale(1 / dpr, 1 / dpr)
+        box = QRectF(self.content_rect())
+        c = ctx_for_transform(small, to_win, pose, QRectF(self.rect()), box, QPointF(box.center().x(), box.bottom()),
+                              fig_h / 300.0, now)
+        sfx.paint_back(p, c)
+        img = QImage(max(1, round(self.width() * dpr)), max(1, round(self.height() * dpr)),
+                     QImage.Format.Format_ARGB32_Premultiplied)
+        img.setDevicePixelRatio(dpr)
+        img.fill(0)
+        q = QPainter(img)
+        q.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        q.setRenderHint(QPainter.RenderHint.Antialiasing)
+        q.translate(origin)
+        q.scale(1 / dpr, 1 / dpr)
+        small.paint_sitting(q, QPointF(0, 0), small.h, pose, self.kicks(t))
+        q.end()
+        sfx.figure(img, c)
+        sfx.draw_figure(p, img, c)
+        sfx.paint_front(p, c, QPointF(self.pos()))
         p.end()
 
 

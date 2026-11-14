@@ -3,6 +3,8 @@
 Installed   turn mods on / off, rate them, export them to share, uninstall (asks first), import a .capri-mod
 Store       the mods that come with Capri + the online list: previews, categories, ratings, install / update
 Make mods   a ready-to-edit mod of any kind, a checker for your mod folder, and the guide
+
+Skins (styles and colour skins) live in Settings -> Styles only (2.6.2), so they're left out of the lists here.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from ..mods.store import preview_image
 
 log = logging.getLogger("capri")
 STARS = "★"
+STYLE_TYPE = "skin"                  # styles and colour skins: shown in Settings -> Styles, not here
 
 
 def _icon(data_or_path) -> QIcon:
@@ -53,9 +56,10 @@ class ModsTab(QWidget):
         self._bridge.installed.connect(self._store_installed)
         self._listings = []
         root = QVBoxLayout(self)
-        root.addWidget(_hint("<b>Mods</b> change how Capri looks, sounds, moves and talks: skins, cosmetics, "
-                             "animation packs, personalities, greetings, sound packs and habits. Mods are only "
-                             "pictures, sounds and text - nothing in a mod is ever run as a program."))
+        root.addWidget(_hint("<b>Mods</b> change how Capri looks, sounds, moves and talks: cosmetics, "
+                             "animation packs, personalities, greetings, sound packs and habits. Her styles and "
+                             "colours are in the <b>Styles</b> tab. Mods are only pictures, sounds and text - "
+                             "nothing in a mod is ever run as a program."))
         tabs = self.tabs = QTabWidget()
         tabs.addTab(self._installed_page(), "Installed")
         tabs.addTab(self._store_page(), "Store")
@@ -114,6 +118,8 @@ class ModsTab(QWidget):
         self.installed_list.clear()
         for mod in self.manager.installed():
             m = mod.manifest
+            if m.type == STYLE_TYPE:                              # in the Styles tab
+                continue
             item = QListWidgetItem(_icon(mod.folder / m.preview) if m.preview else QIcon(),
                                    f"{m.name}  {m.version}\n{m.category} - {'ON' if mod.enabled else 'off'}")
             item.setData(Qt.ItemDataRole.UserRole, m.id)
@@ -212,7 +218,8 @@ class ModsTab(QWidget):
         self.category = QComboBox()
         self.category.addItem("All categories", "")
         for kind in TYPES:
-            self.category.addItem(CATEGORY[kind], CATEGORY[kind])
+            if kind != STYLE_TYPE:
+                self.category.addItem(CATEGORY[kind], CATEGORY[kind])
         self.category.currentIndexChanged.connect(lambda *_: self._fill_store())
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search mods...")
@@ -257,7 +264,8 @@ class ModsTab(QWidget):
 
     def _listed(self, listings, problem: str) -> None:
         self._listings = listings
-        self._say(problem.capitalize() + "." if problem else f"{len(listings)} mods in the store.")
+        shown = sum(1 for m in listings if getattr(m, "type", "") != STYLE_TYPE)
+        self._say(problem.capitalize() + "." if problem else f"{shown} mods in the store.")
         self._fill_store()
 
     def _fill_store(self) -> None:
@@ -266,6 +274,8 @@ class ModsTab(QWidget):
         self.store_list.clear()
         from ..mods.manifest import parse_version
         for listing in self._listings:
+            if getattr(listing, "type", "") == STYLE_TYPE:          # styles: in the Styles tab
+                continue
             if cat and listing.category != cat:
                 continue
             blob = " ".join([listing.name, listing.description, listing.author, " ".join(listing.tags)]).lower()
@@ -341,7 +351,8 @@ class ModsTab(QWidget):
             return self.refresh_store()
         from ..mods.manifest import parse_version
         have = {m.id: m.manifest.version for m in self.manager.installed()}
-        newer = [m for m in self._listings if m.id in have and parse_version(m.version) > parse_version(have[m.id])]
+        newer = [m for m in self._listings if m.id in have and parse_version(m.version) > parse_version(have[m.id])
+                 and getattr(m, "type", "") != STYLE_TYPE]
         if not newer:
             return self._say("Your mods are all up to date.")
         for listing in newer:

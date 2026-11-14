@@ -90,6 +90,7 @@ class Companion(QObject):
         self.drone_window = DroneWindow(top)
         self.drone_window.set_style(settings.drone_look)
         self.sit_window = SitWindow(top, False, size=settings.size)
+        self.sit_window.style_of = lambda: self.character.style_now()   # (2.6.2) her style's effects, sitting too
         self.feed = FeedWindow(controller, top, colours=self._call_colours)   # the chat skin's colours
         self.feed.resized.connect(self._place_feed)
         controller.changed.connect(self._on_changed)
@@ -324,7 +325,7 @@ class Companion(QObject):
         samples = getattr(self, "_drag_samples", [])
         samples.append((time.monotonic(), QPointF(QCursor.pos())))
         del samples[:-12]
-        self.character.held_at(float(QCursor.pos().x()))
+        self.character.held_at(QPointF(QCursor.pos()))
 
     def _drag_end(self) -> None:
         """Let go: thrown if you flicked her (see fling.py), else she stays where you put her."""
@@ -520,27 +521,30 @@ class Companion(QObject):
 
     def set_click_through(self, on: bool) -> None:
         self.settings.click_through = on
-        for window in (self.character, self.panel, self.drone_window, self.sit_window):
-            window.set_click_through(on)
+        self._apply_click_through()
         self._save()
 
-    def set_hologram(self, on: bool) -> None:
+    def _apply_click_through(self) -> None:
+        """Her windows let clicks through while click-through OR hologram mode is on. Hologram mode never
+        changes the click-through setting itself (2.6.2: it used to, so after a restart she stayed
+        click-through - and couldn't be moved - even with the hologram off)."""
+        on = bool(self.settings.click_through or getattr(self.character, "hologram", False))
+        for window in (self.character, self.panel, self.drone_window, self.sit_window):
+            window.set_click_through(on)
+
+    def set_hologram(self, on: bool, keep: bool = True) -> None:
         """Hologram mode (2.4): she's see-through, cyan-scanlined and click-through - your clicks go to whatever's
-        behind her. Off again: right-click the tray icon -> Hologram mode, say "hologram off", or Ctrl+Alt+Shift+C."""
-        self.settings.hologram = on
-        if on and not getattr(self, "_holo_click_before", None):
-            self._holo_click_before = (self.settings.click_through,)
+        behind her. Off again: right-click the tray icon -> Hologram mode, say "hologram off", or Ctrl+Alt+Shift+C.
+        keep=False: just for a moment (chaos mode's flicker) - the setting stays as it was."""
+        if keep:
+            self.settings.hologram = on
         for window in (self.character, self.drone_window, self.sit_window):
             window.setWindowOpacity(0.62 if on else 1.0)
         self.character.hologram = on
         self.character.update()
-        if on:
-            self.set_click_through(True)
-        else:
-            before = getattr(self, "_holo_click_before", None)
-            self._holo_click_before = None
-            self.set_click_through(before[0] if before else False)
-        self._save()
+        self._apply_click_through()
+        if keep:
+            self._save()
 
     def reset_position(self) -> None:
         """Back to the very bottom-right ("get up" / "stand up" / Reset position) - off any window."""

@@ -68,12 +68,30 @@ def song_from(titles) -> str:
     return found[0] if found else ""
 
 
+def deck_colours() -> tuple[QColor, QColor, QColor, QColor, QColor]:
+    """The bar's colours (2.6.2): her style's or skin's when one's on - its main colour for the red parts, its eye
+    (or accent) colour for the cyan, its accent for the green, and a dark shade of her body colour behind - else
+    her own crimson, cyan and green."""
+    from . import fx
+    red, cyan, green = fx.her_red(), fx.her_cyan(), fx.mod_colour("accent", GREEN)
+    body = fx.mod_colour("body", QColor(16, 8, 18))
+
+    def shade(c: QColor, k: float, alpha: int) -> QColor:
+        mix = (0.82 * c.red() + 0.18 * red.red(), 0.82 * c.green() + 0.18 * red.green(),
+               0.82 * c.blue() + 0.18 * red.blue())
+        return QColor(int(mix[0] * k), int(mix[1] * k), int(mix[2] * k), alpha)
+    if body == QColor(16, 8, 18) and red == RED:
+        return red, cyan, green, QColor(24, 10, 22, 240), QColor(8, 6, 14, 240)
+    return red, cyan, green, shade(body, 0.9, 240), shade(body, 0.45, 240)
+
+
 class MusicDeck(OverlayWindow):
     pressed = Signal(str)                    # "previous" | "play_pause" | "next"
 
     def __init__(self) -> None:
         super().__init__(True)
         self.setFixedSize(W, H)
+        self._red, self._cyan, self._green = QColor(RED), QColor(CYAN), QColor(GREEN)
         self.title = "Music"
         self.playing = False
         self.shown_at = 0.0
@@ -120,6 +138,7 @@ class MusicDeck(OverlayWindow):
         fade = min(1.0, (now - self.shown_at) / 0.25)
         if self.windowOpacity() < 1.0:
             self.setWindowOpacity(fade)
+        self._red, self._cyan, self._green, top, bottom = deck_colours()     # (2.6.2) her style's colours
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
@@ -128,8 +147,8 @@ class MusicDeck(OverlayWindow):
         # hover glow under the bar (it floats)
         under = QRadialGradient(QPointF(w / 2, BODY), w * 0.45)
         pulse = 0.5 + 0.5 * math.sin(now * 3) if self.playing else 0.3
-        under.setColorAt(0, QColor(RED.red(), RED.green(), RED.blue(), int(70 + 50 * pulse)))
-        under.setColorAt(1, QColor(RED.red(), RED.green(), RED.blue(), 0))
+        under.setColorAt(0, QColor(self._red.red(), self._red.green(), self._red.blue(), int(70 + 50 * pulse)))
+        under.setColorAt(1, QColor(self._red.red(), self._red.green(), self._red.blue(), 0))
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(under)
         p.drawRect(QRectF(0, BODY - 2, w, GLOW + 2))
@@ -142,16 +161,18 @@ class MusicDeck(OverlayWindow):
             shape.moveTo(*pt) if i == 0 else shape.lineTo(*pt)
         shape.closeSubpath()
         bg = QLinearGradient(r.topLeft(), r.bottomLeft())
-        bg.setColorAt(0, QColor(24, 10, 22, 240))
-        bg.setColorAt(1, QColor(8, 6, 14, 240))
+        bg.setColorAt(0, top)
+        bg.setColorAt(1, bottom)
         p.setBrush(bg)
-        p.setPen(QPen(QColor(RED.red(), RED.green(), RED.blue(), 160), 1.2))
+        p.setPen(QPen(QColor(self._red.red(), self._red.green(), self._red.blue(), 160), 1.2))
         p.drawPath(shape)
         # the deck she stands on: a bright edge along the top
         for width, alpha in ((5.0, 70), (2.0, 255)):
-            p.setPen(QPen(QColor(255, 60, 100, alpha), width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
+            edge = self._red.lighter(118)
+            edge.setAlpha(alpha)
+            p.setPen(QPen(edge, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
             p.drawLine(QPointF(r.left() + c, r.top() + 1), QPointF(r.right() - c, r.top() + 1))
-        p.setPen(QPen(CYAN, 2))                                         # cyan ticks in the angled ends
+        p.setPen(QPen(self._cyan, 2))                                         # cyan ticks in the angled ends
         p.drawLine(QPointF(r.left() + 5, r.top() + c + 4), QPointF(r.left() + 10, r.bottom() - 6))
         p.drawLine(QPointF(r.right() - 5, r.top() + c + 4), QPointF(r.right() - 10, r.bottom() - 6))
         controls = 3 * 20 + 2 * 5
@@ -165,7 +186,7 @@ class MusicDeck(OverlayWindow):
     def _ring(self, p: QPainter, centre: QPointF, now: float) -> None:
         """The spinning data ring: two broken arcs turning opposite ways, a pulsing core."""
         spin = now * (110 if self.playing else 12)
-        for radius, colour, sign, gaps in ((15, RED, 1, 3), (10, CYAN, -1, 4)):
+        for radius, colour, sign, gaps in ((15, self._red, 1, 3), (10, self._cyan, -1, 4)):
             p.setPen(QPen(colour, 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap))
             rect = QRectF(centre.x() - radius, centre.y() - radius, 2 * radius, 2 * radius)
             seg = 360 / gaps
@@ -173,7 +194,7 @@ class MusicDeck(OverlayWindow):
                 p.drawArc(rect, int((sign * spin + k * seg) * 16), int(seg * 0.62 * 16))
         pulse = 0.5 + 0.5 * math.sin(now * 6) if self.playing else 0.3
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(GREEN.red(), GREEN.green(), GREEN.blue(), int(110 + 140 * pulse)))
+        p.setBrush(QColor(self._green.red(), self._green.green(), self._green.blue(), int(110 + 140 * pulse)))
         p.drawEllipse(centre, 3 + 1.5 * pulse, 3 + 1.5 * pulse)
 
     def _title(self, p: QPainter, box: QRectF, now: float) -> None:
@@ -207,8 +228,8 @@ class MusicDeck(OverlayWindow):
             level = 0.15 if not self.playing else 0.25 + 0.75 * abs(math.sin(now * (3.1 + (i % 7) * 0.7) + i * 1.3))
             h = box.height() * level
             g = QLinearGradient(QPointF(0, box.bottom()), QPointF(0, box.bottom() - box.height()))
-            g.setColorAt(0, RED)
-            g.setColorAt(1, GREEN)
+            g.setColorAt(0, self._red)
+            g.setColorAt(1, self._green)
             p.setBrush(g)
             p.drawRect(QRectF(box.left() + i * w + 1, box.bottom() - h, w - 2, h))
 
@@ -225,7 +246,7 @@ class MusicDeck(OverlayWindow):
                        (rect.left(), rect.bottom()), (rect.left(), rect.top() + 5)):
                 chip.lineTo(*pt)
             chip.closeSubpath()
-            colour = RED if name == "play_pause" else CYAN
+            colour = self._red if name == "play_pause" else self._cyan
             p.setPen(QPen(colour, 1.2))
             p.setBrush(QColor(colour.red(), colour.green(), colour.blue(), 45))
             p.drawPath(chip)

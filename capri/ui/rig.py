@@ -161,6 +161,15 @@ class Pose:
     mouth: float = 0.0         # 0..1: mouth open (lip-sync)
     stride: float = 0.0        # -1..1: walking - which leg is up (+ = the picture's right leg), arms swinging
     sit: float = 0.0           # 0..1: sitting on a window's edge (paint_sitting)
+    # (2.6.2) small moves for her idle and for being carried (capri/ui/motion.py)
+    breath: float = 0.0        # 0..1: breathing in - her chest and shoulders rise a little
+    tilt: float = 0.0          # degrees: her head tilting at the neck (+ = clockwise)
+    arms: float = 0.0          # degrees: both arms swinging together (+ = clockwise), e.g. hanging with gravity
+    spread: float = 0.0        # degrees: both arms out from her sides (lifted up: a little)
+    dangle: float = 0.0        # degrees: both legs swinging together from the hips (dangling while held)
+    hair_drag: float = 0.0     # -1..1: her hair trailing to one side (+ = toward the picture's right at the top)
+    look_x: float = 0.0        # -1..1: her eyes glancing left / right
+    look_y: float = 0.0        # -1..1: ...and up / down
 
 
 LEAN_DEGREES = 56
@@ -174,6 +183,9 @@ SHOULDER_WAG = 14            # (2.4.1) the whole arm moves with each swing, not 
 LEG_LIFT = 0.2               # walking: the raised leg is this much shorter (her knee comes up)
 LEG_SWAY = 6                 # ...and both legs tilt a little with the step
 ARM_SWING = 9                # her arms swing with her steps
+BREATH_RISE = 0.012          # (2.6.2) breathing in: her upper body this much taller
+HAIR_DRAG_SHEAR = 0.32       # her hair trailing: how far its top leans over
+LOOK_SHIFT = 0.28            # her eyes glancing: how far (x eye radius)
 
 
 class Rig:
@@ -258,6 +270,17 @@ class Rig:
         head_rows[: int(HEAD_ROWS * h)] = True
         head_rows[fy1:, fx0:fx1] = False                # (her neck, under her face, stays)
         self.upper_bald = part(upper & ~(head_rows & ~face))
+        # (2.6.2) her head on its own (it tilts at the neck): the rows above her neck, and the rest of her upper
+        # body under it (overlapping a little, so a tilt shows no gap)
+        neck = int(HEAD_ROWS * h)
+        above = np.zeros_like(alpha)
+        above[:neck] = True
+        below = ~above
+        below[neck - 3:neck] = True
+        bald_mask = upper & ~(head_rows & ~face)
+        self.head_img, self.head_bald = part(upper & above), part(bald_mask & above)
+        self.torso, self.torso_bald = part(upper & below), part(bald_mask & below)
+        self.neck = QPointF((FACE_BOX[0] + FACE_BOX[2]) / 2 * w, float(neck))
         self.face_bare, self.eye_glows = self._erase_eyes(a, face)
         rows = np.flatnonzero(alpha[: int(HEAD_ROWS * h)].any(1))
         cols = np.flatnonzero(alpha[: int(HEAD_ROWS * h)].any(0))
@@ -332,6 +355,8 @@ class Rig:
                               Qt.TransformationMode.SmoothTransformation)
         out.upper, out.lower, out.face = small(self.upper), small(self.lower), small(self.face)
         out.upper_bald = small(self.upper_bald)
+        out.head_img, out.head_bald = small(self.head_img), small(self.head_bald)
+        out.torso, out.torso_bald = small(self.torso), small(self.torso_bald)
         out.face_bare = small(self.face_bare)
         out.eye_glows = [(small(img), QPointF(c.x() * height / self.h * self.w / self.w, c.y() * height / self.h))
                          for img, c in self.eye_glows]
@@ -349,6 +374,7 @@ class Rig:
             if self.knees else None
         out.shin_tilt = dict(self.shin_tilt) if self.shin_tilt else None
         out.thigh_half = getattr(self, "thigh_half", 0.0) * kx
+        out.neck = QPointF(self.neck.x() * kx, self.neck.y() * ky)
         out.head = QRectF(self.head.x() * kx, self.head.y() * ky, self.head.width() * kx, self.head.height() * ky)
         out.feet = QPointF(self.feet.x() * kx, self.feet.y() * ky)
         out.hair_style, out.hair = self.hair_style, make_hair(self.hair_style, seed=33)
@@ -357,7 +383,23 @@ class Rig:
 
     def head_transform(self, feet: QPointF, height: float, pose: Pose) -> QTransform:
         """Figure coordinates of her head -> where they are on screen this frame (she leans, it follows)."""
-        return self._upper(pose) * self._base(feet, height)
+        return self._head(pose) * self._upper(pose) * self._base(feet, height)
+
+    def hair_transform(self, feet: QPointF, height: float, pose: Pose) -> QTransform:
+        """...and of her hair (her head's, plus the hair trailing as she moves)."""
+        return self._hair(pose) * self.head_transform(feet, height, pose)
+
+    def _head(self, pose: Pose) -> QTransform:
+        if not pose.tilt or getattr(self, "neck", None) is None:
+            return QTransform()
+        n = self.neck
+        return QTransform().translate(n.x(), n.y()).rotate(pose.tilt).translate(-n.x(), -n.y())
+
+    def _hair(self, pose: Pose) -> QTransform:
+        if not pose.hair_drag:
+            return QTransform()
+        bx, by = self.head.center().x(), self.head.bottom()
+        return QTransform().translate(bx, by).shear(-HAIR_DRAG_SHEAR * pose.hair_drag, 0).translate(-bx, -by)
 
     def body_box(self) -> QRectF:
         return QRectF(0, 0, self.w, self.h)
@@ -370,7 +412,8 @@ class Rig:
         squash = 1 - 0.12 * pose.squat
         wx, wy = WAIST[0] * self.w, WAIST[1] * self.h
         pivot_y = self.feet.y() - (self.feet.y() - wy) * squash
-        return QTransform().translate(wx, pivot_y).rotate(LEAN_DEGREES * pose.lean).translate(-wx, -wy)
+        tall = 1 + BREATH_RISE * pose.breath
+        return QTransform().translate(wx, pivot_y).rotate(LEAN_DEGREES * pose.lean).scale(1, tall).translate(-wx, -wy)
 
     def _arm_angle(self, arm: str, pose: Pose, side: str) -> float:
         lead = 1 if side == "right" else -1
@@ -384,6 +427,7 @@ class Rig:
         world += lead * SWEEP_DEGREES * pose.sweep             # both trail behind the dash
         world += ARM_SWING * pose.stride * (1 if arm == "right" else -1) * 0.6 + ARM_SWING * pose.stride * 0.4
         world -= out * SIT_ARMS * pose.sit
+        world += pose.arms - out * (1.5 * pose.breath + pose.spread)   # (2.6.2) both arms together; out from her sides
         return world - LEAN_DEGREES * pose.lean * 0.92         # and hang with gravity, not the lean
 
     def _arm(self, arm: str, pose: Pose, side: str) -> QTransform:
@@ -436,7 +480,7 @@ class Rig:
                                     centre + QPointF(r * 0.85, 0)], r, glow)
             else:                                                    # open, or closing: the real eye, squashed
                 p.save()
-                p.translate(centre)
+                p.translate(centre + QPointF(pose.look_x * r * LOOK_SHIFT, pose.look_y * r * LOOK_SHIFT * 0.7))
                 p.scale(1.0, max(0.08, 1.0 - shut))
                 p.translate(-centre)
                 p.drawImage(QPointF(0, 0), img)
@@ -491,14 +535,14 @@ class Rig:
         p.translate(0, self.feet.y())
         p.scale(1, squash)
         p.translate(0, -self.feet.y())
-        if pose.stride and self.legs:                   # walking: each leg on its own
+        if (pose.stride or pose.dangle) and self.legs:  # walking / dangling: each leg on its own
             p.drawImage(QPointF(0, 0), self.hips)
             for side in ("left", "right"):
                 up = max(0.0, pose.stride if side == "right" else -pose.stride)
                 joint = self.hip_joints[side]
                 p.save()
                 p.translate(joint)
-                p.rotate(LEG_SWAY * pose.stride)
+                p.rotate(LEG_SWAY * pose.stride + pose.dangle * (1.0 if side == "left" else 0.85))
                 p.scale(1, 1 - LEG_LIFT * up)
                 p.translate(-joint)
                 p.drawImage(QPointF(0, 0), self.legs[side])
@@ -571,12 +615,25 @@ class Rig:
         p.save()
         p.setTransform(self._upper(pose), True)         # everything above the waist bends
         bald = hair and pose.wild > 0 and self.hair_style == "storm"   # (the traced hair replaces her own)
-        p.drawImage(QPointF(0, 0), self.upper_bald if bald else self.upper)
+        p.save()
+        if pose.tilt and getattr(self, "neck", None) is not None:      # (2.6.2) her head tilts at the neck
+            p.drawImage(QPointF(0, 0), self.torso_bald if bald else self.torso)
+            p.setTransform(self._head(pose), True)
+            p.drawImage(QPointF(0, 0), self.head_bald if bald else self.head_img)
+        else:
+            p.drawImage(QPointF(0, 0), self.upper_bald if bald else self.upper)
         if hair and pose.wild > 0:
-            self._paint_hair(p, pose, height / self.h)
+            if pose.hair_drag:
+                p.save()
+                p.setTransform(self._hair(pose), True)  # her hair trailing as she's carried
+                self._paint_hair(p, pose, height / self.h)
+                p.restore()
+            else:
+                self._paint_hair(p, pose, height / self.h)
             p.drawImage(QPointF(0, 0), self.face)
-        if pose.blink > 0 or pose.mouth > 0 or pose.eyes:
+        if pose.blink > 0 or pose.mouth > 0 or pose.eyes or pose.look_x or pose.look_y:
             self._paint_face_moves(p, pose)
+        p.restore()
         for arm in ("left", "right"):
             p.save()
             p.setTransform(self._arm(arm, pose, side), True)

@@ -114,11 +114,15 @@ class CharacterWindow(OverlayWindow):
         self._timer = QTimer(self)
         self._timer.setTimerType(Qt.TimerType.PreciseTimer)   # frames on time (no Windows 15.6 ms judder)
         self._timer.setInterval(int(1000 / IDLE_FPS))
-        from .glitch import DragSway, RealGlitch
+        from .glitch import RealGlitch
+        from .motion import DragMotion, IdleMotion
         self.glitch_every = 0                   # seconds between random glitches (0 = never, the default): Settings
         self.body_look = "full"                 # her figure: "full" (solid colours) or "neon" (Settings -> Character)
         self.real_glitch = RealGlitch(every=lambda: self.glitch_every)
-        self.sway = DragSway()                  # she dangles while you drag her
+        self.sway = DragMotion()                # (2.6.2) picked up: she hangs from your grip, swings, settles
+        self.idle_motion = IdleMotion(random.Random())   # (2.6.2) standing: breathing, weight shifts, glances
+        self._press_at = QPointF()              # where you pressed on her (her window's coordinates)
+        self._blink_len = BLINK_SECONDS
         self.setMouseTracking(True)             # hovering over her: she floats up and leans to your cursor
         self._hover = 0.0                       # 0..1 eased
         self.grooving = False                   # music's playing: she vibes to it (a little bounce and sway)
@@ -126,7 +130,6 @@ class CharacterWindow(OverlayWindow):
         self._hover_on = False
         self._hover_x = 0.0
         self._sway_at = time.monotonic()
-        self._next_drag_glitch = 0.0
         self._frame_key = None
         self._timer.timeout.connect(self._tick)
         self._look_painter = None
@@ -453,14 +456,30 @@ class CharacterWindow(OverlayWindow):
     def set_held(self, held: bool) -> None:
         """You picked her up (dragging) / let go: she dangles and swings."""
         if held:
-            self.sway.grab()
-            self._next_drag_glitch = time.monotonic() + 0.35
+            self.sway.grab(self._grip_point())
         else:
             self.sway.drop()
         self._update_timer()
 
-    def held_at(self, x: float) -> None:
-        self.sway.moved(x)
+    def held_at(self, pos) -> None:
+        """Your cursor while you carry her (screen coordinates: a QPointF, or just x)."""
+        self.sway.moved(pos)
+
+    def mousePressEvent(self, event) -> None:
+        self._press_at = QPointF(event.position())
+        super().mousePressEvent(event)
+
+    def _grip_point(self) -> QPointF:
+        """Where she hangs from: the spot you grabbed, kept between her head and her hips (grabbed by the feet,
+        she still hangs from her middle rather than swinging upside down)."""
+        if self.mode != "body":
+            return QPointF(self.width() / 2, self.height() * 0.3)
+        c = QRectF(self.content_rect())
+        x = max(c.left() + c.width() * 0.25, min(c.right() - c.width() * 0.25, self._press_at.x()))
+        y = max(c.top() + c.height() * 0.05, min(c.top() + c.height() * 0.45, self._press_at.y()))
+        if self._press_at.isNull():
+            x, y = c.center().x(), c.top() + c.height() * 0.2
+        return QPointF(x, y)
 
     # -- your mouse over her ------------------------------------------------------------
     def enterEvent(self, event) -> None:
@@ -513,7 +532,7 @@ class CharacterWindow(OverlayWindow):
         super().mouseMoveEvent(event)
 
     def _hover_step(self, dt: float) -> None:
-        goal = 1.0 if self._hover_on and not self.sway.held else 0.0
+        goal = 1.0 if self._hover_on or self.sway.held else 0.0    # (held: she stays up, under your grip)
         self._hover += (goal - self._hover) * (1 - math.exp(-dt / 0.18))
         if abs(self._hover - goal) < 0.002:
             self._hover = goal
@@ -557,13 +576,17 @@ class CharacterWindow(OverlayWindow):
             self._groove = min(want, self._groove + step) if want > self._groove else max(want, self._groove - step)
         if self.sway.swinging:
             self.sway.step(dt)
+        if self.mode == "body" and self.idle_animation and not self.napping:
+            self.idle_motion.step(dt)                            # (2.6.2) her idle life, on real time
         if self.real_glitch.due(self.isVisible() and not self.talking and self.mode != "classic" and self.state
                                 not in (State.LISTENING, State.PROCESSING, State.LAUNCHING, State.SPEAKING)):
             self.real_glitch.start()
         if self.idle_animation and not self.talking and self.state is State.IDLE:
-            if now >= self._next_blink:
-                self._blink_until = now + BLINK_SECONDS
-                self._next_blink = now + self._rng.uniform(2.5, 6.0)
+            if now >= self._next_blink:                      # (2.6.2) varied blinks, sometimes a double one
+                self._blink_len = BLINK_SECONDS * self._rng.uniform(0.85, 1.25)
+                self._blink_until = now + self._blink_len
+                double = self._rng.random() < 0.18
+                self._next_blink = now + (self._blink_len + 0.12 if double else self._rng.uniform(2.2, 6.5))
                 self._update_timer()                         # smooth blink: fast frames for a moment
             if now >= self._next_look:
                 self._look_until = now + 1.7
@@ -587,6 +610,9 @@ class CharacterWindow(OverlayWindow):
         if self.napping and self.mode in ("body", "lying"):    # floating: every frame, it's a smooth glide
             self.update()
             return
+        if self.mode == "body" and self.idle_animation:        # (2.6.2) she's never a frozen picture: her
+            self.update()                                      # breathing and little moves, every frame
+            return
         sfx = self.style_now()
         if sfx is not None:                                    # (2.6) her style: effects every frame
             sfx.tick(now, idle=self.state is State.IDLE and not self.talking)
@@ -602,8 +628,9 @@ class CharacterWindow(OverlayWindow):
             self.update()
 
     def _bob(self) -> float:
-        """Breathing: a gentle, sub-pixel rise and fall."""
-        if not self.idle_animation:
+        """Breathing: a gentle, sub-pixel rise and fall. (Her full-body figure breathes with her chest
+        instead - her feet stay on the ground: see IdleMotion.)"""
+        if not self.idle_animation or self.mode == "body":
             return 0.0
         return 1.4 * math.sin(self._t() * 2 * math.pi / 3.6)
 
@@ -885,14 +912,20 @@ class CharacterWindow(OverlayWindow):
                         continue
                     moves[k] = moves.get(k, 0.0) + v * size
                 self._mod_face = (extra.get("blink", 0.0), extra.get("mouth", 0.0))
-        if self.sway.held:                                         # dangling from your cursor
-            held = self.sway.pose_moves(now)
-            held.pop("lean", None)
-            moves.update(held)
         smooth = self._ease_towards(moves, now)
-        if self.sway.swinging:
+        # (2.6.2) her idle life and being carried: already smooth (springs on real time), so added after the easing
+        grip = max(0.0, min(1.0, self.sway.grip.value)) if self.sway.swinging else 0.0
+        if self.mode == "body" and self.idle_animation and not self.napping:
+            calm = (1.0 if self.state is State.IDLE and not self.talking else 0.6) * (1.0 - grip)
+            if calm > 0.0:
+                smooth = dict(smooth)
+                for k, v in self.idle_motion.moves().items():
+                    smooth[k] = max(smooth.get(k, 0.0), v * calm) if k in ("energy", "squat") \
+                        else smooth.get(k, 0.0) + v * calm
+        if self.sway.swinging:                                     # held, or settling after you let go
             smooth = dict(smooth)
-            smooth["lean"] = smooth.get("lean", 0.0) + self.sway.angle
+            for k, v in self.sway.pose_moves(now).items():
+                smooth[k] = max(smooth.get(k, 0.0), v) if k in ("energy",) else smooth.get(k, 0.0) + v
         if self._groove > 0.0 and self.mode == "body":             # music: she vibes to it
             smooth = dict(smooth)
             for k, v in self.groove_moves(now).items():
@@ -903,9 +936,12 @@ class CharacterWindow(OverlayWindow):
             smooth["lean"] = smooth.get("lean", 0.0) + 0.07 * side * self._hover
             smooth["energy"] = max(smooth.get("energy", 0.0), 0.45 * self._hover)
             smooth["sweep"] = smooth.get("sweep", 0.0) + 0.12 * self._hover
+            if not self.sway.held:                                 # she looks at your cursor
+                smooth["look_x"] = smooth.get("look_x", 0.0) * (1 - self._hover) + 0.9 * side * self._hover
+                smooth["look_y"] = smooth.get("look_y", 0.0) * (1 - self._hover) - 0.3 * self._hover
         blink = 0.0
         if now < self._blink_until:                                # closes and opens, not on / off
-            blink = math.sin(math.pi * min(1.0, 1 - (self._blink_until - now) / BLINK_SECONDS))
+            blink = math.sin(math.pi * min(1.0, 1 - (self._blink_until - now) / self._blink_len))
         if self.napping and not self.talking:                      # asleep, floating: eyes shut, arms still
             blink = min(1.0, (now - self._nap_since) / 0.8)
             smooth = dict(smooth)
@@ -945,7 +981,23 @@ class CharacterWindow(OverlayWindow):
         return out
 
     def _paint_figure(self, p: QPainter, jolt: QPointF) -> None:
-        lift = self._hover * (7 + 2 * math.sin(time.monotonic() * 3.2)) * max(0.6, self._figure_h / 300)
+        swing = self.sway.angle if self.sway.swinging else 0.0
+        if abs(swing) < 0.01:
+            return self._paint_figure_upright(p, jolt)
+        p.save()                                                   # (2.6.2) carried: she swings from your grip
+        pivot = self.sway.pivot
+        p.translate(pivot)
+        p.rotate(swing)
+        p.translate(-pivot)
+        try:
+            self._paint_figure_upright(p, jolt)
+        finally:
+            p.restore()
+
+    def _paint_figure_upright(self, p: QPainter, jolt: QPointF) -> None:
+        grip = max(0.0, min(1.0, self.sway.grip.value))
+        bob = 2 * math.sin(time.monotonic() * 3.2) * (1 - grip)     # (held: no bobbing under your grip)
+        lift = self._hover * (7 + bob) * max(0.6, self._figure_h / 300)
         feet = QPointF(self.width() / 2 + jolt.x(),
                        self.height() - 2 + self._bounce() + self._bob() + jolt.y() - lift)    # hovering up
         pose = self.figure_pose()
@@ -1215,6 +1267,9 @@ class CharacterWindow(OverlayWindow):
             hb = head if head is not None else QRectF(body.x(), body.y(), body.width() * 0.3, body.height() * 0.4)
             c = StyleCtx(QRectF(self.rect()), body, hb, eyes, QPointF(body.center().x(), body.bottom()), now,
                     body.height() / 160.0, None, True, getattr(self, "_velocity", QPointF()), body.width() * 0.012)
+            if head is not None and self.hair_style in HAIR_STYLES and self.wild_hair > 0:   # (2.6.2) her hair's
+                t_hair, energy = self._t(), (self.level if self.talking else 0.0)            # outline lying down
+                c.hair_fn = lambda: self.lying_hair.shape(head, t_hair, self.wild_hair, energy)
             sfx.paint_back(p, c)
             sfx.figure(img, c)
             sfx.draw_figure(p, img, c)

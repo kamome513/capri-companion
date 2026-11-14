@@ -183,6 +183,16 @@ def _new_look_once(settings) -> None:
         settings.save()
 
 
+def _unstick_click_through_once(settings) -> None:
+    """2.6.2, once: hologram mode used to switch the click-through setting on and save it, so she could stay
+    click-through (impossible to move) after the hologram was off. Settings from before 2.6.2 get it off again."""
+    from .updater import parse_version
+    last = settings.last_version
+    if last and parse_version(last) < (2, 6, 2) and settings.click_through:
+        settings.click_through = False
+        settings.save()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="capri", description="Capri desktop companion")
     parser.add_argument("--preview", action="store_true",
@@ -239,6 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     first_run = not Settings.path().exists()
     settings = Settings.load()
     _new_look_once(settings)
+    _unstick_click_through_once(settings)
     from . import languages
     languages.set_current(settings.language)          # before her ears, brain and voice are set up
     languages.keep_voice = settings.keep_voice
@@ -663,8 +674,8 @@ def main(argv: list[str] | None = None) -> int:
     def chaos_hologram() -> None:                # a hologram flicker for a couple of seconds
         if companion.character.hologram:
             return
-        companion.set_hologram(True)
-        QTimer.singleShot(2200, lambda: companion.set_hologram(settings.hologram))
+        companion.set_hologram(True, keep=False)                    # a flicker: the setting stays as it is
+        QTimer.singleShot(2200, lambda: companion.set_hologram(settings.hologram, keep=False))
 
     def chaos_dash() -> None:                    # a dash somewhere else along the bottom
         area = QGuiApplication.primaryScreen().availableGeometry()
@@ -1188,6 +1199,11 @@ def main(argv: list[str] | None = None) -> int:
     hotkeys = HotkeyManager()
 
     def toggle_click_through() -> None:
+        if companion.character.hologram:                          # the shortcut also ends hologram mode
+            companion.set_hologram(False)
+            companion.set_click_through(False)
+            controller.log("Click", "hologram off - she can be moved again")
+            return
         on = not settings.click_through
         companion.set_click_through(on)
         controller.log("Click", "through ON (locked)" if on else "through off")

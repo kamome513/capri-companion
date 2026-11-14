@@ -313,11 +313,14 @@ def test_desktop_commands_by_voice():
 def test_hologram_mode_gives_your_click_through_back():
     from test_v116 import companion
     c = companion()
+    from PySide6.QtCore import Qt
+    through = lambda: bool(c.character.windowFlags() & Qt.WindowType.WindowTransparentForInput)   # noqa: E731
     c.set_click_through(False)
     c.set_hologram(True)
-    assert c.settings.click_through and c.character.hologram and c.settings.hologram
+    assert through() and c.character.hologram and c.settings.hologram
+    assert not c.settings.click_through                    # (2.6.2: the setting itself is never changed)
     c.set_hologram(False)
-    assert not c.settings.click_through and not c.character.hologram
+    assert not through() and not c.settings.click_through and not c.character.hologram
 
 
 # -- screen intelligence -----------------------------------------------------------------------------------------------

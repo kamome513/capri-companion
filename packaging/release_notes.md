@@ -1,6 +1,13 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.6.1.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.6.2.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
+
+**2.6.2:**
+- **Smoother Capri:** standing still she breathes, shifts her weight, tilts her head, moves her arms a little and glances about - never a frozen picture, never the same loop. Picked up, she hangs from where you grabbed her, swings behind the way you move her, and her head, hair and legs follow a moment later; put down, she swings back upright and settles.
+- **Thornveil:** thorny vines and red roses woven through her hair.
+- Her style's effects stay on while she sits on a window, and the music bar takes her style's colours.
+- Styles live only in the Styles tab now (not in Mods).
+- Fixed: after hologram mode (or chaos mode's hologram flicker) she could stay click-through and impossible to move. If that happened to you, this update fixes it.
 
 **2.6.1:**
 - Colour skins (Neon Ice, Toxic Glitch) are in the Styles tab too, under **Colours**.

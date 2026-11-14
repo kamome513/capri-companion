@@ -330,6 +330,7 @@ def test_capri_voice_preset_and_style():
 
 def test_idle_repaints_only_when_something_changes():
     w = make_window()
+    w.idle_animation = False        # (2.6.2: with her idle on, her full body breathes and moves every frame)
     w.set_state(State.IDLE)
     w._next_blink = w._next_look = time.monotonic() + 100
     calls = []
@@ -338,9 +339,10 @@ def test_idle_repaints_only_when_something_changes():
     for _ in range(20):             # same instant: nothing visible changed -> no repaint at all
         w._tick()
     assert len(calls) == 1
-    w._next_blink = time.monotonic() - 1
-    w._tick()                       # a blink is a visible change
-    assert len(calls) == 2
+    w.idle_animation = True
+    w._tick()                       # her idle life: every frame
+    w._tick()
+    assert len(calls) == 3
 
 
 def test_storm_hair_is_rendered_once_per_boil_step():

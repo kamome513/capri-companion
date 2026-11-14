@@ -7,13 +7,11 @@ roll over her, the frame FREEZES for a moment, then DROPS (she's gone for a coup
 with a jolt. Real glitches step at a camera's frame rate rather than smoothly, so the pattern changes every
 1/30 s, while the window still repaints at full speed.
 
-DragSway: while you drag her she dangles from your cursor - she swings behind the way you move (a damped
-pendulum), her legs kick, her arms trail, her hair goes wild, and she flickers a little.
+(Dragging her - how she hangs and swings from your grip - is in motion.py since 2.6.2.)
 """
 
 from __future__ import annotations
 
-import math
 import random
 import time
 from dataclasses import dataclass
@@ -201,52 +199,3 @@ class RealGlitch:
         while y < bottom:
             p.drawLine(QPointF(body.left() - 6, y), QPointF(body.right() + 6, y))
             y += 3 * scale
-
-
-class DragSway:
-    """She dangles from your cursor while you drag her: a damped pendulum driven by how you move."""
-
-    def __init__(self, clock=time.monotonic) -> None:
-        self.clock = clock
-        self.held = False
-        self.angle = 0.0                 # -1..1 lean (Pose.lean units)
-        self.speed = 0.0
-        self._vx = 0.0
-        self._last_x: float | None = None
-        self._last_t = clock()
-        self.since = 0.0
-
-    def grab(self) -> None:
-        self.held, self.since, self._last_x = True, self.clock(), None
-
-    def drop(self) -> None:
-        self.held = False
-
-    def moved(self, x: float) -> None:
-        now = self.clock()
-        if self._last_x is not None:
-            dt = max(1e-3, now - self._last_t)
-            self._vx = 0.7 * self._vx + 0.3 * (x - self._last_x) / dt
-        self._last_x, self._last_t = x, now
-
-    def step(self, dt: float) -> None:
-        """Advance the swing: she lags behind your movement and swings back, settling when you stop."""
-        target = max(-0.55, min(0.55, -self._vx / 2600)) if self.held else 0.0
-        self._vx *= math.exp(-dt * 6)                            # your movement fades once you stop moving
-        k, damping = 38.0, 5.5
-        acc = k * (target - self.angle) - damping * self.speed
-        self.speed += acc * dt
-        self.angle += self.speed * dt
-
-    @property
-    def swinging(self) -> bool:
-        return self.held or abs(self.angle) > 0.004 or abs(self.speed) > 0.004
-
-    def pose_moves(self, now: float) -> dict[str, float]:
-        """The pose while she's held: leaning with the swing, arms trailing, legs kicking, hair wild."""
-        t = now - self.since
-        if not self.held:
-            return {"lean": self.angle}
-        kick = math.sin(t * 7.5) * 0.55 + math.sin(t * 3.1) * 0.25
-        return {"lean": self.angle, "sweep": 0.55 + 0.25 * abs(math.sin(t * 2.3)), "stride": kick,
-                "energy": 1.0, "squat": 0.0}
