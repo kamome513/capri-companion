@@ -24,6 +24,27 @@ WHITE = QColor(255, 244, 248)
 GRAVITY = 1700.0
 
 
+def mod_colour(part: str, default: QColor) -> QColor:
+    """A skin mod's colour for one of her parts ("hair", "accent", "eyes"...) when one's on, else the default."""
+    try:
+        from ..mods.effects import EFFECTS
+        value = (EFFECTS.palette or {}).get(part)
+        return QColor(value) if value else QColor(default)
+    except Exception:
+        return QColor(default)
+
+
+def her_red() -> QColor:
+    """Her main colour for effects (afterimages, sparks, rings): a skin's hair colour, else her crimson."""
+    return mod_colour("hair", RED)
+
+
+def her_cyan() -> QColor:
+    """Her second effect colour: a skin's eye colour (then accent), else cyan."""
+    eyes = mod_colour("eyes", CYAN)
+    return eyes if eyes != CYAN else mod_colour("accent", CYAN)
+
+
 def precise_timer(parent, ms: int = 8) -> QTimer:
     """A frame timer that really ticks on time (Windows' normal timers step in ~15.6 ms jumps: judder)."""
     timer = QTimer(parent)

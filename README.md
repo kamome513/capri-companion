@@ -301,7 +301,8 @@ AI, unless you tick *Let the AI know what Capri remembers about me* in Settings 
 Settings → **Styles**: 31 looks for Capri, each with its own colours and live effects around her (hair effects, glow,
 glowing eyes, materials, particles, special moments, trails). Pick one, press **Apply**; **Default Capri** takes it
 off. The switches underneath turn each kind of effect on or off, and **Quality: Light** uses about half the CPU.
-Styles are skin mods, so you can make your own too (see the modding guide).
+Styles are skin mods, so you can make your own too (see the modding guide). Colour-only skins are listed under
+**Colours**. Her drone (the disk with the eye) wears whatever style or skin she has on, with a light touch of its effects.
 
 ### Mods (2.5)
 

@@ -1,6 +1,11 @@
-**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.6.0.exe` is still here too.
+**Windows:** download **`Capri.exe`** below. That one file is the whole app: put it anywhere and double-click it. If you already have Capri, she updates herself. If Windows says "Windows protected your PC", click **More info**, then **Run anyway** (it isn't code-signed). `Capri-Setup-2.6.1.exe` is still here too.
 
 **Linux:** download `Capri-x86_64.AppImage` below, make it executable (right-click → Properties → Permissions → *Allow executing file as program*), and double-click it. If you have 1.37.0 or newer, it updates itself.
+
+**2.6.1:**
+- Colour skins (Neon Ice, Toxic Glitch) are in the Styles tab too, under **Colours**.
+- Her drone (the disk with the eye) wears her style or skin: its colours, glow and eye, plus a few of the style's particles - kept light so it stays easy on your PC while you play.
+- Her afterimages when you throw her, the sparks and rings when she hits a wall, the dash trail and lightning and the teleport now take her skin's colours instead of always red.
 
 **2.6: Styles.** Settings has a new **Styles** tab with 31 whole new looks for Capri - each with its own colours, materials, light and little effects around her: Stormborn, Absolute Zero, Bioluminescence, Solaris, Eclipse, Thornveil, Corrupted.exe, Monochrome, Dead Signal, Oilspill, Prototype 00, Redline, Velvet Noir, Cloud Nine, Abyssal, Analog, Wildflower, Lunaris, Radioactive, Paper Doll, Glacier Rose, Clockwork, Phantom, Wildfire, Dreamcore, Cathedral, Static, Mantis, White & Black Kintsugi, Sakura and Frutiger Aero.
 - Each has hair effects (lightning, ice crystals, flames, thorns, petals, gears, glass...), a glow and outline, glowing eyes, what she's made of (ice, gloss, glowing veins, gold Kintsugi repairs, scanlines, film grain...), particles inside her and around her, the odd special moment (an eclipse halo, a jellyfish drifting past, a flower blooming, a lightning flash...) and a trail when you drag her.

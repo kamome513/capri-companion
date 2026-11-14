@@ -194,7 +194,9 @@ def test_styles_tab_applies_and_takes_off():
     s = Settings()
     s.save = lambda: None
     tab = StylesTab(m, STORE, s)
-    assert tab.list.count() == 31
+    assert tab.list.count() == 33                                # 31 styles + the 2 colour skins
+    tab.theme.setCurrentIndex(tab.theme.findData("Colours"))
+    assert tab.list.count() == 2
     tab.theme.setCurrentIndex(tab.theme.findData("Elemental"))
     assert tab.list.count() == 6
     tab.list.setCurrentRow(0)

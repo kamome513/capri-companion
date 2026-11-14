@@ -4,6 +4,10 @@ her red / green / black shards slowly spinning around her eye, hovering out of t
 The eye looks around and blinks, the shards drift apart and snap back, a red spark
 jumps off now and then, and it all glows brighter while she talks. ~110 px, 30 fps
 only while it's on screen.
+
+With a skin or style on (2.6.1), the disk wears its colours, and a style adds a light touch of its
+effects: its glow, a few of its particles drifting round the ring and its outline colour - kept small
+so the drone stays cheap while you play.
 """
 
 from __future__ import annotations
@@ -184,6 +188,29 @@ class DroneWindow(OverlayWindow):
         self._timer.timeout.connect(self.update)
         self.style = "disk"
         self._mask: MaskDrone | None = None
+        self.style_settings = None                             # Settings: which style effects are on
+
+    # -- her skin / style (2.6.1) ---------------------------------------------------------------------
+    @staticmethod
+    def skin() -> tuple[dict, dict]:
+        """The palette and style she's wearing ({} and {} for her own look)."""
+        try:
+            from ..mods.effects import EFFECTS
+            return dict(EFFECTS.palette or {}), dict(EFFECTS.style or {})
+        except Exception:
+            return {}, {}
+
+    def _effects_on(self, key: str) -> bool:
+        s = self.style_settings
+        return s is None or (getattr(s, "style_effects", True) and getattr(s, key, True))
+
+    @staticmethod
+    def shard_colours(palette: dict) -> list[QColor]:
+        if not palette:
+            return COLORS
+        hair = QColor(palette.get("hair", "#ec1046"))
+        return [hair, QColor(palette.get("accent", "#28d678")), QColor(palette.get("body", "#100a14")),
+                hair.darker(170)]
 
     def set_style(self, style: str) -> None:
         """"disk" (shards round her eye) or "mask" (her green visor with its fin)."""
@@ -237,8 +264,17 @@ class DroneWindow(OverlayWindow):
             p.end()
             return
 
+        palette, style = self.skin()
+        colours = self.shard_colours(palette)
+        glow_colour = QColor(palette.get("hair", "#ec1046")) if palette else QColor(236, 16, 70)
+        aura = style.get("aura") if isinstance(style.get("aura"), dict) else None
+        if aura and self._effects_on("style_aura"):
+            glow_colour = QColor(str(aura.get("color", glow_colour.name())))
+        if not glow_colour.isValid():
+            glow_colour = QColor(236, 16, 70)
         glow = QRadialGradient(c, 46)
-        glow.setColorAt(0, QColor(236, 16, 70, int(70 + 90 * energy)))
+        g = glow_colour
+        glow.setColorAt(0, QColor(g.red(), g.green(), g.blue(), int(70 + 90 * energy)))
         glow.setColorAt(1, QColor(0, 0, 0, 0))
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(glow)
@@ -248,6 +284,10 @@ class DroneWindow(OverlayWindow):
         if t > self._glitch[0] and rng.random() < 0.02:
             self._glitch = (t + 0.15, rng.randrange(SHARDS))
         spin = t * (24 + 90 * energy)
+        edge = QColor(8, 4, 10)
+        outline = style.get("outline") if isinstance(style.get("outline"), dict) else None
+        if outline and self._effects_on("style_aura") and QColor(str(outline.get("color", ""))).isValid():
+            edge = QColor(str(outline["color"]))
         for i in range(SHARDS):
             a = math.radians(spin + i * 360 / SHARDS)
             half = math.radians(360 / SHARDS / 2 - 4)
@@ -263,8 +303,8 @@ class DroneWindow(OverlayWindow):
             for pt in pts[1:]:
                 path.lineTo(pt)
             path.closeSubpath()
-            p.setPen(QPen(QColor(8, 4, 10), 1.2))
-            p.setBrush(COLORS[i % len(COLORS)])
+            p.setPen(QPen(edge, 1.2))
+            p.setBrush(colours[i % len(colours)])
             p.drawPath(path)
 
         # the eye
@@ -288,8 +328,11 @@ class DroneWindow(OverlayWindow):
             p.save()
             p.setClipRect(sclera)
             ig = QRadialGradient(iris, 6.5)
-            ig.setColorAt(0, QColor(150, 210, 255))
-            ig.setColorAt(1, EYE_BLUE.darker(130 - int(30 * energy)))
+            eye = QColor(str(style.get("eyes") or palette.get("eyes") or EYE_BLUE.name()))
+            if not eye.isValid():
+                eye = QColor(EYE_BLUE)
+            ig.setColorAt(0, eye.lighter(150))
+            ig.setColorAt(1, eye.darker(130 - int(30 * energy)))
             p.setBrush(ig)
             p.drawEllipse(iris, 6.2, 6.2)
             p.setBrush(QColor(4, 4, 10))
@@ -297,6 +340,9 @@ class DroneWindow(OverlayWindow):
             p.setBrush(QColor(255, 255, 255, 230))
             p.drawEllipse(iris + QPointF(-1.8, -1.8), 1.2, 1.2)
             p.restore()
+
+        if style and self._effects_on("style_particles"):
+            self._paint_style_particles(p, c, t, style)
 
         # a stray red spark now and then (more while she talks)
         if self._spark is None and rng.random() < 0.015 + 0.05 * energy:
@@ -309,5 +355,30 @@ class DroneWindow(OverlayWindow):
             else:
                 a = c + QPointF(math.cos(ang) * 34, math.sin(ang) * 34)
                 b = c + QPointF(math.cos(ang) * 52, math.sin(ang) * 52)
-                lightning.draw(p, lightning.bolt(a, b, rng, roughness=0.35, depth=3, branch=0.2), 1 - k, 0.6)
+                lightning.draw(p, lightning.bolt(a, b, rng, roughness=0.35, depth=3, branch=0.2), 1 - k, 0.6,
+                               colour=glow_colour if palette else None)
         p.end()
+
+    PARTICLES = 6                                              # minimal: easy on your PC while you play
+
+    def _paint_style_particles(self, p: QPainter, c: QPointF, t: float, style: dict) -> None:
+        """A few of the style's particles drifting slowly round the ring and fading in and out (time-based:
+        nothing kept per frame)."""
+        from .style_fx import colour, draw_particle
+        defs = [d for d in (style.get("particles") or []) if isinstance(d, dict)]
+        inner = style.get("inner")
+        if not defs and isinstance(inner, dict):
+            defs = [inner]
+        if not defs:
+            return
+        kinds = [(str(d.get("kind", "orb")), [colour(x) for x in (d.get("colors") or ["#ffffff"])]) for d in defs]
+        for i in range(self.PARTICLES):
+            kind, cols = kinds[i % len(kinds)]
+            if kind in ("mist", "smoke", "bubble_big"):
+                kind = "orb"
+            phase = i * 2.399                                  # golden-angle spread
+            ang = phase + t * (0.35 + 0.08 * (i % 3))
+            r = 40 + 6 * math.sin(t * 0.9 + phase * 1.7)
+            at = QPointF(c.x() + math.cos(ang) * r, c.y() + math.sin(ang) * r * 0.9)
+            life = 0.5 + 0.5 * math.sin(t * 1.3 + phase * 2.1)
+            draw_particle(p, kind, at, 2.2, cols[i % len(cols)], 0.85 * life, math.degrees(ang), t)

@@ -38,6 +38,10 @@ BUSY = {State.LISTENING, State.PROCESSING, State.LAUNCHING, State.SPEAKING}   # 
 GATHER, ENGULF, VANISH, TRAVEL, APPEAR, SETTLE = 0.55, 0.2, 0.14, 0.12, 0.42, 0.34
 SHARDS = 30 
 RED, CYAN = fx.RED, fx.CYAN
+
+
+def _rgba(c: QColor, alpha: int) -> QColor:
+    return QColor(c.red(), c.green(), c.blue(), alpha)
 DARK = QColor(6, 3, 8)
 
 
@@ -170,7 +174,7 @@ class TeleportFX(OverlayWindow):
         g = QRadialGradient(centre, r)
         g.setColorAt(0, QColor(0, 0, 0, int(200 * power)))
         g.setColorAt(0.62, QColor(12, 0, 6, int(170 * power)))
-        g.setColorAt(0.8, QColor(RED.red(), RED.green(), RED.blue(), int(110 * power)))
+        g.setColorAt(0.8, _rgba(fx.her_red(), int(110 * power)))
         g.setColorAt(1, QColor(0, 0, 0, 0))
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(g)
@@ -181,7 +185,7 @@ class TeleportFX(OverlayWindow):
         p.drawEllipse(centre, r, r)
         p.restore()
         floor = QRadialGradient(feet, self.fh * 0.5)                       # a red pool on the floor
-        floor.setColorAt(0, QColor(RED.red(), RED.green(), RED.blue(), int(150 * power)))
+        floor.setColorAt(0, _rgba(fx.her_red(), int(150 * power)))
         floor.setColorAt(1, QColor(0, 0, 0, 0))
         p.setBrush(floor)
         p.drawEllipse(feet, self.fh * 0.5, self.fh * 0.09)
@@ -204,7 +208,7 @@ class TeleportFX(OverlayWindow):
             length = self.fh * s.length * rise * (0.75 + 0.25 * math.sin(t * 9 + s.angle))
             path = shard_path(base, direction, length, self.fh * s.width, s.kinks)
             shade = 0.55 + 0.45 * (depth + 1) / 2                         # nearer = brighter edge
-            p.setPen(QPen(QColor(RED.red(), RED.green(), RED.blue(), int(90 * power * shade)), self.fh * 0.022))
+            p.setPen(QPen(_rgba(fx.her_red(), int(90 * power * shade)), self.fh * 0.022))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawPath(path)                                                # the glow
             p.setPen(QPen(QColor(255, 60, 100, int(255 * power * shade)), max(1.0, self.fh * 0.006)))
@@ -221,7 +225,8 @@ class TeleportFX(OverlayWindow):
         for _ in range(int(3 + 9 * amount)):
             w, h = r.uniform(4, self.fh * 0.22), r.uniform(1.5, 5)
             x, y = r.uniform(box.left(), box.right() - w), r.uniform(box.top(), box.bottom())
-            c = QColor(r.choice((RED, RED, QColor(0, 0, 0), QColor(255, 255, 255), CYAN)))
+            c = QColor(r.choice((fx.her_red(), fx.her_red(), QColor(0, 0, 0), QColor(255, 255, 255),
+                                 fx.her_cyan())))
             c.setAlpha(int(r.uniform(90, 220) * amount))
             p.setBrush(c)
             p.drawRect(QRectF(x, y, w, h))
@@ -266,7 +271,7 @@ class TeleportFX(OverlayWindow):
         head = a + (b - a) * fx.ease_in_out(k)
         tail = a + (b - a) * fx.ease_in_out(max(0.0, k - 0.35))
         for width, alpha in ((self.fh * 0.05, 70), (self.fh * 0.012, 255)):
-            p.setPen(QPen(QColor(RED.red(), RED.green(), RED.blue(), alpha), width, Qt.PenStyle.SolidLine,
+            p.setPen(QPen(_rgba(fx.her_red(), alpha), width, Qt.PenStyle.SolidLine,
                           Qt.PenCapStyle.RoundCap))
             p.drawLine(tail, head)
         p.setPen(QPen(QColor(255, 255, 255, 230), max(1.0, self.fh * 0.004)))
@@ -378,8 +383,8 @@ class RoamShow(QObject):
         f.here, f.there = QPointF(here, self._ground), QPointF(to_x, self._ground)
         pose = Pose(energy=1.0, squat=0.15, t=time.monotonic() * 2.2)
         f.sprite = fx.render(rig, fh, pose)
-        f.red = fx.render(rig, fh, pose, tint=RED, hair=False)
-        f.cyan = fx.render(rig, fh, pose, tint=CYAN, hair=False)
+        f.red = fx.render(rig, fh, pose, tint=fx.her_red(), hair=False)
+        f.cyan = fx.render(rig, fh, pose, tint=fx.her_cyan(), hair=False)
         f.shards = make_shards(self.rng)
         f.effects.clear()
         f.dirty = fx.DirtyTracker()
@@ -394,7 +399,8 @@ class RoamShow(QObject):
         self.active, self._burst_done, self._arrive_done = True, False, False
         self._started = time.monotonic()
         now = self._started
-        f.effects.motes(f.here - QPointF(0, fh * 0.5), fh * 0.7, 26, now, inward=True, colours=(RED, RED, CYAN),
+        f.effects.motes(f.here - QPointF(0, fh * 0.5), fh * 0.7, 26, now, inward=True,
+                        colours=(fx.her_red(), fx.her_red(), fx.her_cyan()),
                         life=(0.35, 0.55))
         self._timer.start()
         return True
@@ -424,13 +430,15 @@ class RoamShow(QObject):
             mid = f.here - QPointF(0, f.fh * 0.5)
             e.flash(mid, now, f.fh * 0.6, 0.22)
             e.shards(mid, -math.pi / 2, 14, now, f.fh)
-            e.sparks(mid, -math.pi / 2, math.pi, 18, (200, 700), now, colours=(RED, RED, QColor(255, 255, 255)))
-            e.ring(f.here, now, f.fh * 0.55, RED, 0.4, flat=0.25, width=3)
+            e.sparks(mid, -math.pi / 2, math.pi, 18, (200, 700), now,
+                     colours=(fx.her_red(), fx.her_red(), QColor(255, 255, 255)))
+            e.ring(f.here, now, f.fh * 0.55, fx.her_red(), 0.4, flat=0.25, width=3)
         if not self._arrive_done and t >= GATHER + ENGULF + VANISH + TRAVEL:  # landing there
             self._arrive_done = True
-            e.motes(f.there - QPointF(0, f.fh * 0.5), f.fh * 0.75, 24, now, inward=True, colours=(RED, CYAN),
+            e.motes(f.there - QPointF(0, f.fh * 0.5), f.fh * 0.75, 24, now, inward=True,
+                    colours=(fx.her_red(), fx.her_cyan()),
                     life=(0.25, 0.4))
-            e.ring(f.there, now, f.fh * 0.6, CYAN, 0.5, flat=0.25, width=3)
+            e.ring(f.there, now, f.fh * 0.6, fx.her_cyan(), 0.5, flat=0.25, width=3)
         if self._arrive_done and t >= GATHER + ENGULF + VANISH + TRAVEL + APPEAR * 0.85 and \
                 not getattr(self, "_settled", False):
             self._settled = True

@@ -528,6 +528,7 @@ def main(argv: list[str] | None = None) -> int:
                 mod_bridge.downloaded.emit(found)
         threading.Thread(target=work, daemon=True, name="capri-mod-updates").start()
     QTimer.singleShot(45_000, update_mods)
+    companion.drone_window.style_settings = settings               # (2.6.1) and the drone's
     companion.character.style_settings = settings                 # (2.6) Settings -> Styles: her effects' switches
     companion.character.set_body_look(settings.body_style)       # full colour / neon
     companion.character.glitch_every = settings.glitches          # random glitches (off unless you turn them on)

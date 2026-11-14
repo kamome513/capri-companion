@@ -23,7 +23,7 @@ from PySide6.QtCore import QObject, QPointF, QRect, QRectF, QSizeF, QTimer
 from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPen, QRadialGradient
 from PySide6.QtCore import Qt
 
-from . import lightning
+from . import fx, lightning
 from .overlay_window import OverlayWindow
 from .rig import REACH_DEGREES, SHOULDER, Pose, Rig
 
@@ -83,7 +83,7 @@ class VisitFX(OverlayWindow):
         paint_cosmetics(q, self.rig, anchor, self.fh, self.pose, "front")
         q.resetTransform()
         q.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-        q.fillRect(img.rect(), RED)
+        q.fillRect(img.rect(), fx.her_red())                      # her skin's colour (2.6.1)
         q.end()
         self.ghosts.append((now, QRectF(self.feet - anchor, QSizeF(w, h)), img))
         del self.ghosts[:-8]
@@ -110,12 +110,13 @@ class VisitFX(OverlayWindow):
                 p.drawImage(at.translated(-o + QPointF(self._rng.uniform(-3, 3), 0)), img)
         p.setOpacity(1.0)
         lightning.crackle(p, [(t, pt - o) for t, pt in self.trail], now, TRAIL,
-                          [self.fh * f for f in (0.85, 0.6, 0.35, 0.1)], self._rng, arcs=7)
+                          [self.fh * f for f in (0.85, 0.6, 0.35, 0.1)], self._rng, arcs=7, colour=fx.her_red())
         for t, pt in self.bursts:                                       # red flash where she lands / leaves
             age = (now - t) / 0.35
             if 0 <= age < 1:
                 g = QRadialGradient(pt - o, 90)
-                g.setColorAt(0, QColor(RED.red(), RED.green(), RED.blue(), int(170 * (1 - age))))
+                red = fx.her_red()
+                g.setColorAt(0, QColor(red.red(), red.green(), red.blue(), int(170 * (1 - age))))
                 g.setColorAt(1, QColor(0, 0, 0, 0))
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(g)
@@ -131,7 +132,8 @@ class VisitFX(OverlayWindow):
             if 0 <= k < 1:
                 center = target.center() - o
                 strength = (1 - k) * self._rng.uniform(0.75, 1.0)
-                lightning.draw(p, lightning.bolt(hand - o, center, self._rng, roughness=0.22, depth=5), strength, 1.3)
+                lightning.draw(p, lightning.bolt(hand - o, center, self._rng, roughness=0.22, depth=5), strength, 1.3,
+                               colour=fx.her_red())
                 if k * ZAP >= IMPACT:                                   # shock ring + crackle on the target
                     hit = 1 - (k * ZAP - IMPACT) / (ZAP - IMPACT)
                     r = 10 + 34 * (1 - hit)
@@ -140,7 +142,8 @@ class VisitFX(OverlayWindow):
                     p.drawEllipse(center, target.width() / 2 + r, target.height() / 2 + r)
                     for _ in range(3):
                         end = center + QPointF(self._rng.uniform(-40, 40), self._rng.uniform(-40, 40))
-                        lightning.draw(p, lightning.bolt(center, end, self._rng, roughness=0.3, depth=3), hit, 0.7)
+                        lightning.draw(p, lightning.bolt(center, end, self._rng, roughness=0.3, depth=3), hit, 0.7,
+                                       colour=fx.her_red())
 
 
 class _Mirror(OverlayWindow):

@@ -147,11 +147,12 @@ class FlingFX(OverlayWindow):
 
     def tinted(self, colour: str) -> QImage:
         """Her silhouette in one colour, for this pose (cached; re-made only when the pose really changes)."""
-        key = (round(self.pose.squat, 1), round(self.pose.sweep, 1), round(self.pose.blink, 1))
+        key = (round(self.pose.squat, 1), round(self.pose.sweep, 1), round(self.pose.blink, 1),
+               fx.her_red().rgb(), fx.her_cyan().rgb())                  # a new skin: new colours
         if key != self._tint_key:
             self._tints, self._tint_key = {}, key
         if colour not in self._tints:
-            tint = {"red": RED, "cyan": CYAN, "white": WHITE}[colour]
+            tint = {"red": fx.her_red(), "cyan": fx.her_cyan(), "white": WHITE}[colour]
             self._tints[colour] = fx.render(self.rig, self.fh, self.pose, 0.5, tint, hair=False)
         return self._tints[colour]
 
@@ -178,7 +179,7 @@ class FlingFX(OverlayWindow):
         p.translate(-QPointF(self.geometry().topLeft()) + self.shake)    # screen coordinates (+ the shake)
         now = time.monotonic()
         self.effects.paint_under(p, now)
-        for g in self.ghosts:                                             # red afterimages
+        for g in self.ghosts:                                             # afterimages (in her skin's colour)
             age = (now - g.born) / 0.28
             if age < 1:
                 self._sprite(p, g.image, g.centre, g.angle, (1.0, 1.0), 0.5, 0.42 * (1 - age) ** 1.5)
@@ -237,7 +238,7 @@ class FlingFX(OverlayWindow):
             y = centre.y() + self._rng.uniform(-0.45, 0.45) * self.fh
             w = self.fh * self._rng.uniform(0.25, 0.6)
             x = centre.x() - w / 2 + self._rng.uniform(-0.15, 0.15) * self.fh
-            colour = self._rng.choice((RED, CYAN, GREEN))
+            colour = self._rng.choice((fx.her_red(), fx.her_cyan(), GREEN))
             p.setBrush(QColor(colour.red(), colour.green(), colour.blue(), int(150 * self.glitch)))
             p.drawRect(QRectF(x, y, w, self._rng.uniform(2, 6)))
 
@@ -251,7 +252,7 @@ class FlingFX(OverlayWindow):
             t = now * 4.6 + i * math.tau / 3
             pos = head + QPointF(math.cos(t) * rx, math.sin(t) * ry - self.fh * 0.07)
             r = self.fh * 0.032 * (0.85 + 0.3 * math.sin(now * 9 + i))
-            colour = QColor((QColor(255, 230, 80), GREEN, CYAN)[i])
+            colour = QColor((QColor(255, 230, 80), GREEN, fx.her_cyan())[i])
             colour.setAlphaF(min(1.0, self.stars))
             glow = QRadialGradient(pos, r * 2.6)
             glow.setColorAt(0, QColor(colour.red(), colour.green(), colour.blue(), int(110 * self.stars)))
@@ -346,7 +347,7 @@ class ThrowShow(QObject):
         self._last = time.monotonic()
         self._timer.start()
         f.effects.sparks(f.body.centre + QPointF(0, fh * 0.45), -math.pi / 2, 1.2, 10, (120, 420), time.monotonic(),
-                         colours=(RED, CYAN), life=(0.2, 0.4))
+                         colours=(fx.her_red(), fx.her_cyan()), life=(0.2, 0.4))
         return True
 
     def _set(self, state: str) -> None:
@@ -459,7 +460,8 @@ class ThrowShow(QObject):
                 self._squash_at = now
                 f.effects.dust(QPointF(b.centre.x(), self._floor()), now, f.fh, 4)
                 if normal_speed > 600:
-                    f.effects.ring(QPointF(b.centre.x(), self._floor()), now, f.fh * 0.35, CYAN, 0.35, flat=0.28,
+                    f.effects.ring(QPointF(b.centre.x(), self._floor()), now, f.fh * 0.35, fx.her_cyan(), 0.35,
+                                   flat=0.28,
                                    width=2.5)
                     self._shake(now, f.fh * 0.012)
             else:
@@ -516,8 +518,8 @@ class ThrowShow(QObject):
         e.shards(at, out, int(8 + 10 * strength), now, f.fh)
         e.burst(at, normal, now, f.fh * (0.6 + 0.5 * strength))            # overload: arcs, tear, impact lines
         flat = 0.3 if wall in ("top", "bottom") else 3.0
-        e.ring(at, now, f.fh * (0.55 + 0.4 * strength), CYAN, 0.42, flat=flat, width=4)
-        e.ring(at, now, f.fh * (0.35 + 0.3 * strength), RED, 0.32, flat=flat, width=3)
+        e.ring(at, now, f.fh * (0.55 + 0.4 * strength), fx.her_cyan(), 0.42, flat=flat, width=4)
+        e.ring(at, now, f.fh * (0.35 + 0.3 * strength), fx.her_red(), 0.32, flat=flat, width=3)
         e.dust(at, now, f.fh, 5)
         f.glitch, f.stars, f.impact, f.stretch = 1.0, 1.0, 1.0, 0.0
         f.ghosts = []

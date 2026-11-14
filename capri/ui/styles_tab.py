@@ -3,7 +3,7 @@ puts it on her (with a short shimmer as she changes), Default Capri takes it off
 to show (particles, aura and glow, hair, materials, the now-and-then moments, trails) and the quality.
 
 A style is a skin mod with effects (capri/ui/style_fx.py), so styles also show up under Mods - and your own style
-mods appear here too."""
+mods appear here too. Skins that only change her colours are listed under "Colours"."""
 
 from __future__ import annotations
 
@@ -19,7 +19,8 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel
 
 from ..mods.store import preview_image
 
-THEMES = ("Elemental", "Digital", "Artistic", "Experimental", "Signature")
+THEMES = ("Elemental", "Digital", "Artistic", "Experimental", "Signature", "Colours")
+PLAIN = "Colours"                                  # skins that only change her colours (no effects)
 TOGGLES = (("style_particles", "Particles"), ("style_aura", "Aura, outline and eye glow"),
            ("style_hair", "Hair effects"), ("style_materials", "Materials"),
            ("style_events", "Special moments"), ("style_motion", "Trails when she moves"))
@@ -122,15 +123,15 @@ class StylesTab(QWidget):
 
     # -- the list -----------------------------------------------------------------------------------------------------
     def styles(self) -> list:
-        """Every style: the ones that come with her and any style mods you've installed."""
+        """Every style and colour skin: the ones that come with her and any you've installed."""
         out, seen = [], set()
         for listing in self.store.builtin():
             data = self._manifest(listing)
-            if listing.type == "skin" and data.get("style"):
+            if listing.type == "skin":
                 out.append(listing)
                 seen.add(listing.id)
         for mod in self.manager.installed():
-            if mod.id not in seen and mod.manifest.type == "skin" and mod.manifest.data.get("style"):
+            if mod.id not in seen and mod.manifest.type == "skin":
                 self._data[mod.id] = mod.manifest.data
                 out.append(mod)
         return out
@@ -153,7 +154,7 @@ class StylesTab(QWidget):
         self.list.clear()
         for s in self.styles():
             data = self._data.get(s.id, {})
-            theme = (data.get("style") or {}).get("theme", "")
+            theme = self._theme(data)
             if want and theme != want:
                 continue
             name = data.get("name", s.id)
@@ -164,6 +165,11 @@ class StylesTab(QWidget):
         if self.list.count():
             self.list.setCurrentRow(0)
         self._show()
+
+    @staticmethod
+    def _theme(data: dict) -> str:
+        style = data.get("style")
+        return (style or {}).get("theme", "") if style else PLAIN
 
     def _pixmap(self, s, size: int) -> QPixmap:
         try:
@@ -198,7 +204,8 @@ class StylesTab(QWidget):
         data = self._data.get(s.id, {})
         self.preview.setPixmap(self._pixmap(s, 256))
         self.name.setText(data.get("name", s.id))
-        self.theme_label.setText((data.get("style") or {}).get("theme", "") + " style")
+        theme = self._theme(data)
+        self.theme_label.setText("Colours only (no effects)" if theme == PLAIN else theme + " style")
         self.description.setText(data.get("description", ""))
         for col in list((data.get("palette") or {}).values())[:5]:
             chip = QLabel()

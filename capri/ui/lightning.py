@@ -49,8 +49,10 @@ def bolt(start: QPointF, end: QPointF, rng: random.Random, roughness: float = 0.
     return [main] + paths
 
 
-def draw(p: QPainter, paths: list[list[QPointF]], strength: float = 1.0, width: float = 1.0) -> None:
-    """Glow, body and core for a bolt (branches thinner). strength 0..1 fades it."""
+def draw(p: QPainter, paths: list[list[QPointF]], strength: float = 1.0, width: float = 1.0,
+         colour: QColor | None = None) -> None:
+    """Glow, body and core for a bolt (branches thinner). strength 0..1 fades it. colour: the bolt's body colour
+    (a skin's colour; her red if not given)."""
     if strength <= 0 or not paths:
         return
     main = QPainterPath()
@@ -63,7 +65,8 @@ def draw(p: QPainter, paths: list[list[QPointF]], strength: float = 1.0, width: 
     p.save()
     p.setBrush(Qt.BrushStyle.NoBrush)
     for shape, scale in ((main, 1.0), (side, 0.55)):
-        for color, w, alpha, smooth in ((EDGE, 11, 50, False), (RED, 5.5, 190, False), (HOT, 1.8, 255, True)):
+        body = colour if colour is not None else RED
+        for color, w, alpha, smooth in ((EDGE, 11, 50, False), (body, 5.5, 190, False), (HOT, 1.8, 255, True)):
             c = QColor(color)
             c.setAlpha(int(alpha * max(0.0, min(1.0, strength))))
             p.setRenderHint(QPainter.RenderHint.Antialiasing, smooth)
@@ -74,7 +77,7 @@ def draw(p: QPainter, paths: list[list[QPointF]], strength: float = 1.0, width: 
 
 
 def crackle(p: QPainter, trail: list[tuple[float, QPointF]], now: float, life: float, heights: list[float],
-            rng: random.Random, arcs: int = 6) -> None:
+            rng: random.Random, arcs: int = 6, colour: QColor | None = None) -> None:
     """Lightning crackling along the path she just took: short branching arcs between
     nearby points of her trail, at body heights, flickering and fading with age."""
     live = [(t, pt) for t, pt in trail if now - t < life]
@@ -91,4 +94,4 @@ def crackle(p: QPainter, trail: list[tuple[float, QPointF]], now: float, life: f
         start = a - QPointF(rng.uniform(-14, 14), up_a)
         end = b - QPointF(rng.uniform(-14, 14), up_b)
         draw(p, bolt(start, end, rng, roughness=0.28, depth=4, branch=0.4), (1 - age) * rng.uniform(0.7, 1.0),
-             width=0.9 + 0.4 * (1 - age))
+             width=0.9 + 0.4 * (1 - age), colour=colour)
