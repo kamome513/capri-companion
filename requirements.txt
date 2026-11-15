@@ -1,5 +1,6 @@
 PySide6-Essentials>=6.6,<7
-vosk>=0.3.45
+vosk>=0.3.45; sys_platform != "darwin"
+vosk>=0.3.42; sys_platform == "darwin"       # (the Mac builds stop at 0.3.44 - same API)
 sounddevice>=0.4.6
 psutil>=5.9
 numpy>=1.26

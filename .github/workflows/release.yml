@@ -287,3 +287,11 @@ jobs:
             '.mac = {file: $file, size: $size, sha256: $sha}' latest/latest.json > dist/latest.json
           cat dist/latest.json
           gh release upload "v$v" "$f" dist/latest.json --clobber
+
+      - name: Release notes (just this update)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          gh release view "v$v" >/dev/null 2>&1 && gh release edit "v$v" --notes-file packaging/release_notes.md || true
