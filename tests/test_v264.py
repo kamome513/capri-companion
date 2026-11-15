@@ -159,3 +159,66 @@ def test_mac_update_unzips_after_she_closes(tmp_path, monkeypatch):
 
 def test_updates_are_checked_often():
     assert updater.CHECK_EVERY <= 6 * 3600
+
+
+def test_update_not_built_for_this_computer_yet_never_opens_github():
+    early = updater.Update("9.9.9", "", "", 0)                 # out, but no file for this system yet
+    later = updater.Update("9.9.9", updater.DOWNLOADS + "v/Capri-macOS.zip", "Capri-macOS.zip", 5)
+    answers = [early, early, later]
+
+    def download(u, progress=None):
+        state["ready"] = ("9.9.9", Path("Capri-macOS.zip"))
+        return Path("Capri-macOS.zip")
+    opened = []
+    m, calls, state = _manager(check=lambda: answers.pop(0), download=download, open_page=opened.append)
+    m.check_now()
+    assert "still being made" in m.status and opened == []
+    m.menu_clicked()                                            # you click Update: she looks again (still not there)
+    assert opened == [] and "still being made" in m.status
+    m.menu_clicked()                                            # now it's built: downloads and installs
+    assert opened == [] and calls["installed"] == [Path("Capri-macOS.zip")]
+
+
+def test_later_hits_leave_smaller_cracks_in_her_vibe():
+    from capri.mods.store import Store
+    store = Store(lambda: "", folder=ROOT / "assets" / "mods")
+    m = ModManager(Path(tempfile.mkdtemp()))
+    m.install_bytes(store.download({x.id: x for x in store.builtin()}["sakura"]))
+    effects.reload(m)
+    c, show, spawned = _show()
+    assert show.throw(QPointF(3000, -200))
+    now = time.monotonic()
+    show._start_slam("right", now, 2600)                     # first hit: the full impact
+    show._start_slam("left", now + 0.5, 2600)                # later: a smaller crack, sakura's own colours
+    assert len(spawned) == 2
+    later = spawned[1][2]
+    assert later["burst"] == [] and later["crack"]["glow"] == effects.EFFECTS.style["impact"]["crack"]["glow"]
+    show._timer.stop()
+
+
+def test_slam_effects_take_her_vibes_colours():
+    from PySide6.QtGui import QColor
+    from capri.mods.store import Store
+    from capri.ui import fx
+    store = Store(lambda: "", folder=ROOT / "assets" / "mods")
+    m = ModManager(Path(tempfile.mkdtemp()))
+    m.install_bytes(store.download({x.id: x for x in store.builtin()}["stormborn"]))
+    effects.reload(m)
+    e = fx.Effects()
+    e.sparks(QPointF(), 0.0, 1.0, 40, (100, 200), 0.0)
+    e.ring(QPointF(), 0.0, 10)
+    hair = QColor(effects.EFFECTS.palette["hair"])
+    assert any(p.colour == hair for p in e.particles) and not any(p.colour == fx.RED for p in e.particles)
+    assert e.rings[0].colour != fx.CYAN
+
+
+def test_impact_starts_with_its_first_frame_and_windows_are_ready_early():
+    from capri.ui.impact import DEFAULT_IMPACT, Impacts
+    imps = Impacts()
+    imps.prewarm()
+    spare = imps._spare
+    assert spare is not None
+    w = imps.spawn(QPointF(400, 300), QPointF(1, 0), DEFAULT_IMPACT, 250.0)
+    assert w is spare and imps._spare is None                  # the ready-made window was used
+    w.repaint()
+    assert w._started and w.impact.alive(time.monotonic())     # its clock starts when it's first drawn

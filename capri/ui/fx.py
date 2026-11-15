@@ -39,6 +39,11 @@ def her_red() -> QColor:
     return mod_colour("hair", RED)
 
 
+def her_green() -> QColor:
+    """Her third effect colour: a skin's accent, else her green."""
+    return mod_colour("accent", GREEN)
+
+
 def her_cyan() -> QColor:
     """Her second effect colour: a skin's eye colour (then accent), else cyan."""
     eyes = mod_colour("eyes", CYAN)
@@ -189,9 +194,10 @@ class Effects:
 
     # -- making them -------------------------------------------------------------------------------------------
     def sparks(self, at: QPointF, direction: float, spread: float, count: int, speed: tuple[float, float],
-               now: float, colours=(RED, RED, WHITE, CYAN), life=(0.25, 0.6), size=(1.8, 3.2), kind="spark",
+               now: float, colours=None, life=(0.25, 0.6), size=(1.8, 3.2), kind="spark",
                gravity: float = 0.6) -> None:
         r = self.rng
+        colours = colours or (her_red(), her_red(), WHITE, her_cyan())     # (2.6.4) her vibe's colours
         for _ in range(count):
             a = direction + r.uniform(-spread, spread)
             v = r.uniform(*speed)
@@ -207,15 +213,16 @@ class Effects:
             v = r.uniform(180, 650)
             s = scale * r.uniform(0.02, 0.05)
             shape = [QPointF(r.uniform(-s, s), r.uniform(-s, s)) for _ in range(3)]
-            colour = r.choice((QColor(30, 22, 40), QColor(60, 40, 70), QColor(CYAN), QColor(RED)))
+            colour = r.choice((QColor(30, 22, 40), QColor(60, 40, 70), QColor(her_cyan()), QColor(her_red())))
             self.particles.append(Particle(QPointF(at), QPointF(math.cos(a) * v, math.sin(a) * v - 120), now,
                                            r.uniform(0.7, 1.3), colour, s, "shard", r.uniform(-900, 900),
                                            r.uniform(0, 360), 1.0, shape))
 
-    def motes(self, around: QPointF, radius: float, count: int, now: float, inward: bool, colours=(CYAN, WHITE, RED),
+    def motes(self, around: QPointF, radius: float, count: int, now: float, inward: bool, colours=None,
               life=(0.3, 0.6)) -> None:
         """Glowing specks gathering in (inward) or flying off (outward) - for the teleport."""
         r = self.rng
+        colours = colours or (her_cyan(), WHITE, her_red())
         for _ in range(count):
             a = r.uniform(0, math.tau)
             d = r.uniform(0.4, 1.0) * radius
@@ -225,9 +232,9 @@ class Effects:
             self.particles.append(Particle(start if inward else QPointF(around + (start - around) * 0.25), vel, now,
                                            lf, QColor(r.choice(colours)), r.uniform(1.5, 3.2), "mote", gravity=0.0))
 
-    def ring(self, at: QPointF, now: float, radius: float, colour: QColor = CYAN, life: float = 0.45,
+    def ring(self, at: QPointF, now: float, radius: float, colour: QColor | None = None, life: float = 0.45,
              flat: float = 1.0, width: float = 4.0) -> None:
-        self.rings.append(Ring(QPointF(at), now, life, radius, QColor(colour), flat, width))
+        self.rings.append(Ring(QPointF(at), now, life, radius, QColor(colour or her_cyan()), flat, width))
 
     def flash(self, at: QPointF, now: float, radius: float, life: float = 0.2) -> None:
         self.flashes.append((now, QPointF(at), radius, life))
@@ -260,13 +267,13 @@ class Effects:
             a = out + r.uniform(-1.3, 1.3)
             v = r.uniform(200, 900)
             self.particles.append(Particle(QPointF(at), QPointF(math.cos(a) * v, math.sin(a) * v - 140), now,
-                                           r.uniform(0.5, 1.0), QColor(r.choice((RED, CYAN, WHITE, GREEN))),
+                                           r.uniform(0.5, 1.0), QColor(r.choice((her_red(), her_cyan(), WHITE, her_green()))),
                                            size * r.uniform(0.018, 0.045), "block", gravity=0.45))
         for _ in range(r.randint(5, 8)):                       # bits of error text, glitching away
             a = out + r.uniform(-1.0, 1.0)
             v = r.uniform(120, 420)
             p = Particle(QPointF(at), QPointF(math.cos(a) * v, math.sin(a) * v - 60), now, r.uniform(0.6, 1.0),
-                         QColor(r.choice((RED, CYAN, GREEN))), max(11.0, size * r.uniform(0.08, 0.12)), "glyph",
+                         QColor(r.choice((her_red(), her_cyan(), her_green()))), max(11.0, size * r.uniform(0.08, 0.12)), "glyph",
                          gravity=0.05)
             p.shape = [r.choice(GLYPHS)]
             self.particles.append(p)
@@ -333,7 +340,7 @@ class Effects:
                     y = b.at.y() + math.sin(out) * s * rng.uniform(0, 0.7)
                     x = b.at.x() + rng.gauss(0, s * 0.5) - length / 2
                 split = s * 0.045 * (1 + fade)
-                for colour, dx, alpha in ((RED, -split, 190), (CYAN, split, 170), (WHITE, 0, 45)):
+                for colour, dx, alpha in ((her_red(), -split, 190), (her_cyan(), split, 170), (WHITE, 0, 45)):
                     p.setBrush(QColor(colour.red(), colour.green(), colour.blue(), int(alpha * fade)))
                     p.drawRect(QRectF(x + dx, y, length, h))
                 if rng.random() < 0.5:                         # noise along the band: dead pixels in a row
@@ -352,7 +359,7 @@ class Effects:
                 tip = b.at + QPointF(math.cos(a), math.sin(a)) * outer
                 l = b.at + QPointF(math.cos(a - wide), math.sin(a - wide)) * inner
                 rr = b.at + QPointF(math.cos(a + wide), math.sin(a + wide)) * inner
-                colour = WHITE if k % 3 else RED
+                colour = WHITE if k % 3 else her_red()
                 p.setBrush(QColor(colour.red(), colour.green(), colour.blue(), int(220 * fade)))
                 p.drawPolygon(QPolygonF([l, tip, rr]))
 
@@ -385,7 +392,7 @@ class Effects:
                     branch.append(QPointF(bp))
                 bolts.append(branch)
         cyan = rng.random() < 0.3
-        glow = CYAN if cyan else RED
+        glow = her_cyan() if cyan else her_red()
         for width, colour, alpha in ((10.0, glow, 60), (4.0, glow, 210), (1.6, WHITE, 255)):
             p.setPen(QPen(QColor(colour.red(), colour.green(), colour.blue(), int(alpha * (0.4 + 0.6 * fade))),
                           width * (0.6 + 0.4 * fade), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
@@ -476,7 +483,7 @@ class Effects:
                 font.setBold(True)
                 p.setFont(font)
                 text = pt.shape[0] if pt.shape else "01"
-                for colour, dx in ((RED, -2.0), (CYAN, 2.0), (WHITE, 0.0)):
+                for colour, dx in ((her_red(), -2.0), (her_cyan(), 2.0), (WHITE, 0.0)):
                     k = QColor(colour if colour is not WHITE else c)
                     k.setAlphaF(max(0.0, (1 - age)) * (0.55 if colour is not WHITE else 1.0))
                     p.setPen(k)
@@ -487,7 +494,7 @@ class Effects:
                 p.save()
                 p.translate(pos)
                 p.rotate(pt.angle + pt.spin * (now - pt.born))
-                p.setPen(QPen(QColor(CYAN.red(), CYAN.green(), CYAN.blue(), int(200 * (1 - age))), 1.2))
+                p.setPen(QPen(QColor(her_cyan().red(), her_cyan().green(), her_cyan().blue(), int(200 * (1 - age))), 1.2))
                 p.setBrush(c)
                 p.drawPolygon(QPolygonF(pt.shape))
                 p.restore()
@@ -510,7 +517,7 @@ class Effects:
             r = radius * (0.6 + 0.5 * age)
             g = QRadialGradient(at, r)
             g.setColorAt(0, QColor(255, 255, 255, int(240 * (1 - age))))
-            g.setColorAt(0.35, QColor(RED.red(), RED.green(), RED.blue(), int(150 * (1 - age))))
+            g.setColorAt(0.35, QColor(her_red().red(), her_red().green(), her_red().blue(), int(150 * (1 - age))))
             g.setColorAt(1, QColor(0, 0, 0, 0))
             p.setBrush(g)
             p.drawEllipse(at, r, r)

@@ -427,5 +427,7 @@ def test_appimage_adds_itself_to_the_apps_menu(tmp_path):
 
 def test_release_builds_the_appimage():
     wf = (Path(__file__).resolve().parent.parent / ".github" / "workflows" / "release.yml").read_text()
-    assert "build_appimage.sh" in wf and "Capri-x86_64.AppImage" in wf and ".linux = {file" in wf
+    assert "build_appimage.sh" in wf and "Capri-x86_64.AppImage" in wf and ".linux = $linux[0]" in wf
+    # (2.6.4) the release goes up once, after every build - with all three systems' files on it
+    assert "needs: [release, linux, mac]" in wf and "files/mac/Capri-macOS.zip" in wf
     assert "xvfb-run" in wf                                             # she has to start before it ships

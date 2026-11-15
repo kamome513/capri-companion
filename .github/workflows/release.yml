@@ -1,6 +1,8 @@
-# Builds Capri.exe (the one-file app) and Capri-Setup-<version>.exe on GitHub's own Windows machine and publishes it as a release,
-# whenever the version in capri/__init__.py changes on main (or when started by hand: Actions tab ->
-# "Build and release" -> Run workflow). Capri's auto-update then offers it to everyone.
+# Builds Capri for Windows (Capri.exe + Capri-Setup-<version>.exe), Linux (the AppImage) and Mac (Capri-macOS.zip)
+# side by side on GitHub's own machines, whenever the version in capri/__init__.py changes on main (or when started
+# by hand: Actions tab -> "Build and release" -> Run workflow). (2.6.4) Only when all three are built and checked is
+# the release published - with every download already on it - so nobody's update button finds a release without
+# their file. Capri's auto-update then offers it to everyone.
 name: Build and release
 
 on:
@@ -14,7 +16,11 @@ permissions:
 
 jobs:
   release:
+    # Windows
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      skip: ${{ steps.exists.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
 
@@ -122,20 +128,19 @@ jobs:
             ConvertTo-Json | Set-Content -Encoding utf8NoBOM dist\latest.json
           Get-Content dist\latest.json
 
-      - name: Publish the release
+      - name: Keep the Windows files for the release
         if: steps.exists.outputs.skip != 'true'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          v="${{ steps.v.outputs.version }}"
-          gh release create "v$v" dist/portable/Capri.exe "dist/Capri-Setup-$v.exe" dist/latest.json --target "$GITHUB_SHA" \
-            --title "Capri $v" --notes-file packaging/release_notes.md
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/portable/Capri.exe
+            dist/Capri-Setup-${{ steps.v.outputs.version }}.exe
+            dist/latest.json
+          retention-days: 3
 
   linux:
     # Linux: the AppImage (one file, runs on most distros: Ubuntu 22.04+, Fedora, Arch, Mint, Debian 12...)
-    needs: release
-    if: always()
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -150,10 +155,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${{ steps.v.outputs.version }}"
-          if ! gh release view "v$v" >/dev/null 2>&1; then
-            echo "No release v$v yet (the Windows build makes it) - nothing to add to."; echo "skip=true" >> "$GITHUB_OUTPUT"
-          elif gh release view "v$v" --json assets -q '.assets[].name' | grep -qx "Capri-x86_64.AppImage"; then
-            echo "The AppImage is already there."; echo "skip=true" >> "$GITHUB_OUTPUT"
+          if gh release view "v$v" >/dev/null 2>&1; then
+            echo "Capri $v is already released - nothing to do."; echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-python@v5
@@ -192,26 +195,27 @@ jobs:
         if: steps.exists.outputs.skip != 'true'
         run: bash packaging/build_appimage.sh
 
-      - name: Add it to the release (and to latest.json for the updater)
+      - name: Describe it for the updater
         if: steps.exists.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          v="${{ steps.v.outputs.version }}"
           f=dist/Capri-x86_64.AppImage
           size=$(stat -c %s "$f"); sha=$(sha256sum "$f" | cut -d' ' -f1)
-          mkdir -p latest
-          gh release download "v$v" -p latest.json -D latest --clobber || echo "{\"version\": \"$v\"}" > latest/latest.json
-          jq --arg file "Capri-x86_64.AppImage" --argjson size "$size" --arg sha "$sha" \
-            '.linux = {file: $file, size: $size, sha256: $sha}' latest/latest.json > dist/latest.json
-          cat dist/latest.json
-          gh release upload "v$v" "$f" dist/latest.json --clobber
+          jq -n --arg file "Capri-x86_64.AppImage" --argjson size "$size" --arg sha "$sha" \
+            '{file: $file, size: $size, sha256: $sha}' > dist/linux.json
+          cat dist/linux.json
+
+      - name: Keep the Linux files for the release
+        if: steps.exists.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            dist/Capri-x86_64.AppImage
+            dist/linux.json
+          retention-days: 3
 
   mac:
-    # macOS (2.6.3): Capri.app for Apple-silicon Macs (M1 and newer), zipped. Runs after Linux so the two don't
-    # write latest.json at the same time.
-    needs: [release, linux]
-    if: always()
+    # macOS (2.6.3): Capri.app for Apple-silicon Macs, zipped.
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -226,10 +230,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           v="${{ steps.v.outputs.version }}"
-          if ! gh release view "v$v" >/dev/null 2>&1; then
-            echo "No release v$v yet (the Windows build makes it) - nothing to add to."; echo "skip=true" >> "$GITHUB_OUTPUT"
-          elif gh release view "v$v" --json assets -q '.assets[].name' | grep -qx "Capri-macOS.zip"; then
-            echo "The Mac app is already there."; echo "skip=true" >> "$GITHUB_OUTPUT"
+          if gh release view "v$v" >/dev/null 2>&1; then
+            echo "Capri $v is already released - nothing to do."; echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-python@v5
@@ -272,26 +274,49 @@ jobs:
           grep -q "starting" "$log"
           ! grep -q "Traceback" "$log"
 
-      - name: Add it to the release (and to latest.json for the updater)
+      - name: Zip it and describe it for the updater
         if: steps.exists.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          v="${{ steps.v.outputs.version }}"
           ditto -c -k --keepParent dist/Capri.app dist/Capri-macOS.zip
           f=dist/Capri-macOS.zip
           size=$(stat -f %z "$f"); sha=$(shasum -a 256 "$f" | cut -d' ' -f1)
-          mkdir -p latest
-          gh release download "v$v" -p latest.json -D latest --clobber || echo "{\"version\": \"$v\"}" > latest/latest.json
-          jq --arg file "Capri-macOS.zip" --argjson size "$size" --arg sha "$sha" \
-            '.mac = {file: $file, size: $size, sha256: $sha}' latest/latest.json > dist/latest.json
-          cat dist/latest.json
-          gh release upload "v$v" "$f" dist/latest.json --clobber
+          jq -n --arg file "Capri-macOS.zip" --argjson size "$size" --arg sha "$sha" \
+            '{file: $file, size: $size, sha256: $sha}' > dist/mac.json
+          cat dist/mac.json
 
-      - name: Release notes (just this update)
-        if: always()
+      - name: Keep the Mac files for the release
+        if: steps.exists.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: |
+            dist/Capri-macOS.zip
+            dist/mac.json
+          retention-days: 3
+
+  publish:
+    # (2.6.4) All three built and checked: publish the release with every download on it at once.
+    needs: [release, linux, mac]
+    if: needs.release.outputs.skip != 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: files
+
+      - name: One latest.json for every system
+        run: |
+          jq --slurpfile linux files/linux/linux.json --slurpfile mac files/mac/mac.json \
+            '.linux = $linux[0] | .mac = $mac[0]' files/windows/latest.json > latest.json
+          cat latest.json
+
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          v="${{ steps.v.outputs.version }}"
-          gh release view "v$v" >/dev/null 2>&1 && gh release edit "v$v" --notes-file packaging/release_notes.md || true
+          v="${{ needs.release.outputs.version }}"
+          gh release create "v$v" files/windows/portable/Capri.exe "files/windows/Capri-Setup-$v.exe" \
+            files/linux/Capri-x86_64.AppImage files/mac/Capri-macOS.zip latest.json --target "$GITHUB_SHA" \
+            --title "Capri $v" --notes-file packaging/release_notes.md

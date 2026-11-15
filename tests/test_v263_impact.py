@@ -113,15 +113,16 @@ def test_one_impact_per_throw_at_the_first_slam():
     assert show.throw(QPointF(3000, -200))
     now = time.monotonic()
     show._start_slam("right", now, 2600)
-    show._start_slam("right", now + 0.3, 2600)                    # the same throw: no second one
-    assert len(spawned) == 1
+    show._start_slam("right", now + 0.3, 2600)                    # the same throw: no second full impact
+    assert len(spawned) == 2 and spawned[1][2]["burst"] == []     # (2.6.4: just a smaller crack)
+    spawned.pop()
     at, normal = spawned[0][0], spawned[0][1]
     assert normal == QPointF(-1, 0) and abs(at.x() - (show.area.right() + 1)) < 2
     show._timer.stop()
     show.active, c.busy_elsewhere = False, False                 # (she's home again)
     assert show.throw(QPointF(-3000, -200))                       # picked up and thrown again: another
     show._start_slam("left", time.monotonic(), 2600)
-    assert len(spawned) == 2
+    assert len(spawned) == 2 and spawned[1][2]["burst"]          # a full impact again
     show._timer.stop()
 
 

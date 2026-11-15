@@ -346,6 +346,8 @@ class ThrowShow(QObject):
         c.panel.hide()
         self.active, self.slammed, self._said = True, False, False
         self._impacted = False
+        self._later_cracks = 0
+        self.impacts.prewarm()                       # (2.6.4) her impact's window, ready before she hits
         self.walls: list[str] = []
         self._set("fly")
         self._last = time.monotonic()
@@ -353,6 +355,14 @@ class ThrowShow(QObject):
         f.effects.sparks(f.body.centre + QPointF(0, fh * 0.45), -math.pi / 2, 1.2, 10, (120, 420), time.monotonic(),
                          colours=(fx.her_red(), fx.her_cyan()), life=(0.2, 0.4))
         return True
+
+    def _later_crack(self, at: QPointF, normal: QPointF) -> None:
+        spec = self.vibe_impact()
+        if not spec or self._later_cracks >= 3:
+            return
+        self._later_cracks += 1
+        crack = dict(spec.get("crack") or {}, branches=4, length=0.7)
+        self.impacts.spawn(at, normal, {"burst": [], "crack": crack}, self.fx.fh * 0.7, self.reduced_motion())
 
     HIT_SPEED = 260.0                       # (2.6.4) px/s into an edge that counts as hitting it
 
@@ -556,8 +566,11 @@ class ThrowShow(QObject):
         b.spin = 0.0
         out = math.atan2(normal.y(), normal.x())
         e = f.effects
+        later = self._impacted
         vibe = None if self._impacted else self.vibe_impact()
         reduced = self.reduced_motion()
+        if later:                                                           # (2.6.4) hits after the first: a
+            self._later_crack(at, normal)                                   # smaller crack in her vibe's colours
         from .impact import DEFAULT_IMPACT
         if vibe is DEFAULT_IMPACT:                                          # (2.6.4) plain Capri: her own slam as
             self._impacted = True                                           # before, plus her crack where she hit

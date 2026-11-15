@@ -111,7 +111,12 @@ class UpdateManager(QObject):
                 self.changed.emit(self.status)
             return
         self.found = result
-        if not self._frozen() or not result.url:
+        if self._frozen() and not result.url:        # (2.6.4) out, but this computer's version is still being built
+            self._say(f"Capri {result.version} is out - the version for this computer is still being made. "
+                      f"I'll grab it in a few minutes.")
+            QTimer.singleShot(self.NOT_BUILT_RETRY_MS, lambda: self.check_now(quiet=not self._install_after))
+            return
+        if not self._frozen():
             self._say(f"Capri {result.version} is out! Download it from my GitHub page "
                       f"(right-click me, Update to {result.version}).")
             return
@@ -223,12 +228,17 @@ class UpdateManager(QObject):
             return f"Update to Capri {self.found.version}..."
         return "Check for updates"
 
+    NOT_BUILT_RETRY_MS = 4 * 60_000
+
     def menu_clicked(self) -> None:
         ready = self._ready() if self._frozen() else None
         if ready is not None:
             return self.update_now()
-        if self.found is not None and (not self._frozen() or not self.found.url):
+        if self.found is not None and not self._frozen():
             return self._open_page(self.found.page)
+        if self.found is not None and not self.found.url:      # (2.6.4) not built for this computer yet: look
+            self._install_after = True                          # again now, and install once it's there
+            return self.check_now()
         if self.found is not None:                   # (2.6.4) "Update to X": fetch it (with progress) and install
             self._install_after = True
             if not self.busy:

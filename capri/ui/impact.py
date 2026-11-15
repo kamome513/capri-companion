@@ -1130,41 +1130,62 @@ class Impact:
 
 # -- on screen ---------------------------------------------------------------------------------------------------------
 class ImpactWindow(OverlayWindow):
-    """One impact, in its own small click-through window round the hit (so it stays where it happened)."""
+    """One impact, in its own small click-through window round the hit (so it stays where it happened).
 
-    def __init__(self, impact: Impact, screen_at: QPointF, always_on_top: bool = True) -> None:
+    (2.6.4) Windows are made ahead of time (Impacts.prewarm, when a throw starts) and the impact's clock starts
+    with its first drawn frame - so even where making a window takes a moment (a Mac), you see the whole burst."""
+
+    def __init__(self, impact: Impact | None = None, screen_at: QPointF | None = None,
+                 always_on_top: bool = True) -> None:
         super().__init__(always_on_top)
         self.set_click_through(True)
-        self.impact = impact
-        half = int(impact.radius * 1.35) + 8
-        self.setGeometry(QRect(round(screen_at.x() - half), round(screen_at.y() - half), 2 * half, 2 * half))
-        impact.at = QPointF(half, half)
-        impact.dpr = 1.0
+        self.impact: Impact | None = None
+        self._started = False
         self._timer = QTimer(self)
         self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.timeout.connect(self._tick)
+        if impact is not None:
+            self.start(impact, screen_at or QPointF())
+
+    def start(self, impact: Impact, screen_at: QPointF) -> None:
+        self.impact = impact
+        self._started = False
+        half = int(impact.radius * 1.35) + 8
+        self.setGeometry(QRect(round(screen_at.x() - half), round(screen_at.y() - half), 2 * half, 2 * half))
+        impact.at = QPointF(half, half)
+        impact.dpr = self.devicePixelRatioF() if self.windowHandle() is not None else 1.0
         self._timer.start(16)
 
     def showEvent(self, event) -> None:
-        self.impact.dpr = self.devicePixelRatioF()
+        if self.impact is not None:
+            self.impact.dpr = self.devicePixelRatioF()
         super().showEvent(event)
 
     def _tick(self) -> None:
+        if self.impact is None:
+            return
         now = time.monotonic()
-        if not self.impact.alive(now):
+        if self._started and not self.impact.alive(now):
             self._timer.stop()
             self.hide()
             self.deleteLater()
             return
-        want = 16 if self.impact.busy_burst(now) or now - self.impact.born < CRACK_GROW + 0.05 else 33
+        want = 16 if not self._started or self.impact.busy_burst(now) or now - self.impact.born < CRACK_GROW + 0.05 \
+            else 33
         if self._timer.interval() != want:
             self._timer.setInterval(want)                       # smooth for the burst, lighter while it fades
         self.update()
 
     def paintEvent(self, event) -> None:
+        if self.impact is None:
+            return
         p = QPainter(self)
         try:
-            self.impact.paint(p, time.monotonic())
+            now = time.monotonic()
+            if not self._started:                               # the burst starts with what you actually see
+                self._started = True
+                self.impact.born = now
+            self.impact.paint(p, now)
         except Exception:
             import logging
             logging.getLogger("capri").exception("impact: a frame failed to draw")
@@ -1175,11 +1196,21 @@ class ImpactWindow(OverlayWindow):
 class Impacts:
     """Starts vibe impacts. One per throw (the first slam); a few may still be fading at once."""
 
-    MAX = 3
+    MAX = 4
 
     def __init__(self) -> None:
         self.windows: list[ImpactWindow] = []
+        self._spare: ImpactWindow | None = None
         self._seed = random.Random()
+
+    def prewarm(self) -> None:
+        """Make the next impact's window now (a throw just started), so it's ready the moment she hits."""
+        if self._spare is None:
+            try:
+                self._spare = ImpactWindow()
+                self._spare.winId()                             # the real window, made now - not at the hit
+            except Exception:
+                self._spare = None
 
     def spawn(self, screen_at: QPointF, normal: QPointF, spec: dict, height: float, reduced: bool = False):
         if not spec or validate(spec):
@@ -1190,7 +1221,8 @@ class Impacts:
             old.hide()
             old.deleteLater()
         imp = Impact(QPointF(), normal, spec, height, self._seed.randrange(1, 10 ** 6), reduced)
-        w = ImpactWindow(imp, screen_at)
+        w, self._spare = (self._spare, None) if self._spare is not None else (ImpactWindow(), None)
+        w.start(imp, screen_at)
         w.show()
         w.raise_()
         self.windows.append(w)
