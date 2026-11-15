@@ -47,7 +47,8 @@ def steam_root() -> Path | None:
         except OSError:
             pass
     for guess in (r"%ProgramFiles(x86)%\Steam", r"%ProgramFiles%\Steam", "~/.steam/steam", "~/.local/share/Steam",
-                  "~/.var/app/com.valvesoftware.Steam/.local/share/Steam", "~/snap/steam/common/.local/share/Steam"):
+                  "~/.var/app/com.valvesoftware.Steam/.local/share/Steam", "~/snap/steam/common/.local/share/Steam",
+                  "~/Library/Application Support/Steam"):
         path = Path(os.path.expanduser(os.path.expandvars(guess)))
         if path.is_dir():
             return path
@@ -142,7 +143,15 @@ def linux_shortcuts(dirs: list[Path] | None = None) -> list[Shortcut]:
     return [Shortcut(e.name, e.path, e.program(), e.process_names()) for e in installed_entries(dirs)]
 
 
+def mac_shortcuts(dirs: list[Path] | None = None) -> list[Shortcut]:
+    """(2.6.3) Every app in your Mac's Applications folders: opened as the .app, known by its process name."""
+    from ..mac.apps import installed_apps as mac_apps
+    return [Shortcut(a.name, a.path, a.path, (a.executable.lower(),)) for a in mac_apps(dirs)]
+
+
 def shortcuts(dirs: list[Path] | None = None) -> list[Shortcut]:
+    if sys.platform == "darwin" and dirs is None:
+        return mac_shortcuts()
     if sys.platform.startswith("linux") and dirs is None:
         return linux_shortcuts()
     found: dict[str, Shortcut] = {}

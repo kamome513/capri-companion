@@ -206,3 +206,84 @@ jobs:
             '.linux = {file: $file, size: $size, sha256: $sha}' latest/latest.json > dist/latest.json
           cat dist/latest.json
           gh release upload "v$v" "$f" dist/latest.json --clobber
+
+  mac:
+    # macOS (2.6.3): Capri.app for Apple-silicon Macs (M1 and newer), zipped. Runs after Linux so the two don't
+    # write latest.json at the same time.
+    needs: [release, linux]
+    if: always()
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version
+        id: v
+        run: echo "version=$(sed -nE 's/__version__ = "(.+)"/\1/p' capri/__init__.py)" >> "$GITHUB_OUTPUT"
+
+      - name: Already built?
+        id: exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          if ! gh release view "v$v" >/dev/null 2>&1; then
+            echo "No release v$v yet (the Windows build makes it) - nothing to add to."; echo "skip=true" >> "$GITHUB_OUTPUT"
+          elif gh release view "v$v" --json assets -q '.assets[].name' | grep -qx "Capri-macOS.zip"; then
+            echo "The Mac app is already there."; echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.exists.outputs.skip != 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install what the build needs
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          brew install portaudio jq || true
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+          python -m pip install -r requirements-voice.txt
+          python -m pip install --no-deps --ignore-requires-python "kokoro-onnx>=0.5,<1"
+          python -m pip install "sherpa-onnx>=1.12" "pyobjc-framework-Quartz>=10" \
+            "pyobjc-framework-ApplicationServices>=10" "pyobjc-framework-Cocoa>=10"
+
+      - name: Make her Mac icon
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          set -e
+          mkdir -p build/capri.iconset
+          for s in 16 32 128 256 512; do
+            sips -z $s $s assets/capri/app_icon.png --out build/capri.iconset/icon_${s}x${s}.png >/dev/null
+            d=$((s * 2)); sips -z $d $d assets/capri/app_icon.png --out build/capri.iconset/icon_${s}x${s}@2x.png >/dev/null
+          done
+          iconutil -c icns build/capri.iconset -o assets/capri/app_icon.icns
+
+      - name: Build Capri.app
+        if: steps.exists.outputs.skip != 'true'
+        run: python -m PyInstaller --noconfirm --clean --distpath dist --workpath build packaging/capri.spec
+
+      - name: Check she starts (20 s)
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          (dist/Capri.app/Contents/MacOS/Capri &) ; sleep 20; pkill -f "Capri.app/Contents/MacOS/Capri" || true
+          log="$HOME/Library/Preferences/Capri/capri.log"
+          cat "$log"
+          grep -q "starting" "$log"
+          ! grep -q "Traceback" "$log"
+
+      - name: Add it to the release (and to latest.json for the updater)
+        if: steps.exists.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ steps.v.outputs.version }}"
+          ditto -c -k --keepParent dist/Capri.app dist/Capri-macOS.zip
+          f=dist/Capri-macOS.zip
+          size=$(stat -f %z "$f"); sha=$(shasum -a 256 "$f" | cut -d' ' -f1)
+          mkdir -p latest
+          gh release download "v$v" -p latest.json -D latest --clobber || echo "{\"version\": \"$v\"}" > latest/latest.json
+          jq --arg file "Capri-macOS.zip" --argjson size "$size" --arg sha "$sha" \
+            '.mac = {file: $file, size: $size, sha256: $sha}' latest/latest.json > dist/latest.json
+          cat dist/latest.json
+          gh release upload "v$v" "$f" dist/latest.json --clobber

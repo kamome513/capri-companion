@@ -302,6 +302,9 @@ class ThrowShow(QObject):
         self._shake_strength = 0.0
         self._squash_at = -1e9              # a floor bounce: a quick squash
         self._slam_speed = 0.0
+        self._impacted = False              # (2.6.3) her vibe's impact: once per throw, at the first slam
+        from .impact import Impacts
+        self.impacts = Impacts()
 
     # -- starting -------------------------------------------------------------------------------------------
     def throw(self, velocity: QPointF) -> bool:
@@ -342,6 +345,7 @@ class ThrowShow(QObject):
         c.character.hide()
         c.panel.hide()
         self.active, self.slammed, self._said = True, False, False
+        self._impacted = False
         self.walls: list[str] = []
         self._set("fly")
         self._last = time.monotonic()
@@ -349,6 +353,24 @@ class ThrowShow(QObject):
         f.effects.sparks(f.body.centre + QPointF(0, fh * 0.45), -math.pi / 2, 1.2, 10, (120, 420), time.monotonic(),
                          colours=(fx.her_red(), fx.her_cyan()), life=(0.2, 0.4))
         return True
+
+    def vibe_impact(self) -> dict | None:
+        """(2.6.3) Her vibe's impact (its style's "impact"), if she's wearing one and its effects are on."""
+        from ..mods.effects import EFFECTS
+        spec = (EFFECTS.style or {}).get("impact")
+        s = getattr(self.companion, "settings", None)
+        if not spec or (s is not None and not getattr(s, "style_effects", True)):
+            return None
+        return spec
+
+    def reduced_motion(self) -> bool:
+        s = getattr(self.companion, "settings", None)
+        if s is not None and getattr(s, "reduce_motion", False):
+            return True
+        if not hasattr(self, "_os_reduced"):
+            from .impact import os_reduce_motion
+            self._os_reduced = os_reduce_motion()
+        return self._os_reduced
 
     def _set(self, state: str) -> None:
         self.state, self._state_at = state, time.monotonic()
@@ -512,19 +534,30 @@ class ThrowShow(QObject):
         b.spin = 0.0
         out = math.atan2(normal.y(), normal.x())
         e = f.effects
-        e.flash(at, now, f.fh * (0.55 + 0.4 * strength), 0.2)
-        e.sparks(at, out, 1.25, int(22 + 26 * strength), (260, 1100 * (0.6 + 0.6 * strength)), now)
-        e.sparks(at, out, 0.5, 8, (700, 1500), now, colours=(WHITE,), life=(0.12, 0.22), size=(2.5, 4))
-        e.shards(at, out, int(8 + 10 * strength), now, f.fh)
-        e.burst(at, normal, now, f.fh * (0.6 + 0.5 * strength))            # overload: arcs, tear, impact lines
-        flat = 0.3 if wall in ("top", "bottom") else 3.0
-        e.ring(at, now, f.fh * (0.55 + 0.4 * strength), fx.her_cyan(), 0.42, flat=flat, width=4)
-        e.ring(at, now, f.fh * (0.35 + 0.3 * strength), fx.her_red(), 0.32, flat=flat, width=3)
-        e.dust(at, now, f.fh, 5)
+        vibe = None if self._impacted else self.vibe_impact()
+        reduced = self.reduced_motion()
+        if vibe is not None:                                                # (2.6.3) her vibe answers the hit
+            self._impacted = True
+            self.impacts.spawn(at, normal, vibe, f.fh, reduced)
+            if not reduced:
+                e.dust(at, now, f.fh, 4)
+        elif reduced:
+            e.flash(at, now, f.fh * 0.5, 0.2)
+        else:
+            e.flash(at, now, f.fh * (0.55 + 0.4 * strength), 0.2)
+            e.sparks(at, out, 1.25, int(22 + 26 * strength), (260, 1100 * (0.6 + 0.6 * strength)), now)
+            e.sparks(at, out, 0.5, 8, (700, 1500), now, colours=(WHITE,), life=(0.12, 0.22), size=(2.5, 4))
+            e.shards(at, out, int(8 + 10 * strength), now, f.fh)
+            e.burst(at, normal, now, f.fh * (0.6 + 0.5 * strength))        # overload: arcs, tear, impact lines
+            flat = 0.3 if wall in ("top", "bottom") else 3.0
+            e.ring(at, now, f.fh * (0.55 + 0.4 * strength), fx.her_cyan(), 0.42, flat=flat, width=4)
+            e.ring(at, now, f.fh * (0.35 + 0.3 * strength), fx.her_red(), 0.32, flat=flat, width=3)
+            e.dust(at, now, f.fh, 5)
         f.glitch, f.stars, f.impact, f.stretch = 1.0, 1.0, 1.0, 0.0
         f.ghosts = []
         f.pose = Pose(squat=0.6, blink=0.9, energy=1.0, t=now * 2.2)
-        self._shake(now, f.fh * (0.03 + 0.05 * strength))
+        if not reduced:
+            self._shake(now, f.fh * (0.03 + 0.05 * strength))
         if not self._said:                                                  # one "ow" per throw, not per bounce
             self.say(self._rng.choice(_ouch()), "angry")
             self._said = True

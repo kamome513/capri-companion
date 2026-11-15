@@ -62,7 +62,8 @@ class PcTab(QWidget):
         self.greet.setChecked(s.greet_on_login)
         self.big = QCheckBox("Big, in the middle of the screen (then she shrinks back to her corner)")
         self.big.setChecked(s.big_greeting)
-        self.start = QCheckBox("Start Capri with Windows" if not autostart.LINUX else "Start Capri when I log in")
+        self.start = QCheckBox("Start Capri when I log in" if autostart.LINUX or autostart.MAC
+                               else "Start Capri with Windows")
         self.start.setEnabled(autostart.SUPPORTED)
         self.start.setChecked(autostart.is_enabled())
         form.addRow(self.greet)

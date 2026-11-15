@@ -20,6 +20,11 @@ def press(name: str) -> None:
     if sys.platform.startswith("linux"):
         from ..linux.desktop import media
         return media(name)                     # playerctl / wpctl / pactl, else the X11 media keys
+    if sys.platform == "darwin":
+        from ..mac.desktop import media
+        for _ in range(VOLUME_STEPS if name in ("volume_up", "volume_down") else 1):
+            media(name)
+        return
     if sys.platform != "win32":
         raise OSError("media keys aren't available on this system")
     import ctypes

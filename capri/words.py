@@ -5,5 +5,6 @@ from __future__ import annotations
 import sys
 
 LINUX = sys.platform.startswith("linux")
-START_MENU = "apps menu" if LINUX else "Start menu"
-FILE_MANAGER = "your file manager" if LINUX else "File Explorer"
+MAC = sys.platform == "darwin"
+START_MENU = "Applications folder" if MAC else "apps menu" if LINUX else "Start menu"
+FILE_MANAGER = "Finder" if MAC else "your file manager" if LINUX else "File Explorer"

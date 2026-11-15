@@ -255,3 +255,28 @@ def test_held_she_swings_round_your_grip_and_stays_under_it():
     assert abs(pivot.x() - w.width() / 2) < 1 and w.sway.held and w._special()
     w.set_held(False)
     assert not w.sway.held
+
+
+def test_her_own_installed_styles_update_with_capri():
+    """(2.6.3) A built-in style installed by an older Capri (the old Thornveil) is brought up to date - its
+    picture AND what she wears - and stays on."""
+    import io
+    import json
+    import zipfile
+    from capri.mods.store import Store, refresh_builtins
+    store = Store(lambda: "", folder=ROOT / "assets" / "mods")
+    m = _style("thornveil")
+    folder = m.get("thornveil").folder
+    old = json.loads((folder / "mod.json").read_text(encoding="utf-8"))
+    old["style"]["hair"]["kind"] = "thorn"                     # as 2.6.0 installed it
+    (folder / "mod.json").write_text(json.dumps(old), encoding="utf-8")
+    assert m.get("thornveil").manifest.data["style"]["hair"]["kind"] == "thorn"
+    assert refresh_builtins(m, store) == ["thornveil"]
+    assert m.get("thornveil").manifest.data["style"]["hair"]["kind"] == "briar" and m.get("thornveil").enabled
+    assert refresh_builtins(m, store) == []                    # up to date: left alone
+    mine = io.BytesIO()                                        # your own mod is never touched
+    with zipfile.ZipFile(mine, "w") as z:
+        z.writestr("mod.json", json.dumps({"id": "sakura", "name": "My Sakura", "version": "9.0.0", "type": "skin",
+                                           "author": "you", "capri": ">=2.4.0", "palette": {"hair": "#00ff00"}}))
+    m.install_bytes(mine.getvalue())
+    assert refresh_builtins(m, store) == [] and m.get("sakura").manifest.author == "you"

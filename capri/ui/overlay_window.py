@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QContextMenuEvent, QMouseEvent
 from PySide6.QtWidgets import QApplication, QWidget
@@ -44,6 +46,12 @@ class OverlayWindow(QWidget):
         self.setAutoFillBackground(False)
         self._press: QPoint | None = None      # global cursor pos at press
         self._dragging = False
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if sys.platform == "darwin" and self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint:
+            from ..mac.quartz import float_everywhere       # (2.6.3) on every Space, over full-screen apps,
+            float_everywhere(self)                          # no window shadow round her see-through window
 
     # -- window flags --------------------------------------------------------
     def _set_flag(self, flag: Qt.WindowType, on: bool) -> None:

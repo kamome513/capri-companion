@@ -105,6 +105,30 @@ Everything in the manual below works on Linux too, with a few differences:
 
 ---
 
+## Mac
+
+### Install (easiest)
+
+1. Download **`Capri-macOS.zip`** from the [latest release](https://github.com/kamome513/capri-companion/releases/latest)
+   (Apple-silicon Macs: M1 and newer, macOS 11+).
+2. Double-click it to unzip, and drag **Capri** into your **Applications** folder.
+3. The first time, right-click Capri → **Open** → **Open** (she isn't from the App Store, so macOS asks once).
+4. She lives in your menu bar (no Dock icon) and stands on top of your Dock. macOS asks for the
+   **microphone** (to hear "Hey Capri") and, the first time you ask her to type, press keys or tidy windows,
+   for **Accessibility** (System Settings → Privacy & Security → Accessibility → turn Capri on). She updates
+   herself like on Windows.
+
+### What's different on a Mac
+
+- Shortcuts use the Mac's keys: where Windows says Ctrl, she uses **Command** (Ctrl+Alt+Shift+C is ⌘⌥⇧C).
+- She's on every Space and over full-screen apps, and sits on your windows' title bars (on the right, away
+  from the traffic lights). "Minimise everything" hides your apps; "bring them back" shows them again.
+- Closing an app asks it to quit like ⌘Q. Shut down / restart / sleep / lock use the Mac's own commands,
+  still only after you say yes.
+- Her voice is her own (Kokoro) like everywhere else; the Mac's voices are there as a fallback.
+- Not on a Mac (Windows only): pressing Discord's and Spotify's buttons for you, reading other apps' controls,
+  game input help.
+
 ## Manual
 
 ### Talking to her
@@ -304,6 +328,14 @@ off. The switches underneath turn each kind of effect on or off, and **Quality: 
 Styles are skin mods, so you can make your own too (see the modding guide). Colour-only skins are listed under
 **Colours**. Her drone (the disk with the eye) wears whatever style or skin she has on, with a light touch of its effects.
 Styles keep their effects while she sits on a window, and her music bar takes the style's colours too.
+
+**Band vibes (2.6.3):** a **Bands** set of ten looks inspired by bands' moods and eras - grunge, cold glitches,
+dreamy haze, vintage film, early-2000s industrial, moody stage light, gothic theatre, cosmic psychedelia,
+gothic romance and heavy metal - with a small, faint name tag on her (plain text, never a band's logo art).
+Switching vibes fades one into the next. **Wall impacts:** throw her into the edge of the screen and her vibe
+answers it - its own short burst at the spot she hit and its own crack, which stays where it happened and
+fades after a few seconds (every vibe has its own). **Reduce motion** (under the effect switches) keeps just
+the crack and stops the screen shake.
 
 ### Mods (2.5)
 

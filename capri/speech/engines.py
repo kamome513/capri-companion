@@ -15,6 +15,7 @@ import io
 import logging
 import threading
 from pathlib import Path
+import os
 import shutil
 from xml.sax.saxutils import escape
 
@@ -322,6 +323,29 @@ class EspeakEngine:
         return audio
 
 
+class MacSayEngine:
+    """(2.6.3) The Mac's own voices (the `say` command), as a fallback to her Kokoro voice."""
+
+    PREFIX = "mac: "
+
+    def voices(self) -> list[str]:
+        if sys.platform != "darwin" or not shutil.which("say"):
+            return []
+        return [self.PREFIX + v for v in ("Samantha", "Karen", "Moira", "Tessa")]
+
+    def synthesize(self, text: str, voice: str, speed: float, pitch: float = 0.0) -> Audio:
+        import tempfile
+        name = voice[len(self.PREFIX):] or "Samantha"
+        rate = int(150 + speed * 90)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "say.wav")
+            subprocess.run(["say", "-v", name, "-r", str(rate), "--file-format=WAVE", "--data-format=LEI16@22050",
+                            "-o", out, "--", text], check=True, capture_output=True, timeout=60)
+            with wave.open(out) as w:
+                audio = _from_int16(w.readframes(w.getnframes()), w.getframerate())
+        return audio
+
+
 class BeepEngine:
     """No words at all: chiptune blips as she "talks", like the text boxes in old handheld RPGs.
     retro = Game Boy-ish (a softened square), cute = rounder, sine-like blips. Smooth (v1.34): each blip
@@ -618,7 +642,8 @@ def is_online(voice: str) -> bool:
 
 def available_engines() -> list:
     engines = []
-    for cls in (KokoroEngine,) + ((SapiEngine, EspeakEngine) if sys.platform == "win32" else (EspeakEngine,)) + \
+    for cls in (KokoroEngine,) + ((SapiEngine, EspeakEngine) if sys.platform == "win32" else
+                                  (MacSayEngine, EspeakEngine) if sys.platform == "darwin" else (EspeakEngine,)) + \
             (PiperEngine,):
         try:
             engine = cls()

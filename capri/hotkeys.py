@@ -1,4 +1,5 @@
-"""System-wide keyboard shortcuts: Windows RegisterHotKey, Linux X11 key grabs (linux/hotkeys.py).
+"""System-wide keyboard shortcuts: Windows RegisterHotKey, Linux X11 key grabs (linux/hotkeys.py), macOS event
+monitors (mac/hotkeys.py - there Ctrl means Command and Alt means Option, as Mac shortcuts go).
 
 Works while any other app has focus, needs no admin rights, and never
 sees any other keystrokes - the system only tells us when *our* combo is pressed.
@@ -20,7 +21,8 @@ def _linux_x11() -> bool:
     return x11.available()
 
 
-SUPPORTED = sys.platform == "win32" or _linux_x11()
+MAC = sys.platform == "darwin"
+SUPPORTED = sys.platform == "win32" or MAC or _linux_x11()
 
 MODIFIERS = {"alt": 0x0001, "ctrl": 0x0002, "control": 0x0002, "shift": 0x0004, "win": 0x0008}
 MOD_NOREPEAT = 0x4000
@@ -57,7 +59,15 @@ def parse(combo: str) -> tuple[int, int]:
     return flags, vk
 
 
-def pretty(combo: str) -> str:
+MAC_SYMBOLS = {"ctrl": "\u2318", "control": "\u2303", "cmd": "\u2318", "win": "\u2318", "alt": "\u2325",
+               "option": "\u2325", "shift": "\u21e7"}
+
+
+def pretty(combo: str, mac: bool = MAC) -> str:
+    """How to show a shortcut: Ctrl+Alt+Shift+C (on a Mac: the Mac's own symbols, Command for Ctrl)."""
+    if mac:
+        parts = [p.strip().lower() for p in combo.split("+") if p.strip()]
+        return "".join(MAC_SYMBOLS.get(p, p.upper()) for p in parts)
     return "+".join(p.strip().capitalize() for p in combo.split("+"))
 
 
@@ -71,8 +81,12 @@ class HotkeyManager(QWidget):
         self._callbacks: dict[int, Callable[[], None]] = {}
         self._next_id = 1
         self._x11 = None
+        self._mac = None
         self._fired.connect(self._run)
-        if sys.platform == "win32":
+        if MAC:
+            from .mac.hotkeys import MacHotkeys
+            self._mac = MacHotkeys()
+        elif sys.platform == "win32":
             self.winId()   # create the native window without ever showing it
         elif SUPPORTED:
             try:
@@ -88,6 +102,13 @@ class HotkeyManager(QWidget):
 
     def register(self, combo: str, callback: Callable[[], None]) -> str | None:
         """Register a hotkey. Returns an error message, or None on success."""
+        if self._mac is not None:
+            hotkey_id = self._next_id
+            if not self._mac.register(combo, lambda i=hotkey_id: self._fired.emit(i)):
+                return f"bad hotkey '{combo}'"
+            self._next_id += 1
+            self._callbacks[hotkey_id] = callback
+            return None
         if self._x11 is not None:
             hotkey_id = self._next_id
             error = self._x11.register(combo, hotkey_id)
@@ -112,6 +133,10 @@ class HotkeyManager(QWidget):
         return None
 
     def unregister_all(self) -> None:
+        if self._mac is not None:
+            self._mac.clear()
+            self._callbacks.clear()
+            return
         if self._x11 is not None:
             self._x11.unregister_all()
             self._callbacks.clear()

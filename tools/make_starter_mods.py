@@ -260,7 +260,7 @@ def _style_mods() -> list[dict]:
     out = []
     for s in STYLES:
         style = dict(s["style"], theme=s["theme"])
-        out.append({"id": s["id"], "name": s["name"], "type": "skin", "version": "1.0.0",
+        out.append({"id": s["id"], "name": s["name"], "type": "skin", "version": s.get("version", "1.0.0"),
                     "tags": ["style", s["theme"].lower()], "description": s["description"],
                     "palette": s["palette"], "style": style})
     return out

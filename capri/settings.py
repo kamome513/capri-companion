@@ -121,6 +121,7 @@ class Settings:
     style_events: bool = True          # the now-and-then moments: flashes, halos, blooms, glitches...
     style_motion: bool = True          # trails when she moves
     style_quality: str = "full"        # full (30 fps) | light (half the particles, 15 fps)
+    reduce_motion: bool = False        # (2.6.3) calmer: no flying impact effects or screen shake
     hologram: bool = False             # hologram mode: see-through, scanlined, click-through (2.4)
     chaos_mode: bool = False           # random harmless desktop fun now and then (off until you turn it on)
     react_to_apps: bool = True         # she reacts when your apps / games open and close (at most every 2 min)

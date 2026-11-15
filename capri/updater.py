@@ -49,8 +49,10 @@ DOWNLOADS = f"https://github.com/{REPO}/releases/download/"
 WINDOWS_ASSET = re.compile(r"^Capri-Setup-[\w.\-]+\.exe$", re.I)
 PORTABLE_ASSET = re.compile(r"^Capri\.exe$", re.I)     # Windows: the one-file Capri.exe, same name every release
 LINUX_ASSET = re.compile(r"^Capri-x86_64\.AppImage$")      # Linux: one AppImage, same name every release
+MAC_ASSET = re.compile(r"^Capri-macOS\.zip$")              # macOS (2.6.3): Capri.app, zipped
 ASSET = WINDOWS_ASSET
 LINUX = sys.platform.startswith("linux")             # which release file this Capri updates from
+MAC = sys.platform == "darwin"
 CHECK_EVERY = 24 * 3600
 
 
@@ -71,8 +73,21 @@ def appimage() -> str:
     return os.environ.get("APPIMAGE", "") if LINUX else ""
 
 
+def mac_app() -> str:
+    """macOS: the Capri.app this Capri runs from ("" otherwise)."""
+    if not MAC or not getattr(sys, "frozen", False):
+        return ""
+    exe = Path(sys.executable).resolve()
+    app = next((p for p in exe.parents if p.suffix == ".app"), None)
+    return str(app) if app is not None else ""
+
+
 def frozen() -> bool:
-    """A Capri that can update itself: the installed Capri.exe, or the Linux AppImage (not run from the code)."""
+    """A Capri that can update itself: the installed Capri.exe, the Linux AppImage or the Mac's Capri.app
+    (not run from the code)."""
+    if MAC:
+        app = mac_app()
+        return bool(app) and os.access(os.path.dirname(app) or ".", os.W_OK)
     if LINUX:
         path = appimage()
         return bool(path) and os.path.isfile(path) and os.access(os.path.dirname(path) or ".", os.W_OK)
@@ -82,6 +97,8 @@ def frozen() -> bool:
 
 
 def asset_pattern():
+    if MAC:
+        return MAC_ASSET
     if LINUX:
         return LINUX_ASSET
     return PORTABLE_ASSET if portable.exe() else WINDOWS_ASSET
@@ -108,7 +125,7 @@ def _from_latest_json(info: dict, current: str) -> Update | None | bool:
     """latest.json -> an Update / None (up to date) / False (not a latest.json - ask the API)."""
     if not isinstance(info, dict) or "version" not in info or "file" not in info:
         return False
-    own = "linux" if LINUX else "portable" if portable.exe() else ""
+    own = "mac" if MAC else "linux" if LINUX else "portable" if portable.exe() else ""
     if own:                                              # the AppImage's / the one-file Capri.exe's own entry
         section = info.get(own)
         if not isinstance(section, dict) or "file" not in section:
@@ -312,6 +329,39 @@ def _install_portable(new: Path, run: Callable, folder: Path | None) -> bool:
     return True
 
 
+MAC_SWAP = """#!/bin/bash
+# Capri's update on a Mac: wait for the running Capri to close, put the new Capri.app in its place, start her.
+while kill -0 "$1" 2>/dev/null; do sleep 0.3; done
+rm -rf "$2.old" && mv "$2" "$2.old" && mv "$3" "$2" && rm -rf "$2.old"
+xattr -dr com.apple.quarantine "$2" 2>/dev/null
+open -a "$2" --args --after-update
+"""
+
+
+def _install_mac(archive: Path, run: Callable, folder: Path | None) -> bool:
+    """Unzip the new Capri.app next to this one; a small script swaps them once this Capri has closed."""
+    app = mac_app()
+    if not app:
+        return False
+    staging = Path(app).parent / ".capri-update"
+    try:
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir(parents=True)
+        subprocess.run(["/usr/bin/ditto", "-x", "-k", str(archive), str(staging)], check=True, timeout=300)
+        new = next(staging.glob("*.app"), None)
+        if new is None:
+            log.warning("update: no Capri.app in the download")
+            return False
+        script = staging / "swap.sh"
+        script.write_text(MAC_SWAP, encoding="utf-8")
+        script.chmod(0o755)
+        run(["/bin/bash", str(script), str(os.getpid()), app, str(new)], close_fds=True, start_new_session=True)
+        return True
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning("update: couldn't install the Mac update: %s", exc)
+        return False
+
+
 def installer_running() -> bool:
     """Is a Capri-Setup installer running right now? (Inno Setup runs as Capri-Setup-x.exe / .tmp)"""
     try:
@@ -334,6 +384,8 @@ def install(installer: Path, run: Callable = subprocess.Popen, folder: Path | No
     False if it couldn't start."""
     if not frozen():
         return False
+    if MAC:
+        return _install_mac(installer, run, folder)
     if LINUX:
         return _install_appimage(installer, run, folder)
     if portable.exe():

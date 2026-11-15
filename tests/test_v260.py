@@ -44,7 +44,7 @@ def plain_after():
 
 def test_every_style_is_built_in_and_distinct():
     from styles_data import STYLES
-    assert len(STYLES) == 31
+    assert len(STYLES) == 41                                          # (2.6.3: + 10 band vibes)
     names = {s["name"] for s in STYLES}
     for want in ("Stormborn", "Absolute Zero", "Corrupted.exe", "Frutiger Aero", "White & Black Kintsugi", "Mantis"):
         assert want in names
@@ -194,7 +194,7 @@ def test_styles_tab_applies_and_takes_off():
     s = Settings()
     s.save = lambda: None
     tab = StylesTab(m, STORE, s)
-    assert tab.list.count() == 33                                # 31 styles + the 2 colour skins
+    assert tab.list.count() == 43                                # 41 styles + the 2 colour skins
     tab.theme.setCurrentIndex(tab.theme.findData("Colours"))
     assert tab.list.count() == 2
     tab.theme.setCurrentIndex(tab.theme.findData("Elemental"))

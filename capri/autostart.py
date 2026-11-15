@@ -15,8 +15,9 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 VALUE_NAME = "Capri"
 
 LINUX = sys.platform.startswith("linux")
-SUPPORTED = sys.platform == "win32" or LINUX
-LABEL = "Start when I log in" if LINUX else "Start with Windows"      # the menu / Settings words
+MAC = sys.platform == "darwin"                   # (2.6.3) a LaunchAgent in ~/Library/LaunchAgents
+SUPPORTED = sys.platform == "win32" or LINUX or MAC
+LABEL = "Start when I log in" if (LINUX or MAC) else "Start with Windows"      # the menu / Settings words
 
 
 STARTUP_FLAG = "--startup"   # tells Capri it was started by Windows at sign-in (so: greet you)
@@ -41,7 +42,24 @@ def _linux_text() -> str:
     return desktop_entry_text(launch_argv(), STARTUP_FLAG, autostart=True)
 
 
+def _mac_text() -> str:
+    from .mac.desktop import agent_text, launch_argv
+    argv = launch_argv()
+    argv = argv + (["--args", STARTUP_FLAG] if argv[:2] == ["/usr/bin/open", "-a"] else [STARTUP_FLAG])
+    return agent_text(argv)
+
+
+def _expected() -> str:
+    return _linux_text() if LINUX else _mac_text() if MAC else launch_command()
+
+
 def current_command() -> str:
+    if MAC:
+        from .mac.desktop import agent_file
+        try:
+            return agent_file().read_text(encoding="utf-8")
+        except OSError:
+            return ""
     if LINUX:
         from .linux.desktop import autostart_file
         try:
@@ -71,7 +89,7 @@ def ensure_default(settings) -> str:
             if not is_enabled():
                 set_enabled(True)
                 return "enabled"
-        elif is_enabled() and current_command() != (_linux_text() if LINUX else launch_command()):
+        elif is_enabled() and current_command() != _expected():
             set_enabled(True)                    # moved folder, or an entry without --startup
             return "updated"
     except OSError:
@@ -80,6 +98,9 @@ def ensure_default(settings) -> str:
 
 
 def is_enabled() -> bool:
+    if MAC:
+        from .mac.desktop import agent_file
+        return agent_file().is_file()
     if LINUX:
         from .linux.desktop import autostart_file
         return autostart_file().is_file()
@@ -95,6 +116,15 @@ def is_enabled() -> bool:
 
 
 def set_enabled(enabled: bool) -> None:
+    if MAC:
+        from .mac.desktop import agent_file
+        path = agent_file()
+        if enabled:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(_mac_text(), encoding="utf-8")
+        else:
+            path.unlink(missing_ok=True)
+        return
     if LINUX:
         from .linux.desktop import autostart_file
         path = autostart_file()

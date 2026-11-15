@@ -10,3 +10,6 @@ anthropic>=2.3,<3
 # Secure downloads on every PC: check certificates the way Windows / browsers do (antivirus HTTPS scanning)
 truststore>=0.9
 certifi>=2024.2.2
+pyobjc-framework-Quartz>=10; sys_platform == "darwin"
+pyobjc-framework-ApplicationServices>=10; sys_platform == "darwin"
+pyobjc-framework-Cocoa>=10; sys_platform == "darwin"

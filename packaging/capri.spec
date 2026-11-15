@@ -45,6 +45,11 @@ for package in ("kokoro_onnx", "onnxruntime", "espeakng_loader", "phonemizer", "
     binaries += p_binaries
     hiddenimports += p_hidden
 
+if sys.platform == "darwin":
+    # macOS (2.6.3): Quartz / AppKit / Accessibility through pyobjc
+    hiddenimports += collect_submodules("capri.mac") + ["objc", "Quartz", "AppKit", "Foundation",
+                                                         "ApplicationServices"]
+
 if sys.platform.startswith("linux"):
     # Linux: talking to the desktop (X11) - python-xlib loads its extension modules by name.
     hiddenimports += collect_submodules("Xlib") + collect_submodules("capri.linux")
@@ -110,7 +115,27 @@ exe = EXE(
     exclude_binaries=True,
     name="Capri",
     console=False,                              # no console window; problems go to capri.log
-    icon=str(ROOT / "assets" / "capri" / "app_icon.ico"),
+    icon=str(ROOT / "assets" / "capri" / ("app_icon.icns" if sys.platform == "darwin" else "app_icon.ico")),
     version=version_file,
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="Capri")
+if sys.platform == "darwin":
+    # Capri.app: a menu-bar app (no Dock icon), asking for the microphone with her own words
+    app = BUNDLE(
+        coll,
+        name="Capri.app",
+        icon=str(ROOT / "assets" / "capri" / "app_icon.icns"),
+        bundle_identifier="com.capri.companion",
+        version=__version__,
+        info_plist={
+            "CFBundleName": "Capri",
+            "CFBundleDisplayName": "Capri",
+            "CFBundleShortVersionString": __version__,
+            "LSUIElement": True,
+            "LSMinimumSystemVersion": "11.0",
+            "NSHighResolutionCapable": True,
+            "NSMicrophoneUsageDescription": "Capri listens for \"Hey Capri\" and your commands. Your voice is "
+                                            "turned into text on this Mac only.",
+            "NSAppleEventsUsageDescription": "Capri can quit apps, shut down or restart your Mac when you ask.",
+        },
+    )

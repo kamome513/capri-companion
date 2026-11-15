@@ -35,6 +35,13 @@ def idle_seconds_source() -> Callable[[], float] | None:
                 return 0.0
             return ((kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF) / 1000.0
         return idle
+    if sys.platform == "darwin":                           # (2.6.3) the Mac's own input clock
+        try:
+            from .mac import quartz
+            quartz.idle_seconds()
+            return quartz.idle_seconds
+        except Exception:
+            return None
     if sys.platform.startswith("linux"):
         try:
             from Xlib import display

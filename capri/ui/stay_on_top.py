@@ -23,6 +23,8 @@ SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE, SWP_NOOWNERZORDER = 0x0001, 0x0002, 0x00
 
 def win_topmost(hwnd: int) -> None:
     """Back to the top of the always-on-top windows, without taking focus."""
+    if sys.platform == "darwin":                  # (her windows float over every Space already: overlay_window)
+        return
     if sys.platform.startswith("linux"):
         from ..linux import x11
         x = x11.shared()

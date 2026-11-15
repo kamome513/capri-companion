@@ -28,7 +28,7 @@ import random
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import (QColor, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF,
+from PySide6.QtGui import (QColor, QFont, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF,
                            QRadialGradient)
 
 PARTICLE_KINDS = ("spark", "snow", "crystal", "spore", "leaf", "pollen", "ember", "petal", "rose", "sakura", "star",
@@ -39,13 +39,14 @@ HAIR_KINDS = ("lightning", "crystal", "flame", "thorn", "leaf", "cloud", "petal"
               "ornament", "sun", "shadow", "paper", "tendril", "static", "pixel", "fin", "rose", "frost",
               "briar")
 MATERIALS = ("gloss", "ice", "veins", "cracks", "kintsugi", "stripes", "scan", "grain", "caustics", "rainbow", "crt",
-             "paper", "porcelain", "segments", "joints", "ornament", "markings", "warm", "sheen", "shade", "facets")
+             "paper", "porcelain", "segments", "joints", "ornament", "markings", "warm", "sheen", "shade", "facets",
+             "distress", "metal", "haze", "swirl")
 EVENTS = ("flash", "arc", "crackle", "ice_form", "frost", "lens_flare", "solar_flare", "eclipse", "thorn_vine",
           "glitch", "scan_sweep", "fragments", "eye_flicker", "ink_burst", "transmission", "interference",
           "status_blink", "sparks_feet", "petal_burst", "gold_shimmer", "ripple", "film_scratch", "bloom",
           "warning", "chem_bubbles", "paper_fold", "gears", "afterimage", "vanish", "crescent", "constellation",
           "halo", "jellyfish", "cloud", "wings", "stained_glass", "distortion", "static_lines", "pulse",
-          "frost_bloom", "clock_aura", "rings")
+          "frost_bloom", "clock_aura", "rings", "spotlight")
 MOVES = ("trail", "ember", "frost", "petals", "afterimage", "rainbow", "sparks", "ink", "bubbles", "pixels")
 OUTLINE_MODES = ("steady", "pulse", "flicker", "rainbow", "fade")
 LAYERS = ("back", "front")
@@ -330,6 +331,10 @@ class StyleFX:
         self._particles = self._make_particles()
         self._active = []
         self._trail = []
+        for cache in ("_layers", "_briar_layers", "_spot_cache"):      # (2.6.3) nothing kept from the last style
+            self.__dict__.pop(cache, None)
+        self._edge_cache = None
+        self._briar_cache = None
         self._schedule_all(now)
         self.switched_at = now
 
@@ -370,7 +375,7 @@ class StyleFX:
               "film_scratch": 0.5, "bloom": 3.0, "warning": 2.2, "chem_bubbles": 2.4, "paper_fold": 1.6,
               "gears": 2.6, "afterimage": 0.9, "vanish": 0.7, "crescent": 4.0, "constellation": 3.2, "halo": 3.0,
               "jellyfish": 7.0, "cloud": 8.0, "wings": 2.4, "stained_glass": 2.6, "distortion": 0.45,
-              "static_lines": 0.5, "pulse": 1.6, "frost_bloom": 2.0, "clock_aura": 2.4, "rings": 1.8}
+              "static_lines": 0.5, "pulse": 1.6, "frost_bloom": 2.0, "clock_aura": 2.4, "rings": 1.8, "spotlight": 5.0}
 
     def tick(self, now: float, idle: bool = True) -> None:
         """Start the events that are due (only while she's idle: not mid-sentence or mid-move)."""
@@ -448,6 +453,8 @@ class StyleFX:
             self._inner(q, c)
         if self.toggles.hair and (self.style.get("hair") or {}).get("kind") == "briar":
             self._briar_woven(q, c)
+        if self.toggles.materials and isinstance(self.style.get("badge"), dict) and not c.lying:
+            self._badge(q, c, self.style["badge"])
         if self.toggles.materials:
             for m in self.style.get("materials", [])[:6]:
                 spec = m if isinstance(m, dict) else {"kind": m}
@@ -571,7 +578,11 @@ class StyleFX:
 
     # -- hair --------------------------------------------------------------------------------------------------------
     def _hair_spots(self, c: Ctx, n: int, spread: float = 1.0) -> list[tuple[QPointF, float]]:
-        """Points round the edge of her hair, with the outward direction (radians)."""
+        """Points round the edge of her hair, with the outward direction (radians). (2.6.3) On her real hair's
+        outline when it's known - each one just inside its edge, so what grows there grows out of her hair."""
+        on_hair = self._hair_edge_spots(c, n)
+        if on_hair:
+            return on_hair
         centre = c.hair_centre
         rx, ry = c.head.width() * 0.95 * spread, c.head.height() * 1.15 * spread
         rng = random.Random(self.seed * 7 + n)
@@ -581,6 +592,48 @@ class StyleFX:
             if c.lying:
                 a += math.radians(-12)
             out.append((QPointF(centre.x() + math.cos(a) * rx, centre.y() + math.sin(a) * ry), a))
+        return out
+
+    def _hair_edge_spots(self, c: Ctx, n: int) -> list[tuple[QPointF, float]]:
+        path = c.hair_path()
+        if path is None or path.isEmpty():
+            return []
+        key = (c.hair_key, n, round(c.head.x()), round(c.head.y()), c.lying) if c.hair_key else None
+        cache = self.__dict__.setdefault("_spot_cache", {})
+        if key is not None and key in cache:
+            return cache[key]
+        box = path.boundingRect()
+        centre = QPointF(box.center().x(), box.top() + box.height() * 0.62)
+        pts = [pt for poly in path.toFillPolygons() for pt in poly]
+        if len(pts) < 8:
+            return []
+        lo, hi = (-200.0, 20.0) if c.lying else (-172.0, -8.0)        # round the top (lying: toward her head end)
+        rng = random.Random(self.seed * 7 + n)
+        bins: list[tuple[float, QPointF] | None] = [None] * n
+        for pt in pts:
+            d = pt - centre
+            a = math.degrees(math.atan2(d.y(), d.x()))
+            if c.lying and a > 90:
+                a -= 360
+            if not lo <= a <= hi:
+                continue
+            i = min(n - 1, int((a - lo) / (hi - lo) * n))
+            dist = math.hypot(d.x(), d.y())
+            if bins[i] is None or dist > bins[i][0]:
+                bins[i] = (dist, pt)
+        out = []
+        for i, b in enumerate(bins):
+            if b is None:
+                continue
+            dist, pt = b
+            d = pt - centre
+            a = math.atan2(d.y(), d.x())
+            inset = min(dist * 0.18, c.head.width() * 0.22) * rng.uniform(0.7, 1.0)   # rooted in her hair
+            out.append((QPointF(pt.x() - math.cos(a) * inset, pt.y() - math.sin(a) * inset), a))
+        if key is not None:
+            if len(cache) > 32:
+                cache.clear()
+            cache[key] = out
         return out
 
     def _hair_fx(self, p: QPainter, c: Ctx) -> None:
@@ -1191,6 +1244,156 @@ class StyleFX:
         self._layer(q, c, "veins", lambda p: self._glow_lines(
             p, self._lines(c, int(spec.get("count", 9)), 1, 0.35, 0.9), colour(spec.get("color", "#7dff3a"), 210),
             max(1.0, c.scale), 1.0), 0.6 + 0.4 * math.sin(c.t * 1.8))
+
+    # -- (2.6.3) for the band vibes ---------------------------------------------------------------------------------
+    BADGE_SPOTS = {"thigh": (0.565, 0.63, -80), "hip": (0.47, 0.47, -8), "shoulder": (0.6, 0.27, 12),
+                   "arm": (0.3, 0.36, 72), "shin": (0.44, 0.83, -86), "chest": (0.5, 0.33, -6)}
+
+    def _badge(self, q: QPainter, c: Ctx, spec: dict) -> None:
+        """A small, faint tag on her - a name written like a marker scrawl or a worn print, in the style's colours.
+        Plain text in an ordinary font (never anyone's logo artwork), drawn once and reused."""
+        text = str(spec.get("text", ""))[:24]
+        if not text:
+            return
+        fx_, fy_, ang = self.BADGE_SPOTS.get(spec.get("at", "thigh"), self.BADGE_SPOTS["thigh"])
+        col = colour(spec.get("color", "#ffffff"), int(spec.get("alpha", 120)))
+
+        def draw(p: QPainter) -> None:
+            font = QFont(str(spec.get("font", "Arial")))
+            font.setStyleHint({"mono": QFont.StyleHint.TypeWriter, "serif": QFont.StyleHint.Serif}.get(
+                spec.get("face", ""), QFont.StyleHint.SansSerif))
+            font.setPixelSize(max(6, round(c.body.height() * float(spec.get("size", 0.028)) * 1.35)))
+            font.setBold(bool(spec.get("bold", True)))
+            font.setItalic(bool(spec.get("italic", False)))
+            font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, float(spec.get("spacing", 100)))
+            from PySide6.QtGui import QFontMetricsF
+            room = c.body.height() * float(spec.get("room", 0.22))      # as long as the limb it's on
+            fm = QFontMetricsF(font)
+            while font.pixelSize() > 5 and fm.horizontalAdvance(text) > room:
+                font.setPixelSize(font.pixelSize() - 1)
+                fm = QFontMetricsF(font)
+            p.setFont(font)
+            p.save()
+            p.translate(c.body.left() + c.body.width() * fx_, c.body.top() + c.body.height() * fy_)
+            p.rotate(ang + float(spec.get("turn", 0)))
+            at = QPointF(-fm.horizontalAdvance(text) / 2, fm.ascent() / 2 - fm.descent() / 2)   # centred on its spot
+            path = QPainterPath()
+            path.addText(at, font, text)
+            edge = colour(spec.get("shadow", "#000000"), int(spec.get("alpha", 120) * 0.7))
+            p.setPen(QPen(edge, max(1.0, font.pixelSize() * 0.16), Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap,
+                          Qt.PenJoinStyle.RoundJoin))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawPath(path)                                             # a faint edge: it reads on any colour
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(col)
+            p.drawPath(path)
+            p.restore()
+        self._layer(q, c, "badge", draw)
+
+    def _mat_distress(self, q: QPainter, c: Ctx, spec: dict) -> None:
+        """Worn and scuffed: scratches, scrapes and faded patches (drawn once, it doesn't change)."""
+        col = colour(spec.get("color", "#efe6c8"), int(spec.get("alpha", 90)))
+        dark = QColor(0, 0, 0, int(spec.get("alpha", 90)))
+
+        def draw(p: QPainter) -> None:
+            r = random.Random(self.seed * 5 + 11)
+            b = c.body
+            for _i in range(int(spec.get("count", 26))):
+                x, y = r.uniform(b.left(), b.right()), r.uniform(b.top(), b.bottom())
+                ln = r.uniform(4, 16) * max(0.7, c.scale)
+                a = r.uniform(-0.5, 0.5) + (math.pi / 2 if r.random() < 0.3 else 0)
+                p.setPen(QPen(col if r.random() < 0.65 else dark, max(0.6, 0.8 * c.scale)))
+                p.drawLine(QPointF(x, y), QPointF(x + math.cos(a) * ln, y + math.sin(a) * ln))
+            p.setPen(Qt.PenStyle.NoPen)
+            for _i in range(int(spec.get("count", 26)) // 3):      # faded, scraped patches
+                x, y = r.uniform(b.left(), b.right()), r.uniform(b.top(), b.bottom())
+                fade = QColor(col)
+                fade.setAlpha(int(col.alpha() * 0.35))
+                p.setBrush(fade)
+                p.drawEllipse(QPointF(x, y), r.uniform(2, 6) * c.scale, r.uniform(1, 3) * c.scale)
+        self._layer(q, c, "distress", draw)
+
+    def _mat_metal(self, q: QPainter, c: Ctx, spec: dict) -> None:
+        """Brushed metal: fine streaks along her, and a cold highlight sliding slowly over her."""
+        col = colour(spec.get("color", "#d9dde3"), int(spec.get("alpha", 70)))
+
+        def draw(p: QPainter) -> None:
+            r = random.Random(self.seed * 3 + 7)
+            b = c.body
+            for _i in range(70):
+                x = r.uniform(b.left(), b.right())
+                y0 = r.uniform(b.top(), b.bottom())
+                streak = QColor(col)
+                streak.setAlpha(int(col.alpha() * r.uniform(0.3, 1.0)))
+                p.setPen(QPen(streak, 0.7))
+                p.drawLine(QPointF(x, y0), QPointF(x + r.uniform(-1, 1), y0 + r.uniform(10, 34) * c.scale))
+        self._layer(q, c, "metal", draw)
+        k = (c.t * 0.18) % 1.6 - 0.3                              # the sheen sweeping down her
+        y = c.body.top() + c.body.height() * k
+        g = QLinearGradient(QPointF(0, y - 30 * c.scale), QPointF(0, y + 30 * c.scale))
+        shine = colour(spec.get("shine", "#ffffff"), 0)
+        g.setColorAt(0, shine)
+        shine2 = QColor(shine)
+        shine2.setAlpha(int(spec.get("shine_alpha", 85)))
+        g.setColorAt(0.5, shine2)
+        g.setColorAt(1, shine)
+        q.fillRect(QRectF(c.body.left() - 10, y - 30 * c.scale, c.body.width() + 20, 60 * c.scale), g)
+
+    def _mat_haze(self, q: QPainter, c: Ctx, spec: dict) -> None:
+        """A soft dreamy haze over her, drifting slowly."""
+        col = colour(spec.get("color", "#d48aa3"), int(spec.get("alpha", 60)))
+        for i in range(3):
+            cx = c.body.center().x() + math.sin(c.t * 0.3 + i * 2.1) * c.body.width() * 0.35
+            cy = c.body.top() + c.body.height() * (0.25 + 0.3 * i) + math.cos(c.t * 0.25 + i) * 10 * c.scale
+            rr = c.body.height() * 0.32
+            g = QRadialGradient(QPointF(cx, cy), rr)
+            g.setColorAt(0, col)
+            g.setColorAt(1, QColor(col.red(), col.green(), col.blue(), 0))
+            q.fillRect(QRectF(cx - rr, cy - rr, 2 * rr, 2 * rr), g)
+
+    def _mat_swirl(self, q: QPainter, c: Ctx, spec: dict) -> None:
+        """Slow psychedelic bands of colour turning through her."""
+        cols = [colour(x, int(spec.get("alpha", 80))) for x in (spec.get("colors") or ["#5b2aa8", "#1b0b3a", "#e08bff"])]
+        q.save()
+        centre = c.body.center()
+        q.translate(centre)
+        q.rotate(c.t * 6)
+        n = 7
+        rr = c.body.height()
+        for i in range(n):
+            g = QLinearGradient(QPointF(-rr, 0), QPointF(rr, 0))
+            g.setColorAt(0, QColor(0, 0, 0, 0))
+            g.setColorAt(0.5, cols[i % len(cols)])
+            g.setColorAt(1, QColor(0, 0, 0, 0))
+            q.save()
+            q.rotate(i * 360 / n + math.sin(c.t * 0.4 + i) * 12)
+            q.fillRect(QRectF(-rr, -rr * 0.06, 2 * rr, rr * 0.12), g)
+            q.restore()
+        q.restore()
+
+    def _ev_spotlight(self, p, c, k, ev, r, layer) -> None:
+        """Stage lighting: a beam from above sweeping slowly across her, then fading."""
+        if layer != "back":
+            return
+        a = math.sin(math.pi * k)
+        col = colour(ev.get("color", "#ffcf7a"), int(70 * a))
+        top = QPointF(c.body.center().x() + (r.random() - 0.5) * c.body.width() * 3 + math.sin(k * 2.2) * 30,
+                      c.win.top())
+        feet = c.feet
+        half = c.body.width() * 0.9
+        beam = _poly([(top.x() - 6, top.y()), (top.x() + 6, top.y()), (feet.x() + half, feet.y()),
+                      (feet.x() - half, feet.y())])
+        g = QLinearGradient(top, feet)
+        g.setColorAt(0, col)
+        g.setColorAt(1, colour(ev.get("color", "#ffcf7a"), int(25 * a)))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(g)
+        p.drawPath(beam)
+        pool = QRadialGradient(feet, half)
+        pool.setColorAt(0, colour(ev.get("color", "#ffcf7a"), int(60 * a)))
+        pool.setColorAt(1, colour(ev.get("color", "#ffcf7a"), 0))
+        p.setBrush(pool)
+        p.drawEllipse(feet, half, half * 0.22)
 
     def _mat_cracks(self, q: QPainter, c: Ctx, spec: dict) -> None:
         self._layer(q, c, "cracks", lambda p: self._glow_lines(
@@ -1890,10 +2093,15 @@ def validate(style: dict) -> str:
     if not isinstance(style, dict):
         return "\"style\" must be an object"
     allowed = {"aura", "outline", "eyes", "hair", "hair_edge", "materials", "particles", "events", "move",
-               "filters", "hair2", "sparkle", "description2", "theme", "inner"}
+               "filters", "hair2", "sparkle", "description2", "theme", "inner", "badge", "impact"}
     for k in style:
         if k not in allowed:
             return f"unknown style part \"{k}\""
+    if "impact" in style:
+        from .impact import validate as impact_problem
+        why = impact_problem(style["impact"])
+        if why:
+            return why
     for p in style.get("particles", []) if isinstance(style.get("particles", []), list) else [None]:
         if not isinstance(p, dict) or p.get("kind") not in PARTICLE_KINDS:
             return "each particle needs a known \"kind\""

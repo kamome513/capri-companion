@@ -141,6 +141,11 @@ def _running_mutex():
         return None
 
 
+def _mac_spotify_play(pids=None, name=None) -> bool:
+    from .mac.desktop import spotify_play
+    return spotify_play()
+
+
 def _linux_spotify_play() -> bool:
     from .linux.desktop import spotify_play
     return spotify_play()
@@ -226,6 +231,9 @@ def main(argv: list[str] | None = None) -> int:
     app.setQuitOnLastWindowClosed(False)
     from .ui.app_icon import app_icon
     app.setWindowIcon(app_icon())   # her USB shard, in the taskbar
+    if sys.platform == "darwin":      # (2.6.3) a Mac: no Dock icon - she lives in the menu bar and on your desktop
+        from .mac.quartz import accessory_app
+        accessory_app()
 
     # Only one Capri at a time. Starting her again (Start menu, run.bat) just brings her back.
     lock_dir = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.TempLocation))
@@ -341,7 +349,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # Commands: only catalog entries (your apps, Steam games, Start menu) can be launched.
     linux = sys.platform.startswith("linux")
-    if linux:
+    mac = sys.platform == "darwin"
+    if mac:        # (2.6.3) Quartz / Accessibility windows, keys, typing; .app bundles
+        from .mac.desktop import MacDesktop, MacSystem
+        desktop = MacDesktop()
+        system = MacSystem(desktop=desktop)
+    elif linux:
         from .linux.desktop import LinuxDesktop, LinuxSystem
         desktop = LinuxDesktop()        # X11 windows, keys, typing; systemd power - fixed actions only
         system = LinuxSystem(desktop=desktop)
@@ -378,7 +391,7 @@ def main(argv: list[str] | None = None) -> int:
                                lambda: settings.openai_model, lambda: secrets.get("openai_api_key"), info,
                                slang=lambda: settings.slang, persona=lambda: settings.personality,
                                intelligence=lambda: settings.intelligence))
-    if not linux:
+    if sys.platform == "win32":
         desktop = WindowsDesktop()      # power, minimising, Discord keys - fixed actions only
     ui = WindowsUI()               # presses apps' own buttons (Discord's Mute, Spotify's Play)
     about = AboutYou()              # what she remembers about you: %LOCALAPPDATA%\Capri only, never the AI
@@ -410,10 +423,11 @@ def main(argv: list[str] | None = None) -> int:
     services.spotify_app = SpotifyApp(
         system.open_item,
         lambda: [p.pid for p in system.processes() if p.name.lower() in ("spotify.exe", "spotify")],
-        spotify_titles, press_track_play if not linux else (lambda pids, name: _linux_spotify_play()), http.get_text,
+        spotify_titles, press_track_play if sys.platform == "win32" else _mac_spotify_play if mac
+        else (lambda pids, name: _linux_spotify_play()), http.get_text,
         lambda url: http.request("GET", url), api_search=spotify_api_search,
-        click_play=(lambda pids: click_spotify_play(desktop, pids, services.spotify_buttons.log)) if not linux
-        else None) if sys.platform == "win32" or linux else None
+        click_play=(lambda pids: click_spotify_play(desktop, pids, services.spotify_buttons.log))
+        if sys.platform == "win32" else None) if sys.platform == "win32" or linux or mac else None
     def window_rect(pids: list[int]):
         r = desktop.window_rect(pids)
         return to_logical(r) if r else None
@@ -455,6 +469,8 @@ def main(argv: list[str] | None = None) -> int:
     mods = ModManager()
     mod_store = Store(lambda: settings.mod_index_url)
     app._mods, app._mod_store = mods, mod_store
+    from .mods.store import refresh_builtins
+    refresh_builtins(mods, mod_store)             # (2.6.3) her built-in styles as this version draws them
 
     def mods_changed() -> None:
         mod_effects.reload(mods)
@@ -483,6 +499,7 @@ def main(argv: list[str] | None = None) -> int:
                 app._chat_window.set_skin(settings.chat_skin)
         except Exception:
             log.exception("mods: couldn't switch her look")
+    mods.changed.append(lambda: companion.character.begin_crossfade())   # (2.6.3) styles fade into each other
     mods.changed.append(mods_changed)
     mods_changed()
     _throw = companion.on_throw

@@ -194,3 +194,33 @@ def zip_bytes(files: dict[str, bytes]) -> bytes:
         for name, blob in files.items():
             z.writestr(name, blob)
     return buf.getvalue()
+
+
+def refresh_builtins(manager, store) -> list[str]:
+    """(2.6.3) Mods that come with Capri, already installed, are brought up to date with this version's copies - a
+    style redrawn in an update shows on her, not just on its picture. Only Capri's own mods (author "Capri");
+    whether each one is on stays as it was. Returns the ids updated."""
+    import io as _io
+    import zipfile as _zip
+    done = []
+    try:
+        listings = {m.id: m for m in store.builtin()}
+    except Exception:
+        return done
+    for mod in manager.installed():
+        listing = listings.get(mod.id)
+        if listing is None or mod.manifest.author != "Capri":
+            continue
+        try:
+            data = store.download(listing)
+            with _zip.ZipFile(_io.BytesIO(data)) as z:
+                name = next(n for n in z.namelist() if n.endswith("mod.json"))
+                new = json.loads(z.read(name).decode("utf-8"))
+            old = json.loads((mod.folder / "mod.json").read_text(encoding="utf-8"))
+            if new == old:
+                continue
+            manager.install_bytes(data, source=mod.source or "builtin", enable=False)
+            done.append(mod.id)
+        except Exception:
+            log.info("mods: couldn't refresh %s", mod.id, exc_info=True)
+    return done

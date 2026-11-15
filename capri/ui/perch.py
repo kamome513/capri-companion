@@ -650,8 +650,60 @@ def _linux_covered(wid: int) -> bool:
     return False
 
 
+# -- macOS plumbing (Quartz) ----------------------------------------------------------------------------------
+def _mac_windows() -> list[dict]:
+    try:
+        from ..mac import quartz
+        me = os.getpid()
+        return [w for w in quartz.windows() if w["pid"] != me]
+    except Exception:
+        return []
+
+
+def _mac_sittable(w: dict | None) -> QRect | None:
+    """Her seat on a Mac window: not too small, not full screen (that's a Space of its own then)."""
+    if w is None:
+        return None
+    x0, y0, x1, y1 = w["rect"]
+    if x1 - x0 < 200 or y1 - y0 < 120:
+        return None
+    from PySide6.QtGui import QGuiApplication
+    for screen in QGuiApplication.screens():
+        g = screen.geometry()
+        if x0 <= g.left() and y0 <= g.top() and x1 >= g.right() and y1 >= g.bottom():
+            return None
+    return QRect(x0, y0, x1 - x0, y1 - y0)              # (Mac window coordinates are already Qt's)
+
+
+def _mac_front() -> tuple[int, QRect] | None:
+    try:
+        from ..mac import quartz
+        pid = quartz.frontmost_pid()
+    except Exception:
+        return None
+    w = next((w for w in _mac_windows() if w["pid"] == pid), None)
+    rect = _mac_sittable(w)
+    return (w["id"], rect) if rect is not None else None
+
+
+def _mac_covered(wid: int) -> bool:
+    wins = _mac_windows()                                  # front to back
+    idx = next((i for i, w in enumerate(wins) if w["id"] == wid), None)
+    if idx is None:
+        return False
+    x0, y0, x1, y1 = wins[idx]["rect"]
+    seat = [(px, y0 + 6) for px in (x1 - 220, x1 - 140, x1 - 60) if px > x0]
+    for above in wins[:idx]:
+        r = above["rect"]
+        if sum(r[0] <= px < r[2] and r[1] <= py < r[3] for px, py in seat) >= 2:
+            return True
+    return False
+
+
 def front_window() -> tuple[int, QRect] | None:
     """The window you're using, if she can sit on it."""
+    if sys.platform == "darwin":
+        return _mac_front()
     if sys.platform.startswith("linux"):
         return _linux_front()
     if sys.platform != "win32":
@@ -663,6 +715,8 @@ def front_window() -> tuple[int, QRect] | None:
 
 
 def window_rect(hwnd: int) -> QRect | None:
+    if sys.platform == "darwin":
+        return _mac_sittable(next((w for w in _mac_windows() if w["id"] == hwnd), None))
     if sys.platform.startswith("linux"):
         x = _x()
         return _linux_sittable(x, hwnd) if x is not None else None
@@ -674,6 +728,15 @@ def window_rect(hwnd: int) -> QRect | None:
 def top_window() -> tuple[int, QRect] | None:
     """The window you're using - or, if that's hers (her menu was just open), the top window
     she can sit on."""
+    if sys.platform == "darwin":
+        found = _mac_front()
+        if found is not None:
+            return found
+        for w in _mac_windows():
+            rect = _mac_sittable(w)
+            if rect is not None:
+                return w["id"], rect
+        return None
     if sys.platform.startswith("linux"):
         return _linux_top()
     if sys.platform != "win32":
@@ -701,6 +764,8 @@ def top_window() -> tuple[int, QRect] | None:
 def seat_covered(hwnd: int) -> bool:
     """Is the spot she sits on (the right part of the window's top edge) hidden under another window
     stacked above it? Her own windows, tooltips / popups and hidden windows don't count."""
+    if sys.platform == "darwin":
+        return _mac_covered(hwnd)
     if sys.platform.startswith("linux"):
         return _linux_covered(hwnd)
     if sys.platform != "win32" or not hwnd:

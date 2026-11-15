@@ -544,6 +544,7 @@ class CharacterWindow(OverlayWindow):
     def _special(self) -> bool:
         """Something that needs full-speed frames right now: a glitch, her swinging, your mouse on her, or music."""
         return self.real_glitch.active or self.sway.swinging or self._hover_on or self._hover > 0.0 or \
+            getattr(self, "_xfade", None) is not None or \
             (self.mode == "body" and (self.grooving or self._groove > 0.0))
 
     GROOVE_BPM = 104                            # her bounce, about the speed of most songs
@@ -686,7 +687,25 @@ class CharacterWindow(OverlayWindow):
         try:
             draw = {"classic": self._paint_classic, "portrait": self._paint_portrait, "body": self._paint_body,
                     "lying": self._paint_lying, "look": self._paint_look}[self.mode]
-            if self.real_glitch.active:                       # a real glitch: her picture, then broken up
+            fade = self._crossfade_k()
+            if fade is not None and not self.real_glitch.active:   # (2.6.3) a new style fading in over the old
+                dpr = self.devicePixelRatioF()
+                snap = QImage(round(self.width() * dpr), round(self.height() * dpr),
+                              QImage.Format.Format_ARGB32_Premultiplied)
+                snap.setDevicePixelRatio(dpr)
+                snap.fill(0)
+                q = QPainter(snap)
+                q.setRenderHint(QPainter.RenderHint.Antialiasing)
+                q.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+                draw(q)
+                q.end()
+                old = self._xfade[0]
+                p.setOpacity(1.0 - fade)
+                p.drawImage(QPointF(0, 0), old)
+                p.setOpacity(fade)
+                p.drawImage(QPointF(0, 0), snap)
+                p.setOpacity(1.0)
+            elif self.real_glitch.active:                     # a real glitch: her picture, then broken up
                 dpr = self.devicePixelRatioF()
                 snap = QImage(round(self.width() * dpr), round(self.height() * dpr),
                               QImage.Format.Format_ARGB32_Premultiplied)
@@ -717,6 +736,30 @@ class CharacterWindow(OverlayWindow):
             w, h = image.width() * scale, image.height() * scale
             p.drawImage(QRectF(target.center().x() - w / 2, target.bottom() - h, w, h), image)
         p.end()
+
+    CROSSFADE = 0.7                                   # seconds: one style melting into the next
+
+    def begin_crossfade(self) -> None:
+        """(2.6.3) Her style is about to change: keep a picture of her as she is, to fade from."""
+        if not self.isVisible() or self.mode not in ("body", "lying") or self.width() < 2:
+            return
+        try:
+            img = self.grab().toImage().convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+        except Exception:
+            return
+        self._xfade = (img, time.monotonic())
+        self._update_timer()
+
+    def _crossfade_k(self) -> float | None:
+        """0..1 (eased) while a crossfade runs, else None."""
+        xf = getattr(self, "_xfade", None)
+        if xf is None:
+            return None
+        k = (time.monotonic() - xf[1]) / self.CROSSFADE
+        if k >= 1.0 or xf[0].isNull():
+            self._xfade = None
+            return None
+        return k * k * (3 - 2 * k)
 
     def _paint_hologram(self, p: QPainter) -> None:
         """Hologram mode: a cyan tint and drifting scanlines, only where she is."""

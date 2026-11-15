@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel
 
 from ..mods.store import preview_image
 
-THEMES = ("Elemental", "Digital", "Artistic", "Experimental", "Signature", "Colours")
+THEMES = ("Elemental", "Digital", "Artistic", "Experimental", "Signature", "Bands", "Colours")
 PLAIN = "Colours"                                  # skins that only change her colours (no effects)
 TOGGLES = (("style_particles", "Particles"), ("style_aura", "Aura, outline and eye glow"),
            ("style_hair", "Hair effects"), ("style_materials", "Materials"),
@@ -117,6 +117,12 @@ class StylesTab(QWidget):
         self.quality.setCurrentIndex(max(0, self.quality.findData(getattr(settings, "style_quality", "full"))))
         self.quality.currentIndexChanged.connect(lambda *_: self._set("style_quality", self.quality.currentData()))
         q.addWidget(self.quality)
+        self.calm = QCheckBox("Reduce motion")                    # (2.6.3)
+        self.calm.setToolTip("Calmer: thrown into a wall, she leaves just her vibe's crack (no flying effects), "
+                             "and the screen doesn't shake.")
+        self.calm.setChecked(getattr(settings, "reduce_motion", False))
+        self.calm.toggled.connect(lambda on: self._set("reduce_motion", on))
+        q.addWidget(self.calm)
         q.addStretch(1)
         root.addLayout(q)
         self._fill()
