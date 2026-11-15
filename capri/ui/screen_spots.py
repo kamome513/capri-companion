@@ -53,6 +53,8 @@ def _to_logical(rect: tuple[int, int, int, int]) -> QRect:
     Qt keeps each screen's top-left corner where Windows has it and scales from there,
     so a second monitor's origin must not be scaled (that sent her lightning to the wrong spot)."""
     left, top, right, bottom = rect
+    if sys.platform == "darwin":                # (2.6.4) a Mac reports points already - Qt's own units
+        return QRect(left, top, right - left, bottom - top)
     for screen in QGuiApplication.screens():
         g, dpr = screen.geometry(), screen.devicePixelRatio()
         native = QRect(g.x(), g.y(), round(g.width() * dpr), round(g.height() * dpr))

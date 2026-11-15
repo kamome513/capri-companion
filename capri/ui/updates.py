@@ -27,6 +27,7 @@ IDLE_RETRY_MS = 60_000           # busy (talking, in a game): try installing aga
 class UpdateManager(QObject):
     _done = Signal(object, object)            # (callback, result) - back on the UI thread
     changed = Signal(str)                     # what to show in Settings / the menu
+    _progress = Signal(int)                   # (2.6.4) download %, from the worker thread
 
     def __init__(self, settings, controller, assistant=None, tray=None,
                  check: Callable = updater.check, download: Callable = updater.download,
@@ -45,6 +46,9 @@ class UpdateManager(QObject):
         self._quit = quit_app or QApplication.quit
         self._confirm = confirm or _ask_yes_no
         self._done.connect(lambda callback, result: callback(result))
+        self._progress.connect(self._show_progress)
+        self._install_after = False               # (2.6.4) you clicked Update: install as soon as it's downloaded
+        self._last_pct = -1
         self.found: updater.Update | None = None
         self.busy = False
         self.status = f"You have Capri {__version__}."
@@ -114,9 +118,32 @@ class UpdateManager(QObject):
         if not getattr(self.settings, "auto_update", True) and quiet:
             self._say(f"Capri {result.version} is out. Right-click me, Update to {result.version}.")
             return
+        self._start_download(result)
+
+    def _start_download(self, result) -> None:
         self.busy = True
+        self._last_pct = -1
         self.controller.log("Update", f"downloading Capri {result.version}")
-        self._background(lambda: self._download(result), self._downloaded)
+        if self._install_after:
+            self._say(f"Downloading Capri {result.version}...")
+
+        def fetch():
+            def progress(done: int, total: int) -> None:
+                if total > 0:
+                    self._progress.emit(int(done * 100 / total))
+            try:
+                return self._download(result, progress=progress)
+            except TypeError:                                  # (a download function without progress)
+                return self._download(result)
+        self._background(fetch, self._downloaded)
+
+    def _show_progress(self, pct: int) -> None:
+        """(2.6.4) Shows how far the download is (every 5%), so a click never looks like nothing's happening."""
+        if pct // 5 == self._last_pct // 5 or not self.found:
+            return
+        self._last_pct = pct
+        self.status = f"Downloading Capri {self.found.version}... {pct}%"
+        self.changed.emit(self.status)
 
     def _downloaded(self, result) -> None:
         self.busy = False
@@ -124,6 +151,10 @@ class UpdateManager(QObject):
             log.warning("update download failed: %s", result)
             self._say(f"Couldn't download the update ({friendly(result)[:70]}). I'll try again later.", error=True)
             return
+        if self._install_after:                      # (2.6.4) you clicked Update: no second click needed
+            self._install_after = False
+            if self.update_now():
+                return
         if getattr(self.settings, "auto_update", True) and self.install_when_idle():
             return                                   # (2.3.7) right away, not only the next time she starts
         self._offer(self.found.version if self.found else "")
@@ -158,7 +189,7 @@ class UpdateManager(QObject):
         QTimer.singleShot(self.INSTALL_DELAY_MS, go)  # so you see (and hear) why she's going
         return True
 
-    INSTALL_DELAY_MS = 2500
+    INSTALL_DELAY_MS = 1200
 
     def stuck(self) -> bool:
         """The waiting update already didn't take twice at start-up (so she won't keep trying by herself)."""
@@ -198,17 +229,28 @@ class UpdateManager(QObject):
             return self.update_now()
         if self.found is not None and (not self._frozen() or not self.found.url):
             return self._open_page(self.found.page)
+        if self.found is not None:                   # (2.6.4) "Update to X": fetch it (with progress) and install
+            self._install_after = True
+            if not self.busy:
+                self._start_download(self.found)
+            else:
+                self._say(f"Downloading Capri {self.found.version}... I'll update as soon as it's here.")
+            return
+        self._install_after = True                   # "Check for updates": if there's one, straight on to it
         self.check_now()
 
-    def update_now(self) -> bool:
+    def update_now(self, ask: bool = False) -> bool:
+        """Install the downloaded update now. (2.6.4: clicking "Restart to update" is the yes - no second
+        question; ask=True still asks first.)"""
         ready = self._ready() if self._frozen() else None
         if ready is None:
             self.check_now()
             return False
         version, installer = ready
-        if not self._confirm(f"Restart Capri and update to {version} now? She'll close, update and start "
-                             f"again (about half a minute)."):
+        if ask and not self._confirm(f"Restart Capri and update to {version} now? She'll close, update and "
+                                     f"start again."):
             return False
+        self._say(f"Updating to Capri {version} - back in a moment!")
         if not self._install(installer):
             self._say("Couldn't start the update. I'll try again when I next start.", error=True)
             return False

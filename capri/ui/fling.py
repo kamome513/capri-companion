@@ -354,14 +354,34 @@ class ThrowShow(QObject):
                          colours=(fx.her_red(), fx.her_cyan()), life=(0.2, 0.4))
         return True
 
+    HIT_SPEED = 260.0                       # (2.6.4) px/s into an edge that counts as hitting it
+
+    def _vibe_hit(self, wall: str, speed: float, now: float) -> None:
+        """A first real hit that isn't a full slam (a bounce off the side, the ceiling, a hard landing): her vibe's
+        impact still plays where she touched."""
+        if self._impacted or speed < self.HIT_SPEED or (wall == "bottom" and speed < 600):
+            return
+        spec = self.vibe_impact()
+        if spec is None:
+            return
+        f, b, a = self.fx, self.fx.body, self.area
+        at = {"left": QPointF(a.left(), b.centre.y()), "right": QPointF(a.right() + 1, b.centre.y()),
+              "top": QPointF(b.centre.x(), a.top()), "bottom": QPointF(b.centre.x(), self._floor())}[wall]
+        normal = {"left": QPointF(1, 0), "right": QPointF(-1, 0), "top": QPointF(0, 1), "bottom": QPointF(0, -1)}[wall]
+        self._impacted = True
+        self.impacts.spawn(at, normal, spec, f.fh * (0.75 + 0.25 * min(1.0, speed / SLAM_SPEED)),
+                           self.reduced_motion())
+
     def vibe_impact(self) -> dict | None:
-        """(2.6.3) Her vibe's impact (its style's "impact"), if she's wearing one and its effects are on."""
+        """(2.6.3) Her vibe's impact (its style's "impact") - or (2.6.4) her own, with no vibe on. None when her
+        style's effects are switched off."""
         from ..mods.effects import EFFECTS
-        spec = (EFFECTS.style or {}).get("impact")
+        from .impact import DEFAULT_IMPACT
+        style = EFFECTS.style or {}
         s = getattr(self.companion, "settings", None)
-        if not spec or (s is not None and not getattr(s, "style_effects", True)):
+        if style and s is not None and not getattr(s, "style_effects", True):
             return None
-        return spec
+        return style.get("impact") or (DEFAULT_IMPACT if not style else None)
 
     def reduced_motion(self) -> bool:
         s = getattr(self.companion, "settings", None)
@@ -455,6 +475,8 @@ class ThrowShow(QObject):
         if not wall:
             return False
         normal_speed = abs(b.vel.x()) if wall in ("left", "right") else abs(b.vel.y())
+        if normal_speed < SLAM_SPEED:                                       # (2.6.4) a bounce counts as a hit too
+            self._vibe_hit(wall, normal_speed, now)
         if normal_speed >= SLAM_SPEED:
             self._start_slam(wall, now, normal_speed)
             return True
@@ -536,11 +558,17 @@ class ThrowShow(QObject):
         e = f.effects
         vibe = None if self._impacted else self.vibe_impact()
         reduced = self.reduced_motion()
+        from .impact import DEFAULT_IMPACT
+        if vibe is DEFAULT_IMPACT:                                          # (2.6.4) plain Capri: her own slam as
+            self._impacted = True                                           # before, plus her crack where she hit
+            self.impacts.spawn(at, normal, vibe, f.fh, reduced)
+            vibe = None
         if vibe is not None:                                                # (2.6.3) her vibe answers the hit
             self._impacted = True
             self.impacts.spawn(at, normal, vibe, f.fh, reduced)
             if not reduced:
                 e.dust(at, now, f.fh, 4)
+                e.flash(at, now, f.fh * 0.4, 0.15)
         elif reduced:
             e.flash(at, now, f.fh * 0.5, 0.2)
         else:

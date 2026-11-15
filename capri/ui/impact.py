@@ -49,6 +49,16 @@ CRACK_FADE = 1.9           # ...and fades away
 LIFE = CRACK_GROW + CRACK_HOLD + CRACK_FADE
 
 
+# (2.6.4) her own impact, with no vibe on: her crimson and cyan - a glitchy shockwave, shards and an RGB-split crack
+DEFAULT_IMPACT = {
+    "burst": [{"kind": "shockwave", "colors": ["#ec1046", "#28e6ff"], "count": 2, "width": 3},
+              {"kind": "particles", "shape": "fragment", "colors": ["#ec1046", "#28e6ff", "#ffffff"], "count": 20,
+               "speed": [240, 700], "size": [2, 4], "life": [0.4, 0.8], "gravity": 300},
+              {"kind": "glitch", "colors": ["#ec1046", "#28e6ff"], "count": 10}],
+    "crack": {"color": "#12060c", "glow": "#ec1046", "light": "#28e6ff", "deco": ["rgb"], "jag": 0.7},
+}
+
+
 def colour(value, alpha: int | None = None, fallback: str = "#ffffff") -> QColor:
     c = QColor(str(value or fallback))
     if not c.isValid():

@@ -264,8 +264,10 @@ def test_update_now_asks_installs_and_quits():
     m.menu_clicked()
     assert calls["installed"] == [Path("Capri-Setup-9.9.9.exe")] and calls["quit"] == 1
     m2, calls2 = _manager(ready=lambda: ("9.9.9", Path("Capri-Setup-9.9.9.exe")), confirm=lambda q: False)
-    m2.menu_clicked()
-    assert calls2["installed"] == [] and calls2["quit"] == 0     # you said no
+    m2.menu_clicked()                                             # (2.6.4) the click is the yes: no second question
+    assert calls2["installed"] == [Path("Capri-Setup-9.9.9.exe")]
+    m3, calls3 = _manager(ready=lambda: ("9.9.9", Path("Capri-Setup-9.9.9.exe")), confirm=lambda q: False)
+    assert not m3.update_now(ask=True) and calls3["installed"] == []     # asked, and you said no
 
 
 def test_running_from_the_code_opens_the_release_page():

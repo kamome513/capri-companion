@@ -42,6 +42,8 @@ class OverlayWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WidgetAttribute.WA_MacAlwaysShowToolWindow)   # (2.6.4) Mac: never hidden when you
+        #                                                                    click another app
         self.setAcceptDrops(True)
         self.setAutoFillBackground(False)
         self._press: QPoint | None = None      # global cursor pos at press

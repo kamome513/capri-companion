@@ -210,7 +210,13 @@ def float_everywhere(widget) -> None:
         # canJoinAllSpaces | stationary | ignoresCycle | fullScreenAuxiliary
         win.setCollectionBehavior_((1 << 0) | (1 << 4) | (1 << 6) | (1 << 8))
         win.setHasShadow_(False)
-        win.setLevel_(NSFloatingWindowLevel + 1)
+        # (2.6.4) over everything, like an overlay - and she stays when you click another app (Qt's tool windows
+        # hide when their app isn't the active one: that's what made her vanish)
+        win.setLevel_(max(NSFloatingWindowLevel + 1, 25))           # NSStatusWindowLevel: above apps and the Dock
+        if hasattr(win, "setHidesOnDeactivate_"):
+            win.setHidesOnDeactivate_(False)
+        if hasattr(win, "setCanHide_"):
+            win.setCanHide_(False)
     except Exception:
         pass
 

@@ -53,7 +53,7 @@ MAC_ASSET = re.compile(r"^Capri-macOS\.zip$")              # macOS (2.6.3): Capr
 ASSET = WINDOWS_ASSET
 LINUX = sys.platform.startswith("linux")             # which release file this Capri updates from
 MAC = sys.platform == "darwin"
-CHECK_EVERY = 24 * 3600
+CHECK_EVERY = 6 * 3600            # (2.6.4: every 6 hours - so an update is usually downloaded before you ask)
 
 
 def parse_version(text: str) -> tuple[int, ...]:
@@ -330,16 +330,21 @@ def _install_portable(new: Path, run: Callable, folder: Path | None) -> bool:
 
 
 MAC_SWAP = """#!/bin/bash
-# Capri's update on a Mac: wait for the running Capri to close, put the new Capri.app in its place, start her.
-while kill -0 "$1" 2>/dev/null; do sleep 0.3; done
-rm -rf "$2.old" && mv "$2" "$2.old" && mv "$3" "$2" && rm -rf "$2.old"
+# Capri's update on a Mac: wait for the running Capri to close, unzip the new Capri.app, put it in place, start her.
+while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
+staging="$(dirname "$0")"
+/usr/bin/ditto -x -k "$3" "$staging/new" || exit 1
+new="$(ls -d "$staging"/new/*.app | head -1)"
+[ -d "$new" ] || exit 1
+rm -rf "$2.old" && mv "$2" "$2.old" && mv "$new" "$2" && rm -rf "$2.old"
 xattr -dr com.apple.quarantine "$2" 2>/dev/null
 open -a "$2" --args --after-update
 """
 
 
 def _install_mac(archive: Path, run: Callable, folder: Path | None) -> bool:
-    """Unzip the new Capri.app next to this one; a small script swaps them once this Capri has closed."""
+    """A small script unzips the new Capri.app and swaps it in once this Capri has closed (so nothing freezes
+    her while she says goodbye)."""
     app = mac_app()
     if not app:
         return False
@@ -347,17 +352,13 @@ def _install_mac(archive: Path, run: Callable, folder: Path | None) -> bool:
     try:
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir(parents=True)
-        subprocess.run(["/usr/bin/ditto", "-x", "-k", str(archive), str(staging)], check=True, timeout=300)
-        new = next(staging.glob("*.app"), None)
-        if new is None:
-            log.warning("update: no Capri.app in the download")
-            return False
         script = staging / "swap.sh"
         script.write_text(MAC_SWAP, encoding="utf-8")
         script.chmod(0o755)
-        run(["/bin/bash", str(script), str(os.getpid()), app, str(new)], close_fds=True, start_new_session=True)
+        _note_try(folder or archive.parent)
+        run(["/bin/bash", str(script), str(os.getpid()), app, str(archive)], close_fds=True, start_new_session=True)
         return True
-    except (OSError, subprocess.SubprocessError) as exc:
+    except OSError as exc:
         log.warning("update: couldn't install the Mac update: %s", exc)
         return False
 
