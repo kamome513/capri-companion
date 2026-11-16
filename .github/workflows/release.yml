@@ -216,7 +216,7 @@ jobs:
 
   mac:
     # macOS (2.6.3): Capri.app for Apple-silicon Macs, zipped.
-    runs-on: macos-latest
+    runs-on: macos-15-intel           # (GitHub's Apple-silicon Macs were out of capacity; Intel builds run on every Mac)
     steps:
       - uses: actions/checkout@v4
 
