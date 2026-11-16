@@ -369,7 +369,7 @@ class ThrowShow(QObject):
     def _vibe_hit(self, wall: str, speed: float, now: float) -> None:
         """A first real hit that isn't a full slam (a bounce off the side, the ceiling, a hard landing): her vibe's
         impact still plays where she touched."""
-        if self._impacted or speed < self.HIT_SPEED or (wall == "bottom" and speed < 600):
+        if speed < self.HIT_SPEED or (wall == "bottom" and speed < 600):
             return
         spec = self.vibe_impact()
         if spec is None:
@@ -378,6 +378,8 @@ class ThrowShow(QObject):
         at = {"left": QPointF(a.left(), b.centre.y()), "right": QPointF(a.right() + 1, b.centre.y()),
               "top": QPointF(b.centre.x(), a.top()), "bottom": QPointF(b.centre.x(), self._floor())}[wall]
         normal = {"left": QPointF(1, 0), "right": QPointF(-1, 0), "top": QPointF(0, 1), "bottom": QPointF(0, -1)}[wall]
+        if self._impacted:                                  # (2.6.6) a later bounce: a smaller crack, same colours
+            return self._later_crack(at, normal)
         self._impacted = True
         self.impacts.spawn(at, normal, spec, f.fh * (0.75 + 0.25 * min(1.0, speed / SLAM_SPEED)),
                            self.reduced_motion())

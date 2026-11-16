@@ -56,8 +56,10 @@ def test_a_bounce_off_the_wall_is_a_hit_too():
     assert show.throw(QPointF(3000, -200))
     now = time.monotonic()
     show._vibe_hit("left", 500, now)                       # a bounce: not a slam - still her impact
-    show._vibe_hit("left", 900, now + 0.2)                 # ...once per throw
-    assert len(spawned) == 1 and spawned[0][1] == QPointF(1, 0)
+    show._vibe_hit("left", 900, now + 0.2)                 # ...the full one once per throw; after it, the
+    assert len(spawned) == 2 and spawned[0][1] == QPointF(1, 0)    # (2.6.6) same colours, smaller, no burst
+    assert spawned[0][2]["burst"] and spawned[1][2]["burst"] == []
+    spawned.pop()
     show._timer.stop()
     show.active, c.busy_elsewhere = False, False
     assert show.throw(QPointF(-3000, -200))
